@@ -1,0 +1,30 @@
+{
+  "name": "sharanga",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "npx -y tsx scripts/verify-flows.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yashmishra1201-arch/Sharanga.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yashmishra1201-arch/Sharanga/issues"
+  },
+  "homepage": "https://github.com/yashmishra1201-arch/Sharanga#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}
