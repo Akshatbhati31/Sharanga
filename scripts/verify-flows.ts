@@ -270,6 +270,96 @@ async function runTests() {
   await auth.logout();
   assert(auth.getCurrentUser() === null, 'Logout clears active session');
 
+  // =========================================================================
+  // Test Group 7: Supabase Schema, RLS & Configuration Verification
+  // =========================================================================
+  console.log('\n--- Test Group 7: Supabase Schema, RLS & Configuration Verification ---');
+  const { isSupabaseConfigured } = await import('../src/lib/supabase');
+  assert(typeof isSupabaseConfigured() === 'boolean', 'isSupabaseConfigured() returns boolean safely');
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261020000000_initial_schema.sql');
+  const schemaPath = path.resolve(process.cwd(), 'supabase/schema.sql');
+
+  assert(fs.existsSync(migrationPath), 'SQL migration file exists in supabase/migrations/');
+  assert(fs.existsSync(schemaPath), 'Direct dashboard SQL schema file exists in supabase/schema.sql');
+
+  const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+
+  // 1. Table structure validation
+  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.parent_profiles'), 'Defines parent_profiles table');
+  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.account_preferences'), 'Defines account_preferences table');
+  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.child_profiles'), 'Defines child_profiles table');
+  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.learning_progress'), 'Defines learning_progress table');
+  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.practice_sessions'), 'Defines practice_sessions table');
+
+  // 2. Foreign keys and parent ownership
+  assert(migrationSql.includes('REFERENCES auth.users(id) ON DELETE CASCADE'), 'parent_profiles references auth.users(id) with CASCADE');
+  assert(migrationSql.includes('REFERENCES public.parent_profiles(id) ON DELETE CASCADE'), 'child_profiles and preferences reference parent_profiles(id)');
+  assert(migrationSql.includes('REFERENCES public.child_profiles(id) ON DELETE CASCADE'), 'learning_progress and sessions reference child_profiles(id)');
+
+  // 3. Mandatory Row Level Security (RLS) on all tables
+  assert(migrationSql.includes('ALTER TABLE public.parent_profiles ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on parent_profiles');
+  assert(migrationSql.includes('ALTER TABLE public.account_preferences ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on account_preferences');
+  assert(migrationSql.includes('ALTER TABLE public.child_profiles ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on child_profiles');
+  assert(migrationSql.includes('ALTER TABLE public.learning_progress ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on learning_progress');
+  assert(migrationSql.includes('ALTER TABLE public.practice_sessions ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on practice_sessions');
+
+  // 4. RLS ownership policies
+  assert(migrationSql.includes('auth.uid() = id'), 'parent_profiles policy enforces auth.uid() = id');
+  assert(migrationSql.includes('auth.uid() = parent_id'), 'child_profiles policy enforces auth.uid() = parent_id');
+  assert(migrationSql.includes('EXISTS ('), 'learning_progress policy checks parent ownership of child profile');
+
+  // 5. Automatic auth user profile creation hook
+  assert(migrationSql.includes('FUNCTION public.handle_new_user()'), 'Automatic parent profile creation trigger defined');
+  assert(migrationSql.includes('CREATE TRIGGER on_auth_user_created'), 'Auth hook on_auth_user_created attached to auth.users');
+
+  // 6. Registration validation tests
+  const invalidEmailReg = await auth.register({
+    fullName: 'Test Parent',
+    email: 'not-an-email',
+    password: 'Password123!',
+    confirmPassword: 'Password123!',
+    acceptTerms: true,
+  });
+  assert(invalidEmailReg.success === false, 'Invalid email registration is rejected');
+
+  const shortPassReg = await auth.register({
+    fullName: 'Test Parent',
+    email: 'valid@example.com',
+    password: '123',
+    confirmPassword: '123',
+    acceptTerms: true,
+  });
+  assert(shortPassReg.success === false, 'Short password (< 6 chars) is rejected');
+
+  const mismatchedPassReg = await auth.register({
+    fullName: 'Test Parent',
+    email: 'valid@example.com',
+    password: 'Password123!',
+    confirmPassword: 'DifferentPassword!',
+    acceptTerms: true,
+  });
+  assert(mismatchedPassReg.success === false, 'Password mismatch is rejected');
+
+  const noTermsReg = await auth.register({
+    fullName: 'Test Parent',
+    email: 'valid@example.com',
+    password: 'Password123!',
+    confirmPassword: 'Password123!',
+    acceptTerms: false,
+  });
+  assert(noTermsReg.success === false, 'Missing terms acceptance is rejected');
+
+  // 7. Login validation tests
+  const badLogin = await auth.login({
+    email: 'nonexistent-parent@dysleximate.demo',
+    password: 'WrongPassword!',
+  });
+  assert(badLogin.success === false, 'Non-existent account login is rejected');
+
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);
   console.log(`==========================================\n`);

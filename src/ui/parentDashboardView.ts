@@ -341,6 +341,11 @@ export class ParentDashboardView {
             <div style="display:flex; align-items:center; gap:8px;">
               <h2 id="parentDashTitle">Parent Dashboard</h2>
               <span class="tag" style="background:#eaf2fd; color:#2c62a8">Parent Account</span>
+              ${
+                this.authService.isLiveDatabaseConnected()
+                  ? '<span class="tag" style="background:#e6f8ee; color:#18794e; border:1px solid #b7ebc9; font-weight:700;">🟢 Supabase PostgreSQL & RLS</span>'
+                  : '<span class="tag" style="background:#fffbe6; color:#7d6a26; border:1px solid #f6e69d; font-weight:700;">⚡ Demo Mode</span>'
+              }
             </div>
             <p>Family management and reading telemetry for ${user.fullName} (${user.email})</p>
           </div>
@@ -348,9 +353,15 @@ export class ParentDashboardView {
         </div>
 
         <div class="modal-body">
-          <div class="modal-callout" style="background:#fffbe6; border:1px solid #f6e69d; color:#7d6a26; margin-bottom: 16px;">
-            ⚠️ <strong>Parent Privacy & Security:</strong> In production, child usage data and parent PIN verifiers are safeguarded via backend access control. Local session metrics are stored securely.
-          </div>
+          ${
+            this.authService.isLiveDatabaseConnected()
+              ? `<div class="modal-callout" style="background:#e6f8ee; border:1px solid #b7ebc9; color:#18794e; margin-bottom: 16px;">
+                  🛡️ <strong>Production Row Level Security Active:</strong> Child usage data, PIN credentials, and learning progress are secured via PostgreSQL Row Level Security (RLS) linked to your parent account.
+                </div>`
+              : `<div class="modal-callout" style="background:#fffbe6; border:1px solid #f6e69d; color:#7d6a26; margin-bottom: 16px;">
+                  ⚠️ <strong>Parent Privacy & Security:</strong> In production, child usage data and parent PIN verifiers are safeguarded via Supabase PostgreSQL + RLS. Currently operating in local/demo mode.
+                </div>`
+          }
 
           <!-- Aggregate Family Snapshot -->
           <div class="parent-stats">
