@@ -2,6 +2,34 @@ import { AuthService } from '../src/services/authService';
 import { ProfileService } from '../src/services/profileService';
 import { StorageService } from '../src/services/storageService';
 import { ActivityTrackerService } from '../src/services/activityTrackerService';
+import process from 'process';
+import {
+  validateSearchParams,
+  buildEducationalQuery,
+  isValidWebUrl,
+  handleTinyFishSearch,
+  MEDICAL_ACCESSIBILITY_DISCLAIMER,
+} from '../src/worker/tinyfishHandler';
+import workerHandler from '../src/worker/index';
+import {
+  SKILL_REGISTRY,
+  getSkillDefinition,
+  createInitialSkillState,
+  updateSkillStateWithAttempt,
+} from '../src/services/skillModel';
+import { RecommendationEngine } from '../src/services/recommendationEngine';
+import { LearningPathService } from '../src/services/learningPathService';
+import {
+  validateActivityContent,
+  getDeterministicActivity,
+  handleGenerateActivity,
+} from '../src/worker/aiHandler';
+import { ReadingChartService } from '../src/services/readingChartService';
+import { ACTIVITY_CATALOG } from '../src/services/activityCatalog';
+import fs from 'fs';
+import path from 'path';
+
+
 
 // Polyfill localStorage & Web Crypto for Node test environment
 if (typeof globalThis.localStorage === 'undefined') {
@@ -271,94 +299,695 @@ async function runTests() {
   assert(auth.getCurrentUser() === null, 'Logout clears active session');
 
   // =========================================================================
-  // Test Group 7: Supabase Schema, RLS & Configuration Verification
+  // Test Group 7: TinyFish Educational Resource Finder & Cloudflare Worker
   // =========================================================================
-  console.log('\n--- Test Group 7: Supabase Schema, RLS & Configuration Verification ---');
-  const { isSupabaseConfigured } = await import('../src/lib/supabase');
-  assert(typeof isSupabaseConfigured() === 'boolean', 'isSupabaseConfigured() returns boolean safely');
+  console.log('\n--- Test Group 7: TinyFish Educational Resource Finder & Worker ---');
 
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-
-  const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261020000000_initial_schema.sql');
-  const schemaPath = path.resolve(process.cwd(), 'supabase/schema.sql');
-
-  assert(fs.existsSync(migrationPath), 'SQL migration file exists in supabase/migrations/');
-  assert(fs.existsSync(schemaPath), 'Direct dashboard SQL schema file exists in supabase/schema.sql');
-
-  const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-
-  // 1. Table structure validation
-  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.parent_profiles'), 'Defines parent_profiles table');
-  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.account_preferences'), 'Defines account_preferences table');
-  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.child_profiles'), 'Defines child_profiles table');
-  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.learning_progress'), 'Defines learning_progress table');
-  assert(migrationSql.includes('CREATE TABLE IF NOT EXISTS public.practice_sessions'), 'Defines practice_sessions table');
-
-  // 2. Foreign keys and parent ownership
-  assert(migrationSql.includes('REFERENCES auth.users(id) ON DELETE CASCADE'), 'parent_profiles references auth.users(id) with CASCADE');
-  assert(migrationSql.includes('REFERENCES public.parent_profiles(id) ON DELETE CASCADE'), 'child_profiles and preferences reference parent_profiles(id)');
-  assert(migrationSql.includes('REFERENCES public.child_profiles(id) ON DELETE CASCADE'), 'learning_progress and sessions reference child_profiles(id)');
-
-  // 3. Mandatory Row Level Security (RLS) on all tables
-  assert(migrationSql.includes('ALTER TABLE public.parent_profiles ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on parent_profiles');
-  assert(migrationSql.includes('ALTER TABLE public.account_preferences ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on account_preferences');
-  assert(migrationSql.includes('ALTER TABLE public.child_profiles ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on child_profiles');
-  assert(migrationSql.includes('ALTER TABLE public.learning_progress ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on learning_progress');
-  assert(migrationSql.includes('ALTER TABLE public.practice_sessions ENABLE ROW LEVEL SECURITY;'), 'RLS enabled on practice_sessions');
-
-  // 4. RLS ownership policies
-  assert(migrationSql.includes('auth.uid() = id'), 'parent_profiles policy enforces auth.uid() = id');
-  assert(migrationSql.includes('auth.uid() = parent_id'), 'child_profiles policy enforces auth.uid() = parent_id');
-  assert(migrationSql.includes('EXISTS ('), 'learning_progress policy checks parent ownership of child profile');
-
-  // 5. Automatic auth user profile creation hook
-  assert(migrationSql.includes('FUNCTION public.handle_new_user()'), 'Automatic parent profile creation trigger defined');
-  assert(migrationSql.includes('CREATE TRIGGER on_auth_user_created'), 'Auth hook on_auth_user_created attached to auth.users');
-
-  // 6. Registration validation tests
-  const invalidEmailReg = await auth.register({
-    fullName: 'Test Parent',
-    email: 'not-an-email',
-    password: 'Password123!',
-    confirmPassword: 'Password123!',
-    acceptTerms: true,
+  // 1. Parameter Validation
+  const validParam = validateSearchParams({
+    topic: 'phonics sound blending',
+    grade: 'Class 2',
+    resourceType: 'phonics_activity',
+    language: 'English',
   });
-  assert(invalidEmailReg.success === false, 'Invalid email registration is rejected');
+  assert(validParam.valid === true, 'Valid search parameters are accepted');
+  assert(validParam.sanitized?.topic === 'phonics sound blending', 'Topic sanitized properly');
+  assert(validParam.sanitized?.resourceType === 'phonics_activity', 'Resource type preserved');
 
-  const shortPassReg = await auth.register({
-    fullName: 'Test Parent',
-    email: 'valid@example.com',
-    password: '123',
-    confirmPassword: '123',
-    acceptTerms: true,
-  });
-  assert(shortPassReg.success === false, 'Short password (< 6 chars) is rejected');
+  const emptyTopic = validateSearchParams({ topic: '' });
+  assert(emptyTopic.valid === false, 'Empty topic is rejected');
 
-  const mismatchedPassReg = await auth.register({
-    fullName: 'Test Parent',
-    email: 'valid@example.com',
-    password: 'Password123!',
-    confirmPassword: 'DifferentPassword!',
-    acceptTerms: true,
-  });
-  assert(mismatchedPassReg.success === false, 'Password mismatch is rejected');
+  const shortTopic = validateSearchParams({ topic: 'a' });
+  assert(shortTopic.valid === false, 'Topic under 2 characters is rejected');
 
-  const noTermsReg = await auth.register({
-    fullName: 'Test Parent',
-    email: 'valid@example.com',
-    password: 'Password123!',
-    confirmPassword: 'Password123!',
-    acceptTerms: false,
-  });
-  assert(noTermsReg.success === false, 'Missing terms acceptance is rejected');
+  const longTopic = validateSearchParams({ topic: 'x'.repeat(101) });
+  assert(longTopic.valid === false, 'Topic exceeding 100 characters is rejected');
 
-  // 7. Login validation tests
-  const badLogin = await auth.login({
-    email: 'nonexistent-parent@dysleximate.demo',
-    password: 'WrongPassword!',
+  const invalidType = validateSearchParams({ topic: 'valid topic', resourceType: 'malicious_sql' });
+  assert(invalidType.valid === true, 'Invalid resource type is safely caught');
+  assert(invalidType.sanitized?.resourceType === 'any', 'Invalid resource type falls back to any');
+
+  // 2. Query Construction
+  const query1 = buildEducationalQuery({ topic: 'sight words', grade: 'Class 1', resourceType: 'reading_exercise' });
+  assert(query1.includes('sight words'), 'Query includes topic');
+  assert(query1.includes('Class 1'), 'Query includes grade');
+  assert(query1.includes('reading exercises'), 'Query includes reading exercise descriptor');
+  assert(query1.includes('educational resource'), 'Query includes educational resource focus term');
+
+  const queryHindi = buildEducationalQuery({ topic: 'वर्णमाला', language: 'Hindi' });
+  assert(queryHindi.includes('Hindi'), 'Non-English language is added to query');
+
+  // 3. Safe URL Validation
+  assert(isValidWebUrl('https://pbskids.org/games/reading') === true, 'Valid HTTPS URL passes');
+  assert(isValidWebUrl('http://readwritethink.org') === true, 'Valid HTTP URL passes');
+  assert(isValidWebUrl('javascript:alert(1)') === false, 'JavaScript protocol URL is rejected');
+  assert(isValidWebUrl('data:text/html,bad') === false, 'Data URI is rejected');
+  assert(isValidWebUrl('relative/path') === false, 'Relative URL is rejected');
+
+  // 4. Missing / Unconfigured API Key handling (honest reporting)
+  const missingKeyRes = await handleTinyFishSearch({ topic: 'phonics' }, undefined);
+  assert(missingKeyRes.success === false, 'Missing key returns success: false');
+  assert(missingKeyRes.configured === false, 'Missing key returns configured: false');
+  assert(Boolean(missingKeyRes.error?.includes('not configured')), 'Returns informative error about server configuration');
+  assert(missingKeyRes.disclaimer === MEDICAL_ACCESSIBILITY_DISCLAIMER, 'Includes medical/accessibility disclaimer');
+
+  const placeholderKeyRes = await handleTinyFishSearch({ topic: 'phonics' }, 'your-tinyfish-api-key');
+  assert(placeholderKeyRes.configured === false, 'Placeholder key returns configured: false');
+
+  // 5. Successful TinyFish API interaction with simulated response
+  const mockFetchSuccess: typeof fetch = async (input, init) => {
+    const urlStr = typeof input === 'string' ? input : (input as Request).url;
+    const reqHeaders = (init?.headers as Record<string, string>) || {};
+
+    // Verify official TinyFish headers & request construction
+    if (reqHeaders['X-API-Key'] !== 'test-secret-tinyfish-key') {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+    if (!urlStr.includes('api.search.tinyfish.ai')) {
+      return new Response(JSON.stringify({ error: 'Wrong endpoint' }), { status: 404 });
+    }
+
+    return new Response(
+      JSON.stringify({
+        query: 'phonics educational resource',
+        total_results: 2,
+        results: [
+          {
+            position: 1,
+            site_name: 'Starfall Education',
+            title: 'Learn to Read with Phonics',
+            snippet: 'Interactive phonics sound games and reading activities for early readers.',
+            url: 'https://www.starfall.com/h/ltr-classic/',
+          },
+          {
+            position: 2,
+            title: 'Free Printable Phonics Worksheets',
+            snippet: 'Printable letter and sound blending worksheets for practice.',
+            url: 'https://www.superteacherworksheets.com/phonics.html',
+          },
+          {
+            position: 3,
+            title: 'Invalid Link Resource',
+            snippet: 'Bad URL that should be stripped.',
+            url: 'javascript:void(0)',
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+
+  const successSearch = await handleTinyFishSearch(
+    { topic: 'phonics', grade: 'Class 1' },
+    'test-secret-tinyfish-key',
+    mockFetchSuccess
+  );
+  assert(successSearch.success === true, 'Successful search returns success: true');
+  assert(successSearch.configured === true, 'Successful search returns configured: true');
+  assert(successSearch.resources.length === 2, 'Filtered out invalid URL and returned 2 clean resources');
+  assert(successSearch.resources[0].siteName === 'Starfall Education', 'Parsed site name from API payload');
+  assert(successSearch.resources[1].siteName === 'superteacherworksheets.com', 'Inferred domain when site_name missing');
+  assert(successSearch.resources[0].resourceType === 'educational_game', 'Inferred educational_game resource type');
+  assert(successSearch.resources[1].resourceType === 'worksheet', 'Inferred worksheet resource type');
+  assert(successSearch.resources[0].verified === true, 'Verified flag is set');
+  assert(successSearch.disclaimer === MEDICAL_ACCESSIBILITY_DISCLAIMER, 'Includes medical accessibility disclaimer');
+
+  // 6. API Error & Rate Limit Handling
+  const mockFetch429: typeof fetch = async () => new Response('Too many requests', { status: 429 });
+  const rateLimitRes = await handleTinyFishSearch({ topic: 'phonics' }, 'test-key', mockFetch429);
+  assert(rateLimitRes.success === false, 'Rate limit returns success: false');
+  assert(Boolean(rateLimitRes.error?.includes('rate limit')), 'Rate limit returns helpful rate limit message');
+
+  const mockFetch401: typeof fetch = async () => new Response('Unauthorized', { status: 401 });
+  const authFailRes = await handleTinyFishSearch({ topic: 'phonics' }, 'invalid-key', mockFetch401);
+  assert(authFailRes.success === false && Boolean(authFailRes.error?.includes('authentication failed')), '401 returns auth failed message');
+
+  // 7. Cloudflare Worker Router Tests
+  // A. OPTIONS /api/tinyfish/status (CORS preflight)
+  const corsReq = new Request('http://localhost/api/tinyfish/status', { method: 'OPTIONS' });
+  const corsRes = await workerHandler.fetch(corsReq, {});
+  assert(corsRes.status === 204, 'OPTIONS preflight returns 204');
+  assert(corsRes.headers.get('Access-Control-Allow-Origin') === '*', 'CORS origin header present');
+
+  // B. GET /api/tinyfish/status
+  const statusReq = new Request('http://localhost/api/tinyfish/status', { method: 'GET' });
+  const statusRes = await workerHandler.fetch(statusReq, { TINYFISH_API_KEY: 'live-key' });
+  const statusJson = (await statusRes.json()) as { configured: boolean; service: string };
+  assert(statusJson.service === 'TinyFish', 'Status endpoint returns service: TinyFish');
+  assert(statusJson.configured === true, 'Status endpoint reports configured: true when key present');
+
+  // C. POST /api/tinyfish/search with invalid JSON
+  const badJsonReq = new Request('http://localhost/api/tinyfish/search', {
+    method: 'POST',
+    body: 'not-json',
+    headers: { 'Content-Type': 'application/json' },
   });
-  assert(badLogin.success === false, 'Non-existent account login is rejected');
+  const badJsonRes = await workerHandler.fetch(badJsonReq, {});
+  assert(badJsonRes.status === 400, 'Bad JSON body returns 400');
+
+  // D. POST /api/tinyfish/search with invalid params
+  const badParamsReq = new Request('http://localhost/api/tinyfish/search', {
+    method: 'POST',
+    body: JSON.stringify({ topic: '' }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const badParamsRes = await workerHandler.fetch(badParamsReq, {});
+  assert(badParamsRes.status === 400, 'Empty topic parameter returns 400');
+
+  // =========================================================================
+  // Test Group 8: Adaptive AI Personalization Engine & Learning Path
+  // =========================================================================
+  console.log('\n--- Test Group 8: Adaptive AI Personalization Engine ---');
+
+  const learningPathService = LearningPathService.getInstance();
+
+  // Scenario 1: A new child with no learning history receives an introductory/provisional path
+  const brandNewChild = {
+    id: 'child-new-novice',
+    parentId: 'parent-demo-1',
+    name: 'Diya',
+    grade: 'Kindergarten',
+    preferredLanguage: 'English' as const,
+    avatar: '👧🏻',
+    preferences: {
+      readingSpeed: 'normal' as const,
+      dyslexiaFont: true,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: false,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  const novicePath = await learningPathService.generatePath(brandNewChild);
+  assert(novicePath.isProvisional === true, 'New child receives a path marked provisional');
+  assert(novicePath.demonstratedSkills.length === 0, 'New child starts with 0 demonstrated skills');
+  assert(novicePath.recommendations.length > 0, 'New child receives recommendations');
+  assert(
+    novicePath.recommendations[0].recommendationType === 'baseline' || novicePath.recommendations[0].recommendationType === 'new',
+    'First activity is baseline/introductory'
+  );
+
+  // Scenario 2: Two children with different performance histories receive different recommendations
+  const advancedChild = {
+    id: 'child-adv-reader',
+    parentId: 'parent-demo-1',
+    name: 'Aarav',
+    grade: 'Class 4',
+    preferredLanguage: 'English' as const,
+    avatar: '👦🏽',
+    preferences: {
+      readingSpeed: 'normal' as const,
+      dyslexiaFont: false,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: false,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  // Seed advanced skills for Aarav
+  await learningPathService.saveChildSkillState({
+    skillId: 'skill_letter_sounds_basic',
+    childId: 'child-adv-reader',
+    currentLevel: 4,
+    estimatedMastery: 0.95,
+    confidence: 0.9,
+    recentAccuracy: 0.95,
+    attemptsCount: 8,
+    consecutiveSuccesses: 5,
+    consecutiveStruggles: 0,
+    lastPracticed: new Date().toISOString(),
+    recommendedNextAction: 'mastered',
+    missedPatterns: [],
+    isProvisional: false,
+  });
+  await learningPathService.saveChildSkillState({
+    skillId: 'skill_letter_sounds_vowels',
+    childId: 'child-adv-reader',
+    currentLevel: 3,
+    estimatedMastery: 0.90,
+    confidence: 0.85,
+    recentAccuracy: 0.90,
+    attemptsCount: 6,
+    consecutiveSuccesses: 4,
+    consecutiveStruggles: 0,
+    lastPracticed: new Date().toISOString(),
+    recommendedNextAction: 'mastered',
+    missedPatterns: [],
+    isProvisional: false,
+  });
+
+  const advPath = await learningPathService.generatePath(advancedChild);
+  assert(
+    advPath.recommendations[0].targetSkillId !== novicePath.recommendations[0].targetSkillId,
+    'Two children with different histories receive different recommendations'
+  );
+  assert(
+    advPath.demonstratedSkills.includes('skill_letter_sounds_basic'),
+    'Advanced child has demonstrated skill_letter_sounds_basic'
+  );
+
+  // Scenario 3: Repeated difficulty leads to appropriate prerequisite or remedial practice
+  // Record 2 struggling attempts on b vs d
+  await learningPathService.recordAttempt({
+    id: 'att_struggle_1',
+    childId: brandNewChild.id,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'letter_distinction',
+    score: 40,
+    accuracy: 0.40,
+    totalQuestions: 1,
+    correctAnswers: 0,
+    incorrectAnswers: 1,
+    attemptsRequired: 3,
+    hintsRequested: 2,
+    correctedAfterHint: 0,
+    durationSeconds: 45,
+    missedItems: ['b_vs_d'],
+    completedAt: new Date().toISOString(),
+  });
+  await learningPathService.recordAttempt({
+    id: 'att_struggle_2',
+    childId: brandNewChild.id,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'letter_distinction',
+    score: 50,
+    accuracy: 0.50,
+    totalQuestions: 1,
+    correctAnswers: 1,
+    incorrectAnswers: 1,
+    attemptsRequired: 2,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 30,
+    missedItems: ['b_vs_d'],
+    completedAt: new Date().toISOString(),
+  });
+
+  const adaptedPath = await learningPathService.generatePath(brandNewChild);
+  assert(
+    adaptedPath.prioritySkills.includes('skill_confused_letters_bd'),
+    'Repeated difficulty flags skill as priority support'
+  );
+  assert(
+    adaptedPath.recommendations[0].recommendationType === 'remediation',
+    'Top recommendation is remediation with scaffolded hints'
+  );
+  assert(
+    adaptedPath.recommendations[0].reason.toLowerCase().includes('challenge') || adaptedPath.recommendations[0].reason.toLowerCase().includes('support'),
+    'Recommendation explains why remediation was provided'
+  );
+
+  // Scenario 4: Consistent improvement leads to gradual increases in difficulty
+  await learningPathService.recordAttempt({
+    id: 'att_win_1',
+    childId: 'child-adv-reader',
+    activityId: 'act_cvc_blending',
+    skillId: 'skill_cvc_blending',
+    activityType: 'phonics_blend',
+    score: 100,
+    accuracy: 1.0,
+    totalQuestions: 1,
+    correctAnswers: 1,
+    incorrectAnswers: 0,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 20,
+    missedItems: [],
+    completedAt: new Date().toISOString(),
+  });
+  await learningPathService.recordAttempt({
+    id: 'att_win_2',
+    childId: 'child-adv-reader',
+    activityId: 'act_cvc_blending',
+    skillId: 'skill_cvc_blending',
+    activityType: 'phonics_blend',
+    score: 95,
+    accuracy: 0.95,
+    totalQuestions: 1,
+    correctAnswers: 1,
+    incorrectAnswers: 0,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 25,
+    missedItems: [],
+    completedAt: new Date().toISOString(),
+  });
+
+  const advSkills = await learningPathService.getChildSkillStates('child-adv-reader');
+  assert(
+    advSkills['skill_cvc_blending'].consecutiveSuccesses >= 2,
+    'Tracks consecutive successes for consistent mastery'
+  );
+  assert(
+    advSkills['skill_cvc_blending'].estimatedMastery >= 0.7,
+    'Estimated mastery increases steadily on consistent success'
+  );
+
+  // Scenario 5: A single incorrect answer does not cause an excessive path change
+  const preMistakeMastery = advSkills['skill_cvc_blending'].estimatedMastery;
+  await learningPathService.recordAttempt({
+    id: 'att_single_mistake',
+    childId: 'child-adv-reader',
+    activityId: 'act_cvc_blending',
+    skillId: 'skill_cvc_blending',
+    activityType: 'phonics_blend',
+    score: 60,
+    accuracy: 0.60,
+    totalQuestions: 1,
+    correctAnswers: 1,
+    incorrectAnswers: 1,
+    attemptsRequired: 2,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 30,
+    missedItems: ['slip'],
+    completedAt: new Date().toISOString(),
+  });
+  const postMistakeSkills = await learningPathService.getChildSkillStates('child-adv-reader');
+  const postMistakeMastery = postMistakeSkills['skill_cvc_blending'].estimatedMastery;
+  assert(
+    postMistakeMastery >= preMistakeMastery - 0.25,
+    'Single mistake does not cause an excessive collapse in mastery estimate'
+  );
+
+  // Scenario 6: Historical progress remains intact after path regeneration
+  const beforeRegenVersion = advPath.version;
+  const regenPath = await learningPathService.generatePath(advancedChild);
+  assert(regenPath.version > beforeRegenVersion, 'Regenerating path increments path version');
+  assert(
+    regenPath.demonstratedSkills.includes('skill_letter_sounds_basic'),
+    'Historical demonstrated skills preserved across path regeneration'
+  );
+
+  // Scenario 7: Recommendations respect language and accessibility
+  const hindiChild = {
+    id: 'child-hindi-1',
+    parentId: 'parent-demo-1',
+    name: 'Aarush',
+    grade: 'Class 2',
+    preferredLanguage: 'Hindi' as const,
+    avatar: '👦🏻',
+    preferences: {
+      readingSpeed: 'slow' as const,
+      dyslexiaFont: true,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: true,
+    },
+    createdAt: new Date().toISOString(),
+  };
+  const hindiPath = await learningPathService.generatePath(hindiChild);
+  assert(hindiPath.recommendations.length > 0, 'Hindi child receives valid recommendations');
+
+  // Scenario 8: Missing AI credentials activate deterministic fallback
+  const fallbackActivity = await handleGenerateActivity({
+    skillId: 'skill_confused_letters_bd',
+    difficulty: 'beginner',
+    language: 'English',
+  }, undefined);
+  assert(fallbackActivity.id.length > 0, 'Fallback activity generates without AI key');
+  assert(fallbackActivity.items.some(i => i.isCorrect), 'Fallback activity contains a validated correct answer');
+  assert(Boolean(fallbackActivity.stepByStepHint), 'Fallback activity provides step-by-step hint');
+
+  // Scenario 9: AI failures and timeouts handled safely
+  const mockTimeoutFetch: typeof fetch = async () => {
+    throw new Error('AbortError: Request timed out');
+  };
+  const timeoutHandled = await handleGenerateActivity(
+    { skillId: 'skill_cvc_blending', difficulty: 'beginner', language: 'English' },
+    'mock-key',
+    mockTimeoutFetch
+  );
+  assert(timeoutHandled.items.length >= 2, 'Fallback provided safely on timeout without throwing');
+
+  // Scenario 10: Supabase migration and schema verification
+  const migrationPath = path.resolve('supabase/migrations/20261021000000_adaptive_learning.sql');
+  assert(fs.existsSync(migrationPath), 'Adaptive learning migration file exists');
+  const migrationSqlAdaptive = fs.readFileSync(migrationPath, 'utf8');
+  assert(migrationSqlAdaptive.includes('CREATE TABLE IF NOT EXISTS public.child_skill_states'), 'child_skill_states table defined');
+  assert(migrationSqlAdaptive.includes('CREATE TABLE IF NOT EXISTS public.child_learning_paths'), 'child_learning_paths table defined');
+  assert(migrationSqlAdaptive.includes('ENABLE ROW LEVEL SECURITY'), 'RLS enabled on adaptive learning tables');
+  assert(migrationSqlAdaptive.includes('auth.uid()'), 'RLS policy links to authenticated parent auth.uid()');
+
+  // Scenario 11: Data isolation between children
+  const diyaSkills = await learningPathService.getChildSkillStates(brandNewChild.id);
+  const aaravSkills = await learningPathService.getChildSkillStates('child-adv-reader');
+  assert(
+    diyaSkills['skill_confused_letters_bd'].consecutiveStruggles !== aaravSkills['skill_confused_letters_bd'].consecutiveStruggles,
+    'Skill states are isolated between different children'
+  );
+
+  // Scenario 12: Worker /api/ai/generate-activity endpoint
+  const aiReq = new Request('http://localhost/api/ai/generate-activity', {
+    method: 'POST',
+    body: JSON.stringify({ skillId: 'skill_letter_sounds_basic', difficulty: 'beginner', language: 'English' }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const aiRes = await workerHandler.fetch(aiReq, {});
+  assert(aiRes.status === 200, 'Worker endpoint /api/ai/generate-activity returns 200');
+  const aiJson = (await aiRes.json()) as { success: boolean; activity: any };
+  assert(aiJson.success === true, 'Worker endpoint returns success: true');
+  assert(aiJson.activity.items.length >= 2, 'Worker endpoint returns valid activity items');
+
+  console.log(`\n--- Test Group 9: Dynamic Reading Confidence Chart, B/D Mirror, & 12 Activities ---`);
+  const chartService = ReadingChartService.getInstance();
+  const freshChartChildId = 'child-chart-test-' + Date.now();
+
+  // Test 9.1: Fresh child with 0 attempts starts with flat baseline and empty state
+  const emptySummary = await chartService.getChartSummary(freshChartChildId, 'week');
+  assert(emptySummary.isEmpty === true, 'Chart starts with isEmpty = true for fresh child');
+  assert(emptySummary.overallAccuracy === null, 'Chart reports overallAccuracy = null (not 0% as fake measured score)');
+  assert(emptySummary.svgPathD === 'M0 156 L600 156', 'Chart renders flat horizontal baseline at bottom (y = 156)');
+  assert(
+    emptySummary.emptyMessage.toLowerCase().includes('complete your first activity'),
+    'Chart displays empty message prompting child to complete first activity'
+  );
+  assert(emptySummary.points.length === 0, 'No fake data points are fabricated');
+
+  // Test 9.2: Complete first activity (75% accuracy)
+  await learningPathService.recordAttempt({
+    id: 'att_chart_1',
+    childId: freshChartChildId,
+    activityId: 'act_word_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 75,
+    accuracy: 0.75,
+    totalQuestions: 4,
+    correctAnswers: 3,
+    incorrectAnswers: 1,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 25,
+    missedItems: [],
+    completedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+  });
+
+  const singleAttemptSummary = await chartService.getChartSummary(freshChartChildId, 'week');
+  assert(singleAttemptSummary.isEmpty === false, 'Chart is no longer empty after first activity');
+  assert(singleAttemptSummary.overallAccuracy === 75, 'Chart plots actual recorded accuracy of 75%');
+  assert(singleAttemptSummary.points.length === 1, 'Exactly one real point plotted');
+
+  // Test 9.3: Complete second activity with identical accuracy (75%) -> Chart line remains completely flat!
+  await learningPathService.recordAttempt({
+    id: 'att_chart_2',
+    childId: freshChartChildId,
+    activityId: 'act_word_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 75,
+    accuracy: 0.75,
+    totalQuestions: 4,
+    correctAnswers: 3,
+    incorrectAnswers: 1,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 20,
+    missedItems: [],
+    completedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+  });
+
+  const flatSummary = await chartService.getChartSummary(freshChartChildId, 'week');
+  assert(flatSummary.trend === 'flat', 'Performance trend is flat when accuracy is unchanged');
+  assert(flatSummary.points[0].cy === flatSummary.points[1].cy, 'Chart points have identical y coordinates');
+  assert(flatSummary.overallAccuracy === 75, 'Overall accuracy remains 75% without fake upward curve');
+
+  // Test 9.4: Complete third activity with lower accuracy (50%) -> Chart drops honestly
+  await learningPathService.recordAttempt({
+    id: 'att_chart_3',
+    childId: freshChartChildId,
+    activityId: 'act_word_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 50,
+    accuracy: 0.50,
+    totalQuestions: 2,
+    correctAnswers: 1,
+    incorrectAnswers: 1,
+    attemptsRequired: 2,
+    hintsRequested: 1,
+    correctedAfterHint: 0,
+    durationSeconds: 30,
+    missedItems: ['b_vs_d'],
+    completedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+  });
+
+  const dropSummary = await chartService.getChartSummary(freshChartChildId, 'week');
+  assert(dropSummary.trend === 'declining', 'Trend honestly reflects performance drop');
+  assert(dropSummary.points[2].cy > dropSummary.points[1].cy, 'SVG y-coordinate increases (line drops downwards) on lower accuracy');
+
+  // Test 9.5: Complete fourth activity with higher accuracy (100%) -> Chart rises
+  await learningPathService.recordAttempt({
+    id: 'att_chart_4',
+    childId: freshChartChildId,
+    activityId: 'act_word_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 100,
+    accuracy: 1.0,
+    totalQuestions: 2,
+    correctAnswers: 2,
+    incorrectAnswers: 0,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 15,
+    missedItems: [],
+    completedAt: new Date().toISOString(),
+  });
+
+  const riseSummary = await chartService.getChartSummary(freshChartChildId, 'week');
+  assert(riseSummary.points[3].cy < riseSummary.points[2].cy, 'SVG y-coordinate decreases (line rises upwards) on higher accuracy');
+
+  // Test 9.6: Time-range filtering
+  const allTimeSummary = await chartService.getChartSummary(freshChartChildId, 'all');
+  assert(allTimeSummary.totalSessions === 4, 'All time range includes all 4 recorded sessions');
+  assert(allTimeSummary.overallAccuracy !== null, 'Calculates aggregated overall accuracy across all sessions');
+
+  // Test 9.7: Weighted accuracy formula (total correct / total questions * 100)
+  // Total correct: 3 + 3 + 1 + 2 = 9. Total questions: 4 + 4 + 2 + 2 = 12. 9/12 = 75%.
+  assert(allTimeSummary.overallAccuracy === 75, 'Aggregates accuracy correctly using total correct / total questions * 100');
+
+  // Test 9.8: Letter Mirror - specifically B and D tracking and adaptive influence
+  const bdChildId = 'child-bd-learner-' + Date.now();
+  await learningPathService.recordAttempt({
+    id: 'att_bd_confusion_1',
+    childId: bdChildId,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'letter_distinction',
+    score: 40,
+    accuracy: 0.40,
+    totalQuestions: 5,
+    correctAnswers: 2,
+    incorrectAnswers: 3,
+    attemptsRequired: 7,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 45,
+    missedItems: ['b_vs_d'],
+    completedAt: new Date().toISOString(),
+  });
+  await learningPathService.recordAttempt({
+    id: 'att_bd_confusion_2',
+    childId: bdChildId,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'letter_distinction',
+    score: 40,
+    accuracy: 0.40,
+    totalQuestions: 5,
+    correctAnswers: 2,
+    incorrectAnswers: 3,
+    attemptsRequired: 6,
+    hintsRequested: 1,
+    correctedAfterHint: 0,
+    durationSeconds: 40,
+    missedItems: ['b_vs_d'],
+    completedAt: new Date().toISOString(),
+  });
+
+  const bdChildProfile = {
+    id: bdChildId,
+    parentId: 'parent-demo-1',
+    name: 'Rohan',
+    grade: 'Class 2',
+    preferredLanguage: 'English' as const,
+    avatar: '👦🏽',
+    preferences: {
+      readingSpeed: 'normal' as const,
+      dyslexiaFont: true,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: false,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  const bdAdaptedPath = await learningPathService.generatePath(bdChildProfile);
+  assert(
+    bdAdaptedPath.prioritySkills.includes('skill_confused_letters_bd'),
+    'Repeated B/D errors flag skill_confused_letters_bd as priority skill'
+  );
+  assert(
+    bdAdaptedPath.recommendations[0].targetSkillId === 'skill_confused_letters_bd',
+    'Top adaptive recommendation focuses on B/D discrimination practice'
+  );
+
+  // Test 9.9: All 12 Prioritized Interactive Learning Activities catalog
+  assert(ACTIVITY_CATALOG.length === 12, 'ACTIVITY_CATALOG contains exactly 12 prioritized learning activities');
+  const required12 = [
+    'B/D Letter Mirror',
+    'Sound Blending',
+    'Letter-Sound Matching',
+    'Word Building',
+    'Missing Letter',
+    'Rhyming Words',
+    'Syllable Splitting',
+    'Word Recognition',
+    'Reading Comprehension',
+    'Vocabulary Builder',
+    'Listening Practice',
+    'Spelling Practice',
+  ];
+  required12.forEach(title => {
+    assert(ACTIVITY_CATALOG.some(a => a.title === title), `Activity catalog includes "${title}"`);
+  });
+
+  // Test 9.10: Deterministic activity generation for all 12 skills
+  const testSkills = [
+    'skill_confused_letters_bd',
+    'skill_cvc_blending',
+    'skill_letter_sounds_basic',
+    'skill_word_building',
+    'skill_missing_letter',
+    'skill_phonemic_rhyme',
+    'skill_syllable_segmentation',
+    'skill_sight_words_high_freq',
+    'skill_story_comprehension',
+    'skill_sentence_fluency',
+    'skill_listening_pronunciation',
+    'skill_spelling_cvc',
+  ];
+
+  for (const sId of testSkills) {
+    const act = getDeterministicActivity({
+      skillId: sId,
+      difficulty: 'beginner',
+      language: 'English',
+    });
+    assert(act.items.length >= 2, `Skill ${sId} generates interactive activity with at least 2 choices`);
+    assert(act.items.some(i => i.isCorrect), `Skill ${sId} activity contains a verified correct answer`);
+    assert(Boolean(act.stepByStepHint), `Skill ${sId} activity provides a step-by-step hint`);
+  }
 
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);

@@ -3,12 +3,15 @@ import { ProfileService } from '../services/profileService';
 import { ActivityTrackerService } from '../services/activityTrackerService';
 import type { ChildProfile } from '../types/auth';
 import type { ChildModalView } from './childModalView';
+import { LearningPathService } from '../services/learningPathService';
+import { getSkillDefinition } from '../services/skillModel';
 
 export class ParentDashboardView {
   private authService: AuthService;
   private profileService: ProfileService;
   private activityService: ActivityTrackerService;
   private childModalView: ChildModalView;
+  private learningPathService: LearningPathService;
   private onReturnToProfiles: () => void;
   private onLogout: () => void;
   private onInspectChild: (child: ChildProfile) => void;
@@ -26,6 +29,7 @@ export class ParentDashboardView {
     this.authService = AuthService.getInstance();
     this.profileService = ProfileService.getInstance();
     this.activityService = ActivityTrackerService.getInstance();
+    this.learningPathService = LearningPathService.getInstance();
     this.childModalView = childModalView;
     this.onReturnToProfiles = onReturnToProfiles;
     this.onLogout = onLogout;
@@ -334,6 +338,8 @@ export class ParentDashboardView {
       ? this.activityService.getSummary(activeChildObj.id, activeChildObj.name, this.selectedPeriod)
       : null;
 
+    const childPath = activeChildObj ? await this.learningPathService.getOrGeneratePath(activeChildObj) : null;
+
     modalEl.innerHTML = `
       <div class="modal" style="max-width: 720px;" role="dialog" aria-modal="true" aria-labelledby="parentDashTitle">
         <div class="modal-head">
@@ -509,6 +515,89 @@ export class ParentDashboardView {
             }
           </div>
 
+          <!-- Section: Adaptive AI Learning Path for Selected Child -->
+          ${activeChildObj && childPath ? `
+            <div style="background:#fff; border:1.5px solid var(--line); border-radius:18px; padding:20px; margin: 20px 0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                <div>
+                  <h3 style="font:900 17px Nunito; margin:0; display:flex; align-items:center; gap:6px;">
+                    <span>⚡</span> Adaptive AI Learning Path for ${activeChildObj.name}
+                  </h3>
+                  <p style="font-size:11px; color:var(--muted); margin:3px 0 0;">
+                    Dynamic skill mastery, error pattern remediation, and individualized learning path
+                  </p>
+                </div>
+                <button type="button" id="btnParentRegeneratePath" class="btn-action-pill" style="font-size:11px; padding:5px 10px;">
+                  ↻ Regenerate Path
+                </button>
+              </div>
+
+              <!-- Plain language explanation of path -->
+              <div class="rf-disclaimer-box" style="background:#f0f8f5; border:1px solid #bce6d2; color:#1f6348; margin-bottom:14px; font-size:12px; line-height:1.5;">
+                <span>💡</span>
+                <div>
+                  <strong>Why this learning path?</strong>
+                  <p style="margin:2px 0 0; font-size:12px;">${childPath.explanation}</p>
+                </div>
+              </div>
+
+              <!-- Skills Breakdown Cards -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:14px;">
+                <div style="background:#f4fbf8; border:1px solid #c9ebd8; border-radius:12px; padding:12px;">
+                  <span style="font-size:11px; font-weight:800; color:#1b7d52; display:block; margin-bottom:4px;">
+                    ✓ Demonstrated Skills (${childPath.demonstratedSkills.length})
+                  </span>
+                  <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    ${childPath.demonstratedSkills.length > 0
+                      ? childPath.demonstratedSkills.map(sid => {
+                          const def = getSkillDefinition(sid);
+                          return `<span class="tag" style="background:#eaf8ef; color:#18794e; font-size:10px;">${def?.name || sid}</span>`;
+                        }).join('')
+                      : '<span style="font-size:11px; color:#78878d;">Initial skills being developed</span>'}
+                  </div>
+                </div>
+
+                <div style="background:#fefbf5; border:1px solid #fbe7b5; border-radius:12px; padding:12px;">
+                  <span style="font-size:11px; font-weight:800; color:#9c5000; display:block; margin-bottom:4px;">
+                    🎯 Priority Support Skills (${childPath.prioritySkills.length})
+                  </span>
+                  <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    ${childPath.prioritySkills.length > 0
+                      ? childPath.prioritySkills.map(sid => {
+                          const def = getSkillDefinition(sid);
+                          return `<span class="tag" style="background:#fff3e0; color:#b25e00; font-size:10px;">${def?.name || sid}</span>`;
+                        }).join('')
+                      : '<span style="font-size:11px; color:#78878d;">No struggle patterns detected</span>'}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Active Goals & Next Recommendations -->
+              <div style="background:#fafbf8; border:1px solid var(--line); border-radius:12px; padding:14px;">
+                <span style="font-size:11px; font-weight:800; color:#50656a; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">
+                  Current Goals & Next Recommended Activity
+                </span>
+                <ul style="margin:0 0 10px; padding-left:18px; font-size:12px; color:#49585e; line-height:1.6;">
+                  ${childPath.currentGoals.map(g => `<li>${g}</li>`).join('')}
+                </ul>
+                ${childPath.recommendations[0] ? `
+                  <div style="display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; flex-wrap:wrap; gap:8px;">
+                    <div>
+                      <strong style="font-size:13px; color:var(--ink);">${childPath.recommendations[0].title}</strong>
+                      <p style="margin:2px 0 0; font-size:11px; color:var(--muted);">${childPath.recommendations[0].learningObjective}</p>
+                    </div>
+                    <span class="tag" style="background:#eaf2fd; color:#2c62a8;">${childPath.recommendations[0].recommendationType.toUpperCase()}</span>
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- Medical / Clinical Disclaimer -->
+              <div style="margin-top:12px; font-size:10px; color:#859397; line-height:1.4;">
+                ℹ️ <em>Educational Disclaimer: DyslexiMate's adaptive model provides individualized practice pacing based on observed activity performance. It is an educational tool and does not replace diagnostic or clinical reading assessment.</em>
+              </div>
+            </div>
+          ` : ''}
+
           <!-- Children Management List -->
           <div style="display:flex; justify-content:space-between; align-items:center; margin: 20px 0 10px;">
             <h3 style="font:900 16px Nunito; margin:0">Linked Child Profiles</h3>
@@ -622,6 +711,14 @@ export class ParentDashboardView {
         this.selectedReportChildId = (btn as HTMLElement).dataset.selectReportChild || null;
         this.openDashboard();
       });
+    });
+
+    // Regenerate child path button
+    document.getElementById('btnParentRegeneratePath')?.addEventListener('click', async () => {
+      if (activeChildObj) {
+        await this.learningPathService.generatePath(activeChildObj);
+        this.openDashboard();
+      }
     });
 
     // Add Child button
