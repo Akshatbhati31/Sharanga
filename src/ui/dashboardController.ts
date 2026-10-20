@@ -2,6 +2,14 @@ import { ProfileService } from '../services/profileService';
 import { ActivityTrackerService } from '../services/activityTrackerService';
 import type { ChildProfile, SupportedLanguage } from '../types/auth';
 import type { ParentDashboardView } from './parentDashboardView';
+import { ResourceFinderView } from './resourceFinderView';
+import { LearningJourneyView } from './learningJourneyView';
+import { ActivityRunnerModal } from './activityRunnerModal';
+import { LearningPathService } from '../services/learningPathService';
+import { ReadingConfidenceChart } from './readingConfidenceChart';
+import { LetterMirrorBDModal } from './letterMirrorBDModal';
+import { ACTIVITY_CATALOG } from '../services/activityCatalog';
+import { ReadingChartService } from '../services/readingChartService';
 
 export class DashboardController {
   private container: HTMLElement;
@@ -11,6 +19,12 @@ export class DashboardController {
   private onSwitchProfileRequested: () => void;
   private activeChild: ChildProfile | null = null;
   private toastTimer: number | null = null;
+  private resourceFinderView: ResourceFinderView | null = null;
+  private learningJourneyView: LearningJourneyView | null = null;
+  private learningPathService: LearningPathService;
+  private homeReadingChart: ReadingConfidenceChart | null = null;
+  private progressReadingChart: ReadingConfidenceChart | null = null;
+
 
   // Language word banks for Picture Word Match
   private readonly wordBanks: Record<
@@ -49,6 +63,7 @@ export class DashboardController {
     this.activityTracker = ActivityTrackerService.getInstance();
     this.parentDashboardView = parentDashboardView;
     this.onSwitchProfileRequested = onSwitchProfileRequested;
+    this.learningPathService = LearningPathService.getInstance();
   }
 
   public render(child: ChildProfile): void {
@@ -80,6 +95,7 @@ export class DashboardController {
             <button data-page="learn"><span class="ico">✦</span><span class="label">Practice</span></button>
             <button data-page="progress"><span class="ico">▥</span><span class="label">My progress</span></button>
             <button data-page="stories"><span class="ico">▤</span><span class="label">Story shelf</span></button>
+            <button data-page="resources"><span class="ico">🌐</span><span class="label">Resource Finder</span></button>
           </nav>
           <div class="side-bottom">
             <div class="side-card">
@@ -134,6 +150,9 @@ export class DashboardController {
               <div class="hero-figure" aria-hidden="true">🦊</div>
             </div>
 
+            <!-- Personalized Adaptive Learning Journey Area -->
+            <div id="childLearningJourneyArea" style="margin-top: 18px; margin-bottom: 24px;"></div>
+
             <div class="section-head">
               <div>
                 <h2>Your learning snapshot</h2>
@@ -166,43 +185,7 @@ export class DashboardController {
             </div>
 
             <div class="content-grid">
-              <div class="card">
-                <div class="card-title">
-                  <div>
-                    <h3>Reading confidence</h3>
-                    <p>Accuracy is growing with every practice.</p>
-                  </div>
-                  <div class="select-wrap">
-                    <select aria-label="Chart time range" id="chartTimeSelect">
-                      <option>This week</option>
-                      <option>This month</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="chart-area">
-                  <svg viewBox="0 0 600 180" preserveAspectRatio="none" role="img" aria-label="Reading accuracy trending upward">
-                    <defs>
-                      <linearGradient id="fill" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0" stop-color="#45ad88" stop-opacity=".22"/>
-                        <stop offset="1" stop-color="#45ad88" stop-opacity="0"/>
-                      </linearGradient>
-                    </defs>
-                    <g stroke="#eef0ec" stroke-dasharray="3 5">
-                      <path d="M0 30H600"/><path d="M0 72H600"/><path d="M0 114H600"/><path d="M0 156H600"/>
-                    </g>
-                    <path d="M0 132 C36 126 45 111 80 116 S135 119 160 98 S210 105 240 85 S290 94 320 70 S375 78 400 62 S455 72 480 52 S535 62 560 39 S585 46 600 31 L600 180 L0 180Z" fill="url(#fill)"/>
-                    <path d="M0 132 C36 126 45 111 80 116 S135 119 160 98 S210 105 240 85 S290 94 320 70 S375 78 400 62 S455 72 480 52 S535 62 560 39 S585 46 600 31" fill="none" stroke="#168b78" stroke-width="4" stroke-linecap="round"/>
-                    <circle cx="600" cy="31" r="6" fill="#fff" stroke="#168b78" stroke-width="4"/>
-                  </svg>
-                </div>
-                <div class="chart-labels">
-                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-                </div>
-                <div class="legend">
-                  <span><i></i>Reading accuracy (${progress.accuracyPercent}%)</span>
-                  <span><i></i>Goal: 80%</span>
-                </div>
-              </div>
+              <div id="homeReadingChartContainer"></div>
 
               <div class="card">
                 <div class="card-title">
@@ -361,6 +344,40 @@ export class DashboardController {
                 </div>
               </div>
             </div>
+
+            <!-- Interactive Activity Center (12 Prioritized Learning Activities) -->
+            <div class="card" style="margin-top: 24px;">
+              <div class="card-title" style="flex-wrap: wrap; gap: 8px;">
+                <div>
+                  <h3 style="font: 900 19px Nunito; margin: 0 0 4px; color: var(--ink);">Interactive Learning Adventures 🚀</h3>
+                  <p style="font-size: 13px; color: var(--muted); margin: 0;">Explore phonics, letter discrimination, spelling, and reading comprehension games.</p>
+                </div>
+                <span class="tag" style="background: var(--teal); color: #fff;">12 ADVENTURES</span>
+              </div>
+
+              <div class="activity-catalog-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 16px;">
+                ${ACTIVITY_CATALOG.map(item => `
+                  <div class="activity-catalog-card" style="background: #fff; border: 1.5px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); transition: transform 0.15s ease, border-color 0.15s ease;">
+                    <div>
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="width: 42px; height: 42px; border-radius: 12px; background: ${item.colorBg}; font-size: 22px; display: grid; place-items: center;">
+                          ${item.icon}
+                        </div>
+                        <span class="tag" style="font-size: 10px; background: #f3f6f8; color: #516269;">${item.tag}</span>
+                      </div>
+                      <strong style="font: 800 15px Nunito; color: var(--ink); display: block; margin-bottom: 4px;">${item.title}</strong>
+                      <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.45;">${item.description}</p>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #f2f4f0;">
+                      <small style="font-size: 11px; color: #7f8b8f; font-weight: 700;">⏱️ ~${item.estimatedMinutes} min</small>
+                      <button type="button" class="btn-play-catalog-act hero-cta" data-act-id="${item.id}" data-skill-id="${item.skillId}" data-title="${item.title}" style="padding: 9px 18px; font-size: 12px; min-height: 44px;">
+                        Play →
+                      </button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
           </section>
 
           <!-- Section: My Progress Page -->
@@ -402,25 +419,7 @@ export class DashboardController {
             </div>
 
             <div class="content-grid">
-              <div class="card">
-                <div class="card-title">
-                  <div>
-                    <h3>Reading confidence</h3>
-                    <p>A little better each day.</p>
-                  </div>
-                </div>
-                <div class="chart-area">
-                  <svg viewBox="0 0 600 180" preserveAspectRatio="none">
-                    <g stroke="#eef0ec" stroke-dasharray="3 5">
-                      <path d="M0 30H600"/><path d="M0 72H600"/><path d="M0 114H600"/><path d="M0 156H600"/>
-                    </g>
-                    <path d="M0 132 C36 126 45 111 80 116 S135 119 160 98 S210 105 240 85 S290 94 320 70 S375 78 400 62 S455 72 480 52 S535 62 560 39 S585 46 600 31" fill="none" stroke="#168b78" stroke-width="4" stroke-linecap="round"/>
-                  </svg>
-                </div>
-                <div class="chart-labels">
-                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-                </div>
-              </div>
+              <div id="progressReadingChartContainer"></div>
 
               <div class="card">
                 <div class="card-title">
@@ -526,12 +525,15 @@ export class DashboardController {
             <div class="resource-card" style="margin-top:16px">
               <div class="resource-icon">🌐</div>
               <div>
-                <strong>Resource discovery · TinyFish concept</strong>
-                <p>Find age-appropriate public stories in ${child.preferredLanguage}. A connected resource agent can collect source, level and reading text.</p>
+                <strong>Educational Resource Finder · TinyFish Web Agent</strong>
+                <p>Find age-appropriate public worksheets, phonics activities, and games in ${child.preferredLanguage} across verified educational sites.</p>
               </div>
-              <button type="button" id="btnFindTinyFishStories">Find stories</button>
+              <button type="button" id="btnFindTinyFishStories">Find resources</button>
             </div>
           </section>
+
+          <!-- Section: Educational Resource Finder Page -->
+          <section id="resourcesPage" class="hidden"></section>
         </main>
       </div>
 
@@ -555,28 +557,69 @@ export class DashboardController {
 
     this.bindEvents();
     this.updateLanguageGame(child.preferredLanguage);
+
+    // Initialize & render Adaptive Learning Journey
+    const journeyContainer = this.container.querySelector('#childLearningJourneyArea') as HTMLElement;
+    if (journeyContainer) {
+      this.learningJourneyView = new LearningJourneyView(journeyContainer, () => {
+        this.refreshDashboardAfterActivity();
+      });
+      this.learningJourneyView.render(child);
+    }
+
+    // Initialize & render Data-Driven Reading Accuracy Charts
+    const homeChartEl = this.container.querySelector('#homeReadingChartContainer') as HTMLElement;
+    if (homeChartEl) {
+      this.homeReadingChart = new ReadingConfidenceChart(homeChartEl, child.id);
+      this.homeReadingChart.render('week');
+    }
+
+    const progChartEl = this.container.querySelector('#progressReadingChartContainer') as HTMLElement;
+    if (progChartEl) {
+      this.progressReadingChart = new ReadingConfidenceChart(progChartEl, child.id);
+      this.progressReadingChart.render('week');
+    }
   }
 
   // -------------------------------------------------------------
   // Navigation & Page Switching
   // -------------------------------------------------------------
-  private switchPage(name: 'home' | 'learn' | 'progress' | 'stories'): void {
+  private switchPage(name: 'home' | 'learn' | 'progress' | 'stories' | 'resources'): void {
     const titles: Record<string, string> = {
       home: 'My home',
       learn: 'Practice',
       progress: 'My progress',
       stories: 'Story shelf',
+      resources: 'Educational Resource Finder',
     };
 
     if (this.activeChild) {
       if (name === 'home') {
         this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Home Learning Dashboard');
+        if (this.learningJourneyView && this.activeChild) {
+          this.learningJourneyView.render(this.activeChild);
+        }
+        this.homeReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'learn') {
         this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'practice_game', 'Picture Word Match Game');
       } else if (name === 'progress') {
         this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Progress View');
+        this.progressReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'stories') {
         this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'story_reading', 'Story Shelf Exploration');
+      } else if (name === 'resources') {
+        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Educational Resource Finder');
+        const resourcesContainer = this.container.querySelector('#resourcesPage') as HTMLElement;
+        if (resourcesContainer) {
+          if (!this.resourceFinderView) {
+            this.resourceFinderView = new ResourceFinderView(resourcesContainer);
+          }
+          this.resourceFinderView.setDefaults(
+            this.activeChild.preferredLanguage,
+            this.activeChild.grade
+          );
+          this.resourceFinderView.render();
+        }
       }
     }
 
@@ -603,7 +646,7 @@ export class DashboardController {
     // Navigation buttons
     this.container.querySelectorAll('.nav button').forEach(btn => {
       btn.addEventListener('click', () => {
-        const page = (btn as HTMLElement).dataset.page as 'home' | 'learn' | 'progress' | 'stories';
+        const page = (btn as HTMLElement).dataset.page as 'home' | 'learn' | 'progress' | 'stories' | 'resources';
         if (page) this.switchPage(page);
       });
     });
@@ -626,7 +669,18 @@ export class DashboardController {
     });
 
     // CTA links
-    this.container.querySelector('#btnStartChallenge')?.addEventListener('click', () => {
+    this.container.querySelector('#btnStartChallenge')?.addEventListener('click', async () => {
+      if (this.activeChild) {
+        const path = await this.learningPathService.getOrGeneratePath(this.activeChild);
+        const topRec = path.recommendations[0];
+        if (topRec) {
+          ActivityRunnerModal.getInstance().startRecommendation(this.activeChild, topRec, () => {
+            this.refreshStats();
+            this.learningJourneyView?.render(this.activeChild!);
+          });
+          return;
+        }
+      }
       this.switchPage('learn');
       this.showToast('Today’s 10-minute challenge is ready 🌞');
     });
@@ -691,6 +745,48 @@ export class DashboardController {
 
     // Modal close
     this.container.querySelector('#btnCloseDashModal')?.addEventListener('click', () => this.closeDashModal());
+
+    // Interactive Activity Catalog (12 Activities)
+    this.container.querySelectorAll('.btn-play-catalog-act').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const actId = (btn as HTMLElement).dataset.actId || '';
+        const skillId = (btn as HTMLElement).dataset.skillId || '';
+        const title = (btn as HTMLElement).dataset.title || '';
+
+        if (!this.activeChild) return;
+
+        if (actId === 'act_bd_mirror' || skillId === 'skill_confused_letters_bd') {
+          this.openLetterGame();
+          return;
+        }
+
+        const item = ACTIVITY_CATALOG.find(a => a.id === actId);
+        ActivityRunnerModal.getInstance().startRecommendation(
+          this.activeChild,
+          {
+            id: `rec_${actId}_${Date.now()}`,
+            activityId: actId,
+            targetSkillId: skillId,
+            skillName: item?.title || 'Interactive Learning',
+            category: 'syllable_decoding',
+            title: title || item?.title || 'Interactive Adventure',
+            description: item?.description || 'Build your reading confidence.',
+            difficulty: item?.difficulty || 'beginner',
+            learningObjective: item?.description || 'Phonics and reading mastery.',
+            estimatedMinutes: item?.estimatedMinutes || 3,
+            recommendationType: 'new',
+            reason: 'Selected from your interactive adventure catalog.',
+            pedagogicalRationale: 'Active practice strengthens orthographic mapping.',
+            prerequisites: [],
+            actionIcon: item?.icon || '🎮',
+            actionBg: item?.colorBg || '#eef8f4',
+          },
+          () => {
+            this.refreshDashboardAfterActivity();
+          }
+        );
+      });
+    });
   }
 
   // -------------------------------------------------------------
@@ -761,6 +857,28 @@ export class DashboardController {
         const statPractice = this.container.querySelector('#statPracticeTime');
         if (statPractice) statPractice.innerHTML = `${updated.practiceMinutes} <small>min</small>`;
 
+        // Record genuine learning attempt to update charts and adaptive engine
+        this.learningPathService.recordAttempt({
+          id: `att_pwm_${Date.now()}`,
+          childId: this.activeChild.id,
+          activityId: 'act_picture_word_match',
+          skillId: 'skill_letter_sounds_basic',
+          activityType: 'word_match',
+          score: 100,
+          accuracy: 1.0,
+          totalQuestions: 1,
+          correctAnswers: 1,
+          incorrectAnswers: 0,
+          attemptsRequired: 1,
+          hintsRequested: 0,
+          correctedAfterHint: 0,
+          durationSeconds: 20,
+          missedItems: [],
+          completedAt: new Date().toISOString(),
+        }).then(() => {
+          this.refreshCharts();
+        });
+
         // Add "Next little game" button
         if (!this.container.querySelector('#btnNextGame')) {
           const nextBtn = document.createElement('button');
@@ -778,6 +896,30 @@ export class DashboardController {
       selected.classList.add('wrong');
       feedback.style.color = '#cc745d';
       feedback.textContent = 'Nice try! Listen to the first sound and try again.';
+
+      if (this.activeChild) {
+        const targetWord = (this.container.querySelector('#targetWord')?.textContent || '').trim();
+        this.learningPathService.recordAttempt({
+          id: `att_pwm_${Date.now()}`,
+          childId: this.activeChild.id,
+          activityId: 'act_picture_word_match',
+          skillId: 'skill_letter_sounds_basic',
+          activityType: 'word_match',
+          score: 50,
+          accuracy: 0.5,
+          totalQuestions: 1,
+          correctAnswers: 0,
+          incorrectAnswers: 1,
+          attemptsRequired: 2,
+          hintsRequested: 0,
+          correctedAfterHint: 0,
+          durationSeconds: 25,
+          missedItems: targetWord ? [targetWord] : [],
+          completedAt: new Date().toISOString(),
+        }).then(() => {
+          this.refreshCharts();
+        });
+      }
     }
   }
 
@@ -1012,48 +1154,10 @@ export class DashboardController {
         'letter_mirror',
         'Letter mirror: b and d'
       );
+      LetterMirrorBDModal.getInstance().start(this.activeChild, () => {
+        this.refreshDashboardAfterActivity();
+      });
     }
-    this.openDashModal(
-      'Letter mirror: b and d',
-      'Look carefully, then choose the letter with its tall line on the left.',
-      `
-      <div class="options" style="max-width:360px; margin:18px auto">
-        <button type="button" class="option" id="btnLetterB">
-          <div class="picture">b</div>
-          <strong>b</strong>
-        </button>
-        <button type="button" class="option" id="btnLetterD">
-          <div class="picture">d</div>
-          <strong>d</strong>
-        </button>
-      </div>
-      <div id="letterFeedback" class="feedback" aria-live="polite"></div>
-    `
-    );
-
-    document.getElementById('btnLetterB')?.addEventListener('click', () => {
-      const fb = document.getElementById('letterFeedback');
-      if (fb) {
-        fb.style.color = '#3b9b75';
-        fb.textContent = 'That is b! Great noticing. +5 points ⭐';
-      }
-      if (this.activeChild) {
-        const prog = this.profileService.getChildProgress(this.activeChild.id);
-        const updated = this.profileService.updateChildProgress(this.activeChild.id, {
-          happyPoints: prog.happyPoints + 5,
-        });
-        const pointsEl = this.container.querySelector('#points');
-        if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
-      }
-    });
-
-    document.getElementById('btnLetterD')?.addEventListener('click', () => {
-      const fb = document.getElementById('letterFeedback');
-      if (fb) {
-        fb.style.color = '#c87961';
-        fb.textContent = 'Look at the tall line. Try once more!';
-      }
-    });
   }
 
   private openBadgeModal(): void {
@@ -1076,68 +1180,7 @@ export class DashboardController {
   }
 
   private openTinyFishFinder(): void {
-    this.openDashModal(
-      'Find a story',
-      'Choose a language and reading level.',
-      `
-      <div class="modal-callout">
-        Offline demo: The stories below match your current level. Live TinyFish public resource discovery is simulated.
-      </div>
-      <form class="modal-form" id="dashResourceForm">
-        <label>Language
-          <select id="dashResourceLang">
-            <option value="Hindi" selected>Hindi</option>
-            <option value="English">English</option>
-            <option value="Punjabi">Punjabi</option>
-            <option value="Bengali">Bengali</option>
-          </select>
-        </label>
-        <label>Reading level
-          <select id="dashResourceGrade">
-            <option>Class 4 · growing reader</option>
-            <option>Class 2 · early reader</option>
-            <option>Class 6 · confident reader</option>
-          </select>
-        </label>
-        <button type="submit">🔎 Find learning resources</button>
-      </form>
-      <div id="dashResourceResults"></div>
-    `
-    );
-
-    const form = document.getElementById('dashResourceForm');
-    form?.addEventListener('submit', e => {
-      e.preventDefault();
-      const resultsEl = document.getElementById('dashResourceResults');
-      if (resultsEl) {
-        resultsEl.innerHTML = `
-          <div class="resource-results">
-            <div class="resource-result">
-              <span class="book">🪁</span>
-              <div>
-                <strong>Sunny and the little kite</strong>
-                <small>Short story · clear sound patterns</small>
-              </div>
-              <button type="button" id="btnResPreview1">Read</button>
-            </div>
-            <div class="resource-result">
-              <span class="book">🐘</span>
-              <div>
-                <strong>Mina and the river</strong>
-                <small>Picture story · nature vocabulary</small>
-              </div>
-              <button type="button" id="btnResPreview2">Read</button>
-            </div>
-          </div>
-        `;
-        document.getElementById('btnResPreview1')?.addEventListener('click', () => {
-          this.openStory('Sunny and the little kite');
-        });
-        document.getElementById('btnResPreview2')?.addEventListener('click', () => {
-          this.openStory('Mina and the river');
-        });
-      }
-    });
+    this.switchPage('resources');
   }
 
   // -------------------------------------------------------------
@@ -1174,7 +1217,50 @@ export class DashboardController {
     }
   }
 
+  private refreshStats(): void {
+    if (!this.activeChild) return;
+    const progress = this.profileService.getChildProgress(this.activeChild.id);
+    const statPracticeTime = this.container.querySelector('#statPracticeTime');
+    const statWordsLearned = this.container.querySelector('#statWordsLearned');
+    const statFluency = this.container.querySelector('#statFluency');
+    const statHappyPoints = this.container.querySelector('#statHappyPoints');
+    const topStreak = this.container.querySelector('#topStreak');
+    const streakText = this.container.querySelector('#streakText');
+
+    if (statPracticeTime) statPracticeTime.innerHTML = `${progress.practiceMinutes} <small>min</small>`;
+    if (statWordsLearned) statWordsLearned.textContent = `${progress.wordsLearned}`;
+    if (statFluency) statFluency.innerHTML = `${progress.fluencyWpm} <small>wpm</small>`;
+    if (statHappyPoints) statHappyPoints.innerHTML = `${progress.happyPoints} <small>pts</small>`;
+    if (topStreak) topStreak.textContent = `🔥 ${progress.streakDays} day streak`;
+    if (streakText) streakText.textContent = `You're on a ${progress.streakDays}-day streak!`;
+  }
+
+  public async refreshCharts(): Promise<void> {
+    if (!this.activeChild) return;
+    await Promise.all([
+      this.homeReadingChart?.refresh(this.activeChild.id),
+      this.progressReadingChart?.refresh(this.activeChild.id),
+    ]);
+
+    const summary = await ReadingChartService.getInstance().getChartSummary(this.activeChild.id, 'week');
+    const accDisplay = summary.overallAccuracy !== null ? `${summary.overallAccuracy}%` : '—';
+    const statAccuracy = this.container.querySelector('#statAccuracy');
+    if (statAccuracy) {
+      statAccuracy.innerHTML = `${accDisplay.replace('%', '')}<small>%</small>`;
+    }
+  }
+
+  public async refreshDashboardAfterActivity(): Promise<void> {
+    if (!this.activeChild) return;
+    this.refreshStats();
+    await this.refreshCharts();
+    if (this.learningJourneyView) {
+      await this.learningJourneyView.render(this.activeChild);
+    }
+  }
+
   public showToast(msg: string): void {
+
     const toast = this.container.querySelector('#toast') as HTMLElement;
     if (!toast) return;
     toast.textContent = msg;
