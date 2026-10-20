@@ -1,309 +1,269 @@
-# DyslexiMate (Sharanga)
+# DyslexiMate 🧠📚
+### Personalized Learning Support for Children with Dyslexia
 
-DyslexiMate is a multilingual, voice-first reading companion designed for children with dyslexia-related reading difficulties. It offers parent-controlled learning profiles, gentle interactive exercises, and accessible reading tools backed by a persistent backend using **Supabase (PostgreSQL + Supabase Auth)**.
+**DyslexiMate** is an AI-powered learning-support platform designed to help children strengthen their reading, phonics, spelling, vocabulary, and comprehension skills through interactive activities and personalized learning experiences.
 
----
+Every child learns differently. DyslexiMate aims to make learning more supportive by using previous activity results and learning progress to recommend appropriate exercises, revisit challenging concepts, and gradually adapt learning difficulty.
 
-## Key Features
-
-- **Production-Minded Persistent Backend (Supabase):**
-  - Authenticated parent accounts with Supabase Auth (email & password with session restoration and email verification support).
-  - Strongly isolated child profiles, learning telemetry, and parent preferences in PostgreSQL.
-  - Strict database Row Level Security (RLS) on all tables: a parent can never view or modify another parent's child data.
-- **Parent-Controlled Child Accounts:**
-  - Secure parent authentication with real Supabase Auth or fallback local demo mode.
-  - Parent-child ownership enforcement: child profiles belong strictly to their authenticated parent (`auth.uid() = parent_id`).
-- **"Who's learning today?" Profile Selector:**
-  - Child-friendly avatar cards with class/grade and preferred learning language (English, Hindi, Punjabi, Bengali).
-  - Seamless child switching without logging out of the parent account.
-- **Grown-Ups Only Parent PIN Gate:**
-  - 4-digit Parent PIN protection for parent settings, profile editing, and deletion.
-  - Attempt-limiting security with 30-second lockout cooldowns after repeated incorrect attempts.
-  - Secure PIN creation and change workflows persisted to database `parent_profiles.parent_pin_hash`.
-- **Child Activity-Time Tracking & Telemetry:**
-  - Real-time active learning duration tracking across practice games, voice spelling, Story Shelf, letter mirror, and general exploration.
-  - Practice sessions persisted directly to the `practice_sessions` table in Supabase.
-  - Background tab visibility listeners and 60-second idle detection to avoid inflated session durations.
-  - Parent Dashboard usage reports (Today, Last 7 Days, Last 30 Days) with category breakdowns and daily practice histograms.
-- **Adaptive AI Personalization Engine:**
-  - **Skill-Based Progression Model:** 10 core developmental domains (letter recognition, phonemic awareness, sound blending & segmentation, syllables & decoding, confused letters, spelling & word construction, high-frequency sight words, reading fluency, comprehension, listening & pronunciation) mapped to 5 difficulty levels with prerequisites.
-  - **Transparent Mastery Model:** Exponential Moving Average (EMA) accuracy tracking, confidence scaling ($1 - e^{-n/2.8}$), struggle/streak tracking, and hint penalty discounting.
-  - **Adaptive Recommendation Engine:** Recommends prerequisite remediation with scaffolded hints when struggles are detected without repeating failed exercises; promotes difficulty on consistent success; schedules spaced reviews for skills idle for $>3$ days.
-  - **Dynamic Learning Paths:** Generates versioned, editable learning paths per child with short-term milestones, current learning goals, and plain-language explanations of adaptations.
-  - **Dual-Mode Persistence:** Fully isolated in Supabase (`child_skill_states` and `child_learning_paths`) with strict RLS (`auth.uid() = parent_id`), with automatic local fallback when offline.
-  - **Server-Side AI Activity Generator:** Cloudflare Worker / Vite dev server endpoint (`POST /api/ai/generate-activity`) generating validated interactive exercises with 100% deterministic fallback (never exposing raw AI errors to children).
-  - **Child & Parent Dashboards:** Interactive "Continue Learning" hero card, roadmap track, touch-friendly interactive activity modal runner, and parent dashboard overview with non-diagnostic disclaimers.
-  - **Mandatory Mobile-First Responsive Design:** Seamlessly adapts across 320px–1920px+ viewports with touch targets $\ge 44$px.
+Our goal is to make reading practice more engaging, accessible, and personalized for every child.
 
 ---
 
-## Database Architecture & Row Level Security (RLS)
+## 👥 Meet Team PINAKA
 
-The persistent database is implemented in PostgreSQL via Supabase with version-controlled migrations:
-- `supabase/migrations/20261020000000_initial_schema.sql`
-- `supabase/schema.sql` (one-click copy/paste for the Supabase Dashboard SQL Editor)
+We are **Team PINAKA**, a team collaborating to build technology-driven solutions for meaningful educational challenges.
 
-### Tables & Relationships
+| Team Member |
+|---|
+| Naynika Rani |
+| Akshat Bhati |
+| Yash Mishra |
+| Sameer Raja |
+| Shaivi Goel |
 
-1. **`public.parent_profiles`**
-   - `id`: UUID Primary Key referencing `auth.users(id) ON DELETE CASCADE`.
-   - `full_name`: Text.
-   - `parent_pin_hash`: Salted SHA-256 hash of the 4-digit Grown-Ups PIN.
-   - `created_at`, `updated_at`: Timestamps with automatic update triggers.
-
-2. **`public.child_profiles`**
-   - `id`: UUID Primary Key (`gen_random_uuid()`).
-   - `parent_id`: UUID Foreign Key referencing `public.parent_profiles(id) ON DELETE CASCADE`.
-   - `display_name`: Text.
-   - `preferred_language`: Text ('English', 'Hindi', 'Punjabi', 'Bengali').
-   - `learning_preferences`: JSONB (avatar, grade, dyslexia font, speech rate, audio pitch, etc.).
-   - `created_at`, `updated_at`: Timestamps.
-
-3. **`public.learning_progress`**
-   - `id`: UUID Primary Key.
-   - `child_id`: UUID Foreign Key referencing `public.child_profiles(id) ON DELETE CASCADE`.
-   - `activity_or_skill_id`: Text.
-   - `completion_status`: Text ('completed', 'in_progress').
-   - `score`: Integer.
-   - `accuracy`: Numeric(5,2).
-   - `duration_seconds`: Integer.
-   - `completed_at`: Timestamptz.
-
-4. **`public.practice_sessions`**
-   - `id`: UUID Primary Key.
-   - `child_id`: UUID Foreign Key referencing `public.child_profiles(id) ON DELETE CASCADE`.
-   - `parent_id`: UUID Foreign Key referencing `public.parent_profiles(id) ON DELETE CASCADE`.
-   - `session_name`: Text.
-   - `started_at`, `ended_at`: Timestamptz.
-   - `duration_seconds`: Integer.
-   - `outcome`: JSONB (category breakdown, telemetry metadata).
-
-5. **`public.account_preferences`**
-   - `id`: UUID Primary Key.
-   - `parent_id`: UUID Unique Foreign Key referencing `public.parent_profiles(id) ON DELETE CASCADE`.
-   - `theme`, `email_notifications`, `sound_effects`, `preferences`: JSONB.
-
-6. **`public.child_skill_states`**
-   - `id`: UUID Primary Key (`gen_random_uuid()`).
-   - `child_id`: UUID Foreign Key referencing `public.child_profiles(id) ON DELETE CASCADE`.
-   - `skill_id`: Text identifier of the learning skill.
-   - `current_level`: Integer (1-5).
-   - `estimated_mastery`: Numeric(4,2) (0.00 to 1.00).
-   - `confidence`: Numeric(4,2) (0.00 to 1.00).
-   - `recent_accuracy`: Numeric(4,2).
-   - `attempts_count`: Integer.
-   - `consecutive_successes`: Integer.
-   - `consecutive_struggles`: Integer.
-   - `recommended_next_action`: Text ('introduce', 'practice', 'reinforce', 'mastered').
-   - `missed_patterns`: JSONB array of recurring misidentified phonemes/words.
-   - `is_provisional`: Boolean.
-
-7. **`public.child_learning_paths`**
-   - `id`: UUID Primary Key (`gen_random_uuid()`).
-   - `child_id`: UUID Foreign Key referencing `public.child_profiles(id) ON DELETE CASCADE` (UNIQUE).
-   - `version`: Integer.
-   - `current_goals`: JSONB array of learning objectives.
-   - `demonstrated_skills`: JSONB array of mastered skill IDs.
-   - `practicing_skills`: JSONB array of skills actively in flight.
-   - `priority_skills`: JSONB array of skills flagged for scaffolded reinforcement.
-   - `recommendations`: JSONB array of ranked `AdaptiveRecommendation` objects.
-   - `review_activities`: JSONB array of spaced-repetition activities.
-   - `milestones`: JSONB array of short-term milestones and progress.
-   - `explanation`: Text plain-language rationale for why the path adapted.
-   - `is_provisional`: Boolean.
-
-### Mandatory Row Level Security (RLS) Policies
-
-All tables enforce PostgreSQL RLS policies to guarantee data isolation:
-- **`parent_profiles`**: Authenticated parents can read/update only their own record (`auth.uid() = id`).
-- **`child_profiles`**: Parents can SELECT, INSERT, UPDATE, DELETE only rows where `auth.uid() = parent_id`.
-- **`learning_progress`**: Parents can access learning records only when the associated child belongs to them:
-  ```sql
-  USING (EXISTS (SELECT 1 FROM public.child_profiles cp WHERE cp.id = learning_progress.child_id AND cp.parent_id = auth.uid()))
-  ```
-- **`child_skill_states` & `child_learning_paths`**: Protected with parent ownership checks:
-  ```sql
-  USING (EXISTS (SELECT 1 FROM public.child_profiles cp WHERE cp.id = child_id AND cp.parent_id = auth.uid()))
-  ```
-- **`practice_sessions`**: Restricted strictly to `auth.uid() = parent_id`.
-- **`account_preferences`**: Restricted strictly to `auth.uid() = parent_id`.
-- **Automated Auth Trigger**: An `AFTER INSERT ON auth.users` trigger (`handle_new_user`) automatically provisions the corresponding `parent_profiles` row to eliminate race conditions.
+Together, we are developing DyslexiMate to explore how adaptive learning, artificial intelligence, and accessible design can support children in their learning journeys.
 
 ---
 
-## Environment Configuration
+## ✨ Key Features
 
-Create a `.env` file in the project root based on `.env.example`:
+### 🧠 Adaptive AI Learning
+- Personalized learning paths informed by previous activity results.
+- Recommendations targeting skills that need additional practice.
+- Gradual difficulty adjustments based on observed performance.
+- AI-assisted activity generation where configured.
+- Learning recommendations designed to evolve as the child progresses.
 
-```bash
-cp .env.example .env
-```
+### 📈 Reading Progress Tracking
+- Reading accuracy calculated from recorded attempts.
+- Progress visualization across different time ranges.
+- Learning-session history and activity tracking.
+- Data-driven progress charts that reflect actual performance.
+- Support for identifying skills that may benefit from additional practice.
 
-Set your Supabase credentials:
+### 🔤 Interactive Learning Activities
+- **B/D Letter Mirror:** practice distinguishing lowercase `b` and `d`.
+- Letter-sound association and sound blending.
+- Word building and missing-letter exercises.
+- Spelling and vocabulary practice.
+- Rhyming and syllable exercises.
+- Reading comprehension and listening activities.
 
-```ini
-# Supabase Configuration
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-publishable-key
-```
+### 👨‍👩‍👧 Parent Progress Insights
+- Child learning profiles and progress summaries.
+- Activity history and skill-level insights.
+- Recommendations for future practice.
+- Visibility into learning goals and areas needing further support, where implemented.
 
-> **Security Note:** Never commit `.env` or expose the Supabase `service_role` key in frontend code. The `.env` file is included in `.gitignore`.
+### 🌐 Educational Resource Discovery
+- TinyFish integration for discovering relevant educational resources, when configured.
+- Source links and resource information.
+- Additional reading material to complement structured learning activities.
 
-### Deploying to Cloudflare Pages
-
-When deploying via Cloudflare Pages:
-1. Open your project in the **Cloudflare Dashboard**.
-2. Navigate to **Settings** > **Environment variables**.
-3. Under **Production** (and **Preview** if desired), add:
-   - `VITE_SUPABASE_URL`: Your Supabase Project URL (`https://<project-ref>.supabase.co`).
-   - `VITE_SUPABASE_ANON_KEY`: Your Supabase Project Anon/Publishable API Key.
-4. Save and trigger a deployment. Cloudflare Pages will inject these environment variables during `vite build`.
+### ♿ Accessibility and Responsive Design
+- Clear, uncluttered learning interfaces.
+- Responsive layouts for mobile, tablet, laptop, and desktop.
+- Supportive feedback during practice.
+- Dyslexia-conscious reading experiences and accessibility preferences, where implemented.
 
 ---
 
-## Setting Up Supabase Database
+## 🛠️ Technology Stack
 
-### Option A: Using the Supabase Dashboard (Recommended)
+The project uses the following technologies where configured in the current implementation:
 
-1. Sign in to your [Supabase Dashboard](https://supabase.com/dashboard).
-2. Create a new project (e.g., `DyslexiMate`).
-3. Click on **SQL Editor** in the left sidebar.
-4. Copy the entire contents of [`supabase/schema.sql`](supabase/schema.sql) and paste it into the editor.
-5. Click **Run**. This creates all tables, foreign keys, triggers, and Row Level Security policies.
-6. Navigate to **Project Settings** > **API** to copy your **Project URL** and **anon public key** into your `.env` file.
+- **TypeScript** — application logic and type safety.
+- **Vite** — development server and production build tooling.
+- **Supabase** — authentication, database, and persistent learning data where configured.
+- **TinyFish** — educational resource discovery.
+- **AI services** — assistance with learning activities and personalization where configured.
+- **Cloudflare Workers** — application deployment and server-side functionality where configured.
 
-### Option B: Using the Supabase CLI
+---
 
-```bash
-# Log in to Supabase CLI
-npx supabase login
+## 🏗️ Project Structure
 
-# Link your project
-npx supabase link --project-ref your-project-ref
+The repository includes application services, UI components, type definitions, styling, and database configuration. The structure may evolve as development continues.
 
-# Apply all migrations
-npx supabase db push
+```text
+Sharanga/
+├── src/
+│   ├── services/
+│   ├── types/
+│   ├── ui/
+│   └── styles/
+├── supabase/
+│   ├── migrations/
+│   └── schema.sql
+├── scripts/
+├── package.json
+├── vite.config.ts
+├── wrangler.json
+└── README.md
 ```
 
 ---
 
-## Educational Resource Finder (Powered by TinyFish Web Agent)
-
-DyslexiMate integrates **TinyFish** to discover publicly accessible educational materials across the web, including reading exercises, phonics activities, educational games, and practice worksheets.
-
-### What TinyFish Does in DyslexiMate
-- **Public Educational Discovery**: Searches across open educational websites for learning materials tailored to a child's learning topic, grade level, and preferred language.
-- **Resource Categorization**: Inters and tags resource types (`reading_exercise`, `phonics_activity`, `educational_game`, `worksheet`).
-- **Safe & Factual Display**: Presents the resource title, source domain, verified external link, factual summary, and grade suitability.
-- **Educational Suggestion Disclaimer**: Clearly informs parents that resources are suggestions and have not been clinically evaluated for dyslexia adaptation.
-
-### Architecture & Request Flow
-
-```
-[Browser Client: DyslexiMate UI]
-           │
-           ▼
-[POST /api/tinyfish/search] ── (JSON body: topic, grade, resourceType, language)
-           │
-           ├─ Local Dev: Vite Middleware (vite.config.ts) using process.env.TINYFISH_API_KEY
-           │
-           └─ Production: Cloudflare Worker (src/worker/index.ts) using env.TINYFISH_API_KEY
-                       │
-                       ▼ (Server-side only with X-API-Key header)
-           [TinyFish API: https://api.search.tinyfish.ai]
-                       │
-                       ▼ (JSON results)
-[Validated & Sanitized EducationalResource List returned to UI]
-```
-
-### Security & Credential Protection
-- **Server-Side Only**: `TINYFISH_API_KEY` is strictly kept on the server and is **never** exposed in frontend code, client bundles, network responses, or `VITE_*` environment variables.
-- **Honest Status Reporting**: When `TINYFISH_API_KEY` is not yet configured, the `/api/tinyfish/status` endpoint reports `{ configured: false }` and the UI presents clear configuration instructions without fabricating fake mock results.
-- **URL Sanitization**: All retrieved URLs are validated for `http:` / `https:` protocols before rendering to protect learners against unsafe protocols or scripts.
-
-### Environment Variables
-| Variable | Scope | Description |
-|---|---|---|
-| `VITE_SUPABASE_URL` | Frontend | Supabase Project URL |
-| `VITE_SUPABASE_ANON_KEY` | Frontend | Supabase Anonymous/Publishable API Key |
-| `TINYFISH_API_KEY` | Server-Side Only | Secret API Key for TinyFish Web Agent |
-
-### Configuring the TinyFish API Key
-1. **Local Development**:
-   Add to your local `.env` file (read securely by Vite development middleware):
-   ```ini
-   TINYFISH_API_KEY=your-actual-tinyfish-api-key
-   ```
-2. **Cloudflare Workers Production**:
-   Upload the secret securely using Wrangler:
-   ```bash
-   npx wrangler secret put TINYFISH_API_KEY
-   ```
-
----
-
-## Local Development & Testing
+## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- npm (v9+)
 
-### Installation
+- Node.js and npm
+- Git
+- A Supabase project, if persistent database features are required
+- TinyFish API credentials, if live resource discovery is required
+- Cloudflare authentication, if deploying through Wrangler
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Akshatbhati31/Sharanga.git
+cd Sharanga
+```
+
+### 2. Install dependencies
+
 ```bash
 npm install
 ```
 
-### Development Server
-Start the local development server:
+### 3. Configure environment variables
+
+Configure the environment variables required by the existing application.
+
+For local server-side TinyFish development, a local `.dev.vars` file may contain:
+
+```env
+TINYFISH_API_KEY=<your_tinyfish_api_key>
+```
+
+Replace the placeholder locally with your own credential. Never commit real credentials.
+
+If Supabase or other AI services are enabled, configure their required variables according to the existing project implementation.
+
+**Security rules:**
+- Never commit `.dev.vars` or private `.env` files.
+- Never expose API keys, database passwords, service-role keys, or private tokens in frontend code.
+- Keep `.env.example` limited to variable names and placeholder values.
+- Configure production secrets through the appropriate server-side environment.
+
+### 4. Start the development server
+
 ```bash
 npm run dev
 ```
-The application runs locally on **`http://localhost:5173/`**.
 
-### Testing the TinyFish Endpoint Locally
-1. Check service status:
-   ```bash
-   curl http://localhost:5173/api/tinyfish/status
-   ```
-2. Test educational search:
-   ```bash
-   curl -X POST http://localhost:5173/api/tinyfish/search \
-     -H "Content-Type: application/json" \
-     -d '{"topic": "phonics sound blending", "grade": "Class 2", "resourceType": "phonics_activity"}'
-   ```
-3. Test Adaptive AI activity generation:
-   ```bash
-   curl -X POST http://localhost:5173/api/ai/generate-activity \
-     -H "Content-Type: application/json" \
-     -d '{"skillId": "skill_confused_letters_bd", "difficulty": "beginner", "language": "English"}'
-   ```
+Open the local URL printed in the terminal, usually `http://localhost:5173/`.
 
-### Running Automated Verification Suite
-Run the test suite (192 automated tests verifying Supabase auth, RLS policies, multi-child isolation, active telemetry, TinyFish web search, Adaptive AI Personalization Engine, Dynamic Reading Accuracy Chart, and B/D Letter Mirror):
+### 5. Run tests
+
 ```bash
 npm test
 ```
 
-### Type Checking & Production Build
+### 6. Create a production build
+
 ```bash
-npm run typecheck
 npm run build
 ```
 
-### Cloudflare Worker Deployment
-Deploy the full-stack application (frontend static assets + `/api/*` worker routes) to Cloudflare:
-```bash
-# Dry run verification
-npx wrangler deploy --dry-run
-
-# Production deployment
-npm run deploy
-```
+Run only the scripts available in the project's `package.json`. External services may require additional configuration before their functionality can be tested.
 
 ---
 
-## Known Limitations
-1. **Public Web Availability**: TinyFish web discovery retrieves only publicly accessible educational websites. Authenticated or subscription-walled materials are not retrieved.
-2. **Medical & Diagnostic Disclaimer**: Materials surfaced by the Educational Resource Finder are general learning suggestions. DyslexiMate does not make clinical, medical, or diagnostic claims regarding third-party external resources.
-3. **Rate Limits**: Searches are subject to TinyFish API rate limits. The application handles `429 Too Many Requests` responses with informative cooldown notices.
+## 🗄️ Database Configuration
 
+Supabase can provide persistent storage for child profiles, learning progress, and practice-session history.
+
+To configure it:
+
+1. Create or select a Supabase project.
+2. Configure the required environment variables.
+3. Review the existing schema and migration files.
+4. Apply the appropriate migrations.
+5. Verify authentication and Row Level Security policies.
+6. Test that each child can access only their authorized learning data.
+
+Persistent personalization depends on the database being correctly configured and connected.
+
+---
+
+## ☁️ Deployment
+
+The project supports deployment through Cloudflare Workers using its Wrangler configuration, where configured.
+
+Authenticate with Cloudflare:
+
+```bash
+npx wrangler login
+```
+
+Build the application:
+
+```bash
+npm run build
+```
+
+Deploy using the project's existing configuration:
+
+```bash
+npx wrangler deploy
+```
+
+Configure required server-side secrets in the appropriate Cloudflare environment before enabling integrations that depend on them. Never include actual secret values in this README or in source control.
+
+---
+
+## 🔐 Privacy and Responsible AI
+
+DyslexiMate is intended to support learning. It does not diagnose dyslexia or replace qualified educators, reading specialists, or healthcare professionals.
+
+Our development priorities include:
+
+- Protecting children's learning records through appropriate access controls.
+- Collecting only information necessary for the learning experience.
+- Validating AI-generated content for age-appropriateness and correctness.
+- Reflecting actual learning attempts rather than fabricating progress.
+- Treating speech-recognition results cautiously.
+- Respecting educational resource attribution and applicable access restrictions.
+- Providing helpful feedback without shaming or discouraging children.
+
+---
+
+## 🗺️ Future Improvements
+
+Potential areas for continued development include:
+
+- More personalized reading and phonics exercises.
+- Improved mastery estimation and spaced revision.
+- Expanded Hindi and English learning support.
+- Enhanced parent and teacher reporting.
+- More educational stories and reading resources.
+- Additional accessibility and offline-learning features.
+- Broader automated testing and usability validation.
+
+These are development goals and should not be interpreted as completed features unless implemented.
+
+---
+
+## 🤝 Contributing
+
+We welcome ideas, feedback, and contributions that improve the learning experience.
+
+1. Create a feature branch.
+2. Make focused changes.
+3. Run relevant tests and the production build.
+4. Review changes for security and regressions.
+5. Submit a pull request describing the improvements.
+
+---
+
+## 📄 License
+
+A license has not been specified in this README. Add the project's chosen license before distributing it under an open-source license.
+
+---
+
+**DyslexiMate — Every child deserves a learning path that adapts to them.**
+
+**Built with care by Team PINAKA.**
