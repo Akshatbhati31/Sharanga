@@ -48,6 +48,13 @@ export class AuthView {
             <div class="brand-name">Dyslexi<span>Mate</span></div>
           </div>
           <p>A gentle, voice-first reading companion for little learners with dyslexia.</p>
+          <div style="margin-top: 8px;">
+            ${
+              this.authService.isLiveDatabaseConnected()
+                ? '<span class="tag" style="background:#e6f8ee; color:#18794e; border:1px solid #b7ebc9; font-weight:700; font-size:11px;">🟢 Supabase Live Database & Auth Connected</span>'
+                : '<span class="tag" style="background:#f4f6f4; color:#5c6b61; border:1px solid var(--line); font-weight:700; font-size:11px;">⚡ Local / Demo Engine Active</span>'
+            }
+          </div>
         </header>
 
         <section class="auth-card" aria-labelledby="entryTitle">

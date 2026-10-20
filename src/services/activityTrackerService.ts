@@ -4,6 +4,7 @@ import type {
   ActivitySummaryReport,
 } from '../types/auth';
 import { StorageService } from './storageService';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface ActiveSession {
   parentId: string;
@@ -135,23 +136,98 @@ export class ActivityTrackerService {
 
     // Only record sessions that lasted at least 3 seconds
     if (accumulatedSeconds >= 3) {
+      const now = new Date();
+      const startDate = new Date(startTime);
+
       const record: ActivityLogRecord = {
         id: 'act-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
         parentId,
         childId,
         category,
         activityTitle,
-        startTime: new Date(startTime).toISOString(),
-        endTime: new Date().toISOString(),
+        startTime: startDate.toISOString(),
+        endTime: now.toISOString(),
         durationSeconds: accumulatedSeconds,
       };
 
       this.storage.saveActivity(record);
+
+      // Persist practice session to Supabase if live
+      const sb = supabase;
+      if (
+        isSupabaseConfigured() &&
+        sb &&
+        !parentId.startsWith('parent-demo-') &&
+        !childId.startsWith('child-demo-')
+      ) {
+        Promise.resolve(
+          sb.from('practice_sessions').insert({
+            child_id: childId,
+            parent_id: parentId,
+            session_name: activityTitle,
+            started_at: startDate.toISOString(),
+            ended_at: now.toISOString(),
+            duration_seconds: accumulatedSeconds,
+            outcome: {
+              category,
+              recordedAt: now.toISOString(),
+            },
+          })
+        )
+          .then(res => {
+            if (res.error) {
+              console.warn('Failed to persist practice session to Supabase:', res.error.message);
+            }
+          })
+          .catch((err: unknown) => {
+            console.warn('Exception persisting practice session to Supabase:', err);
+          });
+      }
     }
   }
 
   public getActiveSession(): ActiveSession | null {
     return this.currentSession;
+  }
+
+  public async syncSessionsFromDatabase(childId: string): Promise<void> {
+    const sb = supabase;
+    if (
+      !isSupabaseConfigured() ||
+      !sb ||
+      childId.startsWith('child-demo-') ||
+      childId.startsWith('child-aanya') ||
+      childId.startsWith('child-kabir')
+    ) {
+      return;
+    }
+
+    try {
+      const { data, error } = await sb
+        .from('practice_sessions')
+        .select('*')
+        .eq('child_id', childId)
+        .order('started_at', { ascending: false });
+
+      if (error || !data) return;
+
+      data.forEach(row => {
+        const outcome = row.outcome || {};
+        const record: ActivityLogRecord = {
+          id: row.id,
+          parentId: row.parent_id,
+          childId: row.child_id,
+          category: (outcome.category as ActivityCategory) || 'practice_game',
+          activityTitle: row.session_name,
+          startTime: row.started_at,
+          endTime: row.ended_at || row.started_at,
+          durationSeconds: row.duration_seconds || 0,
+        };
+        this.storage.saveActivity(record);
+      });
+    } catch (err) {
+      console.warn('Failed to sync practice sessions from database:', err);
+    }
   }
 
   // -------------------------------------------------------------
@@ -232,9 +308,10 @@ export class ActivityTrackerService {
     for (let i = numDays - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
-      const dayLabel = period === 'today'
-        ? 'Today'
-        : d.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayLabel =
+        period === 'today'
+          ? 'Today'
+          : d.toLocaleDateString('en-US', { weekday: 'short' });
 
       const daySeconds = filtered
         .filter(r => r.startTime.startsWith(dateStr))
