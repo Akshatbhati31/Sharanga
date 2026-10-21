@@ -10,8 +10,7 @@
     "deploy": "wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npx -y tsx scripts/verify-flows.ts",
-    "vercel-build": "npm run build"
+    "test": "npx -y tsx scripts/verify-flows.ts"
   },
   "repository": {
     "type": "git",
@@ -31,6 +30,17 @@
     "wrangler": "^4.151.3"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0"
+    "@supabase/supabase-js": "^2.118.0",
+    "@types/node": "^26.6.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261019.1": true
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   }
 }

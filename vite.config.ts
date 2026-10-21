@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
-import { handleTinyFishSearch, validateSearchParams } from './src/worker/tinyfishHandler';
-import { handleGenerateActivity, type GenerateActivityRequest } from './src/worker/aiHandler';
+import { handleTinyFishSearch, validateSearchParams } from './src/worker/tinyfishHandler.ts';
+import { handleGenerateActivity, type GenerateActivityRequest } from './src/worker/aiHandler.ts';
 
 
 export default defineConfig({

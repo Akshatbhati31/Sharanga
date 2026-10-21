@@ -1,4 +1,4 @@
-import type { InteractiveActivityContent, ActivityDifficulty } from '../types/adaptive';
+import type { InteractiveActivityContent, ActivityDifficulty } from '../types/adaptive.ts';
 
 export interface GenerateActivityRequest {
   skillId: string;

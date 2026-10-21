@@ -3,7 +3,7 @@ import type {
   ResourceSearchParams,
   ResourceType,
   TinyFishSearchResponse,
-} from '../types/tinyfish';
+} from '../types/tinyfish.ts';
 
 export const MEDICAL_ACCESSIBILITY_DISCLAIMER =
   'Educational Suggestion: Resources are retrieved from publicly accessible educational sources for learning practice. Accessibility or dyslexia adaptation has not been clinically evaluated by DyslexiMate.';
