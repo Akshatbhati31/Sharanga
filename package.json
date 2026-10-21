@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npx -y tsx scripts/verify-flows.ts"
+    "test": "npx -y tsx scripts/verify-flows.ts",
+    "vercel-build": "npm run build"
   },
   "repository": {
     "type": "git",

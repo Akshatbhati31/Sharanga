@@ -12,6 +12,7 @@ export interface Env {
     fetch: (req: Request) => Promise<Response>;
   };
   TINYFISH_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   AI_API_KEY?: string;
 }
 
@@ -39,7 +40,8 @@ export default {
       const configured = Boolean(
         env.TINYFISH_API_KEY &&
         env.TINYFISH_API_KEY.trim() !== '' &&
-        !env.TINYFISH_API_KEY.includes('placeholder')
+        !env.TINYFISH_API_KEY.includes('placeholder') &&
+        env.TINYFISH_API_KEY !== 'your-tinyfish-api-key'
       );
       return new Response(
         JSON.stringify({
@@ -140,7 +142,7 @@ export default {
         }
       }
 
-      const generated = await handleGenerateActivity(reqPayload, env.AI_API_KEY);
+      const generated = await handleGenerateActivity(reqPayload, env.GEMINI_API_KEY || env.AI_API_KEY);
       return new Response(JSON.stringify({ success: true, activity: generated }), {
         status: 200,
         headers: {

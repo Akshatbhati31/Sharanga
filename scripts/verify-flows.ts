@@ -28,6 +28,11 @@ import { ReadingChartService } from '../src/services/readingChartService';
 import { ACTIVITY_CATALOG } from '../src/services/activityCatalog';
 import fs from 'fs';
 import path from 'path';
+import vercelStatusHandler from '../api/tinyfish/status';
+import vercelSearchHandler from '../api/tinyfish/search';
+import vercelResourcesHandler from '../api/resources/search';
+import vercelAiHandler from '../api/ai/generate-activity';
+
 
 
 
@@ -988,6 +993,223 @@ async function runTests() {
     assert(act.items.some(i => i.isCorrect), `Skill ${sId} activity contains a verified correct answer`);
     assert(Boolean(act.stepByStepHint), `Skill ${sId} activity provides a step-by-step hint`);
   }
+
+  // =========================================================================
+  // Test Group 10: Vercel Serverless Routes & Gemini AI Migration
+  // =========================================================================
+  console.log(`\n--- Test Group 10: Vercel Serverless Routes & Gemini AI Migration ---`);
+
+  // Helper to create mock Node.js res object for Vercel Serverless testing
+  function createMockNodeRes() {
+    let statusCode = 200;
+    let ended = false;
+    let responseData: any = null;
+    const headers: Record<string, string> = {};
+
+    const resObj = {
+      statusCode,
+      setHeader(name: string, val: string) {
+        headers[name] = val;
+        return resObj;
+      },
+      status(code: number) {
+        statusCode = code;
+        resObj.statusCode = code;
+        return resObj;
+      },
+      json(data: any) {
+        responseData = data;
+        ended = true;
+        return resObj;
+      },
+      end(data?: any) {
+        if (data) responseData = data;
+        ended = true;
+        return resObj;
+      },
+      _getData: () => responseData,
+      _getStatus: () => statusCode,
+      _getHeaders: () => headers,
+    };
+    return resObj;
+  }
+
+  // 10.1: Vercel GET /api/tinyfish/status (Web Request API)
+  const vStatusCorsReq = new Request('http://localhost/api/tinyfish/status', { method: 'OPTIONS' });
+  const vStatusCorsRes = await vercelStatusHandler(vStatusCorsReq);
+  assert(vStatusCorsRes.status === 204, 'Vercel status handler OPTIONS preflight returns 204');
+  assert(vStatusCorsRes.headers.get('Access-Control-Allow-Origin') === '*', 'Vercel status handler CORS header present');
+
+  const vStatusReq = new Request('http://localhost/api/tinyfish/status', { method: 'GET' });
+  const vStatusRes = await vercelStatusHandler(vStatusReq);
+  assert(vStatusRes.status === 200, 'Vercel status handler GET returns 200');
+  const vStatusJson = await vStatusRes.json();
+  assert(vStatusJson.service === 'TinyFish', 'Vercel status handler returns service: TinyFish');
+  assert(typeof vStatusJson.configured === 'boolean', 'Vercel status handler returns boolean configured');
+
+  // 10.2: Vercel GET /api/tinyfish/status (Node.js Request/Response API)
+  const nodeRes1 = createMockNodeRes();
+  await vercelStatusHandler({ method: 'GET' }, nodeRes1);
+  assert(nodeRes1._getStatus() === 200, 'Vercel Node status handler returns 200');
+  assert(nodeRes1._getData()?.service === 'TinyFish', 'Vercel Node status handler returns service TinyFish');
+
+  // 10.3: Vercel POST /api/tinyfish/search (Web Request API)
+  const vSearchCors = await vercelSearchHandler(new Request('http://localhost/api/tinyfish/search', { method: 'OPTIONS' }));
+  assert(vSearchCors.status === 204, 'Vercel search handler OPTIONS preflight returns 204');
+
+  const vSearchBadJson = await vercelSearchHandler(new Request('http://localhost/api/tinyfish/search', {
+    method: 'POST',
+    body: 'not-json',
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  assert(vSearchBadJson.status === 400, 'Vercel search handler invalid JSON returns 400');
+
+  const vSearchEmpty = await vercelSearchHandler(new Request('http://localhost/api/tinyfish/search', {
+    method: 'POST',
+    body: JSON.stringify({ topic: '' }),
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  assert(vSearchEmpty.status === 400, 'Vercel search handler empty topic returns 400');
+
+  // 10.4: Vercel POST /api/resources/search (forwarding alias)
+  const vResourcesCors = await vercelResourcesHandler(new Request('http://localhost/api/resources/search', { method: 'OPTIONS' }));
+  assert(vResourcesCors.status === 204, 'Vercel resources handler OPTIONS preflight returns 204');
+
+  // 10.5: Vercel POST /api/ai/generate-activity (Web Request API)
+  const vAiCors = await vercelAiHandler(new Request('http://localhost/api/ai/generate-activity', { method: 'OPTIONS' }));
+  assert(vAiCors.status === 204, 'Vercel AI activity handler OPTIONS preflight returns 204');
+
+  const vAiReq = new Request('http://localhost/api/ai/generate-activity', {
+    method: 'POST',
+    body: JSON.stringify({ skillId: 'skill_cvc_blending', difficulty: 'beginner', language: 'English' }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const vAiRes = await vercelAiHandler(vAiReq);
+  assert(vAiRes.status === 200, 'Vercel AI activity handler returns 200');
+  const vAiJson = await vAiRes.json();
+  assert(vAiJson.success === true, 'Vercel AI activity handler returns success: true');
+  assert(vAiJson.activity.items.length >= 2, 'Vercel AI activity handler returns at least 2 items');
+  assert(vAiJson.activity.items.some((i: any) => i.isCorrect), 'Vercel AI activity handler returns verified correct choice');
+
+  // 10.6: Vercel POST /api/ai/generate-activity (Node.js Request/Response API)
+  const nodeResAi = createMockNodeRes();
+  await vercelAiHandler({
+    method: 'POST',
+    body: { skillId: 'skill_confused_letters_bd', difficulty: 'beginner', language: 'English' },
+  }, nodeResAi);
+  assert(nodeResAi._getStatus() === 200, 'Vercel Node AI handler returns 200');
+  assert(nodeResAi._getData()?.success === true, 'Vercel Node AI handler returns success: true');
+  assert(nodeResAi._getData()?.activity?.skillId === 'skill_confused_letters_bd', 'Vercel Node AI handler returns matched skill');
+
+  // 10.7: Google Gemini AI Model Parsing with Structured JSON
+  const mockGeminiJson = JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{
+          text: JSON.stringify({
+            id: 'act_gemini_test_1',
+            skillId: 'skill_cvc_blending',
+            title: 'Gemini Phonics Fusion 🌟',
+            instruction: 'Blend the sounds together: c - a - t',
+            difficulty: 'beginner',
+            language: 'English',
+            type: 'phonics_blend',
+            prompt: 'Which word matches the blended sounds?',
+            items: [
+              { id: 'opt_cat', text: 'cat', visual: '🐱', isCorrect: true, feedbackHint: 'Wonderful blending! c-a-t makes cat!' },
+              { id: 'opt_dog', text: 'dog', visual: '🐶', isCorrect: false, feedbackHint: 'Listen closely: /k/ /æ/ /t/.' }
+            ],
+            stepByStepHint: 'Say each sound: /k/... /æ/... /t/... cat!'
+          })
+        }]
+      }
+    }]
+  });
+
+  const mockGeminiFetch: typeof fetch = async () => new Response(mockGeminiJson, {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const geminiGenerated = await handleGenerateActivity(
+    { skillId: 'skill_cvc_blending', difficulty: 'beginner', language: 'English' },
+    'mock-gemini-key',
+    mockGeminiFetch
+  );
+  assert(geminiGenerated.id === 'act_gemini_test_1', 'Gemini handler parses structured JSON successfully');
+  assert(geminiGenerated.title === 'Gemini Phonics Fusion 🌟', 'Gemini handler preserves generated title');
+  assert(geminiGenerated.items.length === 2, 'Gemini handler includes generated items');
+  assert(geminiGenerated.items[0].isCorrect === true, 'Gemini handler verifies correct choice');
+
+  // 10.8: Google Gemini AI with Markdown Code Fences (```json ... ```)
+  const mockMarkdownFencedJson = JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{
+          text: '```json\n' + JSON.stringify({
+            id: 'act_gemini_fence_test',
+            skillId: 'skill_letter_sounds_basic',
+            title: 'Fenced Gemini Activity',
+            instruction: 'Find the letter sound for s:',
+            difficulty: 'beginner',
+            language: 'English',
+            type: 'word_match',
+            prompt: 'Which word starts with s?',
+            items: [
+              { id: 'opt_sun', text: 'Sun', visual: '☀️', isCorrect: true, feedbackHint: 'Super! S is for Sun!' },
+              { id: 'opt_moon', text: 'Moon', visual: '🌙', isCorrect: false, feedbackHint: 'Moon starts with M.' }
+            ],
+            stepByStepHint: 'Make the snake sound: sssss.'
+          }) + '\n```'
+        }]
+      }
+    }]
+  });
+
+  const mockFenceFetch: typeof fetch = async () => new Response(mockMarkdownFencedJson, {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const fencedGenerated = await handleGenerateActivity(
+    { skillId: 'skill_letter_sounds_basic', difficulty: 'beginner', language: 'English' },
+    'mock-gemini-key',
+    mockFenceFetch
+  );
+  assert(fencedGenerated.id === 'act_gemini_fence_test', 'Gemini handler cleanly strips markdown code fences');
+  assert(fencedGenerated.title === 'Fenced Gemini Activity', 'Gemini handler validates fenced activity content');
+
+  // 10.9: Google Gemini HTTP 429 Quota Exhaustion Fallback
+  const mock429Fetch: typeof fetch = async () => new Response(JSON.stringify({
+    error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).' }
+  }), {
+    status: 429,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const quotaFallback = await handleGenerateActivity(
+    { skillId: 'skill_confused_letters_bd', difficulty: 'beginner', language: 'English' },
+    'mock-gemini-key',
+    mock429Fetch
+  );
+  assert(quotaFallback.skillId === 'skill_confused_letters_bd', 'Gemini 429 quota exhaustion gracefully falls back to deterministic curriculum');
+  assert(quotaFallback.items.length >= 2, 'Quota fallback provides at least 2 valid items');
+  assert(quotaFallback.items.some(i => i.isCorrect), 'Quota fallback includes a verified correct choice');
+
+  // 10.10: Google Gemini Abort Timeout Fallback
+  const mockGeminiTimeoutFetch: typeof fetch = async () => {
+    const error = new Error('The operation was aborted');
+    error.name = 'AbortError';
+    throw error;
+  };
+
+  const timeoutFallback = await handleGenerateActivity(
+    { skillId: 'skill_spelling_cvc', difficulty: 'intermediate', language: 'English' },
+    'mock-gemini-key',
+    mockGeminiTimeoutFetch
+  );
+  assert(timeoutFallback.skillId === 'skill_spelling_cvc', 'Gemini network timeout gracefully falls back to deterministic curriculum');
+  assert(Boolean(timeoutFallback.stepByStepHint), 'Timeout fallback provides step-by-step hint');
 
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);

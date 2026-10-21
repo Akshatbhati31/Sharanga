@@ -156,8 +156,15 @@ export async function handleTinyFishSearch(
 ): Promise<TinyFishSearchResponse> {
   const query = buildEducationalQuery(params);
 
+  const resolvedKey =
+    (apiKey && apiKey.trim() !== '' && !apiKey.includes('placeholder') && apiKey !== 'your-tinyfish-api-key')
+      ? apiKey.trim()
+      : (typeof process !== 'undefined' && process.env?.TINYFISH_API_KEY && !process.env.TINYFISH_API_KEY.includes('placeholder') && process.env.TINYFISH_API_KEY !== 'your-tinyfish-api-key')
+        ? process.env.TINYFISH_API_KEY.trim()
+        : undefined;
+
   // If TinyFish API key is missing on the server, report honest unconfigured state
-  if (!apiKey || apiKey.trim() === '' || apiKey.includes('placeholder') || apiKey === 'your-tinyfish-api-key') {
+  if (!resolvedKey) {
     return {
       success: false,
       configured: false,
@@ -165,7 +172,7 @@ export async function handleTinyFishSearch(
       totalResults: 0,
       resources: [],
       error:
-        'TinyFish API key is not configured on the server. Please set TINYFISH_API_KEY in your Cloudflare Worker environment or server configuration.',
+        'TinyFish API key is not configured on the server. Please set TINYFISH_API_KEY in your Vercel Project Settings (Environment Variables) or local server configuration.',
       disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER,
     };
   }
@@ -179,7 +186,7 @@ export async function handleTinyFishSearch(
     const res = await fetchFn(endpoint, {
       method: 'GET',
       headers: {
-        'X-API-Key': apiKey.trim(),
+        'X-API-Key': resolvedKey,
         'Accept': 'application/json',
       },
       signal: controller.signal,

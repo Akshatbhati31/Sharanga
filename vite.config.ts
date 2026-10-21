@@ -16,7 +16,7 @@ export default defineConfig({
           if (parsedUrl.pathname === '/api/tinyfish/status') {
             const apiKey = process.env.TINYFISH_API_KEY;
             const configured = Boolean(
-              apiKey && apiKey.trim() !== '' && !apiKey.includes('placeholder')
+              apiKey && apiKey.trim() !== '' && !apiKey.includes('placeholder') && apiKey !== 'your-tinyfish-api-key'
             );
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ status: 'ok', service: 'TinyFish', configured }));
@@ -118,7 +118,7 @@ export default defineConfig({
 
             const activity = await handleGenerateActivity(
               reqPayload,
-              process.env.AI_API_KEY
+              process.env.GEMINI_API_KEY || process.env.AI_API_KEY
             );
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ success: true, activity }));
