@@ -1,4 +1,4 @@
-import { handleGenerateActivity, type GenerateActivityRequest } from '../../src/worker/aiHandler';
+import { handleGenerateActivity, type GenerateActivityRequest } from '../../src/worker/aiHandler.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',

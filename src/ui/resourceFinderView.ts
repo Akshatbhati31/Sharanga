@@ -438,8 +438,16 @@ export class ResourceFinderView {
     `;
   }
 
-  private escapeHtml(str: string): string {
-    if (!str) return '';
+  private escapeHtml(val: unknown): string {
+    if (val === null || val === undefined) return '';
+    let str: string;
+    if (typeof val === 'string') {
+      str = val;
+    } else if (typeof val === 'object' && val !== null && 'message' in (val as any) && typeof (val as any).message === 'string') {
+      str = (val as any).message;
+    } else {
+      str = String(val);
+    }
     return str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')

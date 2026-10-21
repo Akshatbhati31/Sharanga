@@ -50,8 +50,29 @@ export class TinyFishService {
         body: JSON.stringify(params),
       });
 
-      const data = (await res.json()) as TinyFishSearchResponse;
-      return data;
+      const rawData = (await res.json()) as any;
+
+      let errorMessage: string | undefined;
+      if (typeof rawData?.error === 'string') {
+        errorMessage = rawData.error;
+      } else if (typeof rawData?.error === 'object' && rawData.error !== null) {
+        errorMessage = rawData.error.message || rawData.error.code || JSON.stringify(rawData.error);
+      } else if (!res.ok) {
+        errorMessage = `TinyFish service returned error status ${res.status} (${res.statusText || 'Unknown'}).`;
+      }
+
+      return {
+        success: Boolean(rawData?.success),
+        configured: rawData?.configured !== undefined ? Boolean(rawData.configured) : (res.ok && !errorMessage),
+        query: typeof rawData?.query === 'string' ? rawData.query : (params.topic || ''),
+        totalResults: typeof rawData?.totalResults === 'number' ? rawData.totalResults : (Array.isArray(rawData?.resources) ? rawData.resources.length : 0),
+        resources: Array.isArray(rawData?.resources) ? rawData.resources : [],
+        error: errorMessage,
+        disclaimer:
+          typeof rawData?.disclaimer === 'string'
+            ? rawData.disclaimer
+            : 'Educational Suggestion: Resources are retrieved from publicly accessible educational sources for learning practice. Accessibility or dyslexia adaptation has not been clinically evaluated by DyslexiMate.',
+      };
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Network error communicating with resource finder service.';
