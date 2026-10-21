@@ -1,4 +1,4 @@
-import { handleTinyFishSearch, validateSearchParams } from '../../src/worker/tinyfishHandler';
+import { handleTinyFishSearch, validateSearchParams } from '../../src/worker/tinyfishHandler.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',

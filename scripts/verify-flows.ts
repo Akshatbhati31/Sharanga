@@ -1330,6 +1330,76 @@ async function runTests() {
   assert(timeoutFallback.skillId === 'skill_spelling_cvc', 'Gemini network timeout gracefully falls back to deterministic curriculum');
   assert(Boolean(timeoutFallback.stepByStepHint), 'Timeout fallback provides step-by-step hint');
 
+  // 10.11: Vercel Node ESM Module Resolution & Bundled Worker Regression Tests
+  console.log('\n--- Test Group 11: Vercel Node ESM Module Resolution & Runtime Bundling ---');
+
+  // Verify physical bundled JS files exist in src/worker
+  const workerTinyfishJsPath = path.resolve('src/worker/tinyfishHandler.js');
+  const workerAiJsPath = path.resolve('src/worker/aiHandler.js');
+  assert(fs.existsSync(workerTinyfishJsPath), 'Bundled worker tinyfishHandler.js exists on disk');
+  assert(fs.existsSync(workerAiJsPath), 'Bundled worker aiHandler.js exists on disk');
+
+  // Verify dynamic ESM import succeeds in Node without ERR_MODULE_NOT_FOUND
+  const importedTinyfishModule = await import('../src/worker/tinyfishHandler.js');
+  assert(typeof importedTinyfishModule.handleTinyFishSearch === 'function', 'tinyfishHandler.js exports handleTinyFishSearch');
+  assert(typeof importedTinyfishModule.validateSearchParams === 'function', 'tinyfishHandler.js exports validateSearchParams');
+
+  const importedAiModule = await import('../src/worker/aiHandler.js');
+  assert(typeof importedAiModule.handleGenerateActivity === 'function', 'aiHandler.js exports handleGenerateActivity');
+  assert(typeof importedAiModule.validateActivityContent === 'function', 'aiHandler.js exports validateActivityContent');
+
+  // Verify API route files use explicit compatible .js extensions for worker imports
+  const apiSearchContent = fs.readFileSync(path.resolve('api/tinyfish/search.ts'), 'utf8');
+  const apiResourcesContent = fs.readFileSync(path.resolve('api/resources/search.ts'), 'utf8');
+  const apiAiContent = fs.readFileSync(path.resolve('api/ai/generate-activity.ts'), 'utf8');
+
+  assert(apiSearchContent.includes("from '../../src/worker/tinyfishHandler.js'"), 'api/tinyfish/search.ts has explicit .js extension import');
+  assert(apiResourcesContent.includes("from '../../src/worker/tinyfishHandler.js'"), 'api/resources/search.ts has explicit .js extension import');
+  assert(apiAiContent.includes("from '../../src/worker/aiHandler.js'"), 'api/ai/generate-activity.ts has explicit .js extension import');
+
+  // Verify vercel.json includes src/worker in function packaging
+  const vercelJson = JSON.parse(fs.readFileSync(path.resolve('vercel.json'), 'utf8'));
+  assert(Boolean(vercelJson.functions?.['api/**/*.ts']?.includeFiles?.includes('src/worker')), 'vercel.json bundles src/worker in includeFiles');
+
+  // Verify all 4 endpoints respond independently
+  const mockVercelRes = () => {
+    let statusCode = 200;
+    let jsonBody: any = null;
+    let headers: Record<string, string> = {};
+    let ended = false;
+    const resObj = {
+      status: (code: number) => { statusCode = code; return resObj; },
+      json: (data: any) => { jsonBody = data; return resObj; },
+      setHeader: (k: string, v: string) => { headers[k] = v; return resObj; },
+      end: () => { ended = true; return resObj; },
+      getStatusCode: () => statusCode,
+      getBody: () => jsonBody,
+      isEnded: () => ended,
+    };
+    return resObj;
+  };
+
+  // 1. GET /api/tinyfish/status
+  const res1 = mockVercelRes();
+  await vercelStatusHandler({ method: 'GET' }, res1);
+  assert(res1.getStatusCode() === 200 && res1.getBody()?.service === 'TinyFish', 'Endpoint GET /api/tinyfish/status functions independently');
+
+  // 2. POST /api/tinyfish/search
+  const res2 = mockVercelRes();
+  await vercelSearchHandler({ method: 'POST', body: { topic: 'vowels', grade: 'Grade 1' } }, res2);
+  assert(res2.getStatusCode() === 200 && res2.getBody()?.query !== undefined, 'Endpoint POST /api/tinyfish/search functions independently');
+
+  // 3. POST /api/resources/search
+  const res3 = mockVercelRes();
+  await vercelResourcesHandler({ method: 'POST', body: { topic: 'phonics' } }, res3);
+  assert(res3.getStatusCode() === 200 && res3.getBody()?.query !== undefined, 'Endpoint POST /api/resources/search functions independently');
+
+  // 4. POST /api/ai/generate-activity
+  const res4 = mockVercelRes();
+  await vercelAiHandler({ method: 'POST', body: { skillId: 'skill_letter_sounds_basic', difficulty: 'beginner' } }, res4);
+  assert(res4.getStatusCode() === 200 && res4.getBody()?.success === true, 'Endpoint POST /api/ai/generate-activity functions independently');
+
+
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);
   console.log(`==========================================\n`);

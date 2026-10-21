@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build",
     "deploy": "wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
