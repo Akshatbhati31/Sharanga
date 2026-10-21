@@ -1,0 +1,199 @@
+const MEDICAL_ACCESSIBILITY_DISCLAIMER = "Educational Suggestion: Resources are retrieved from publicly accessible educational sources for learning practice. Accessibility or dyslexia adaptation has not been clinically evaluated by DyslexiMate.";
+function validateSearchParams(params) {
+  if (!params || typeof params !== "object") {
+    return { valid: false, error: "Request body must be a JSON object." };
+  }
+  const p = params;
+  const rawTopic = typeof p.topic === "string" ? p.topic.trim() : "";
+  if (!rawTopic || rawTopic.length < 2) {
+    return { valid: false, error: "Please enter a learning topic with at least 2 characters." };
+  }
+  if (rawTopic.length > 100) {
+    return { valid: false, error: "Learning topic is too long (maximum 100 characters)." };
+  }
+  const topic = rawTopic.replace(/[\r\n\t]/g, " ");
+  const validTypes = [
+    "any",
+    "reading_exercise",
+    "phonics_activity",
+    "educational_game",
+    "worksheet",
+    "unspecified"
+  ];
+  const resourceType = typeof p.resourceType === "string" && validTypes.includes(p.resourceType) ? p.resourceType : "any";
+  const grade = typeof p.grade === "string" ? p.grade.trim().slice(0, 50) : void 0;
+  const language = typeof p.language === "string" ? p.language.trim().slice(0, 30) : "English";
+  return {
+    valid: true,
+    sanitized: {
+      topic,
+      grade: grade && grade !== "any" ? grade : void 0,
+      resourceType,
+      language: language || "English"
+    }
+  };
+}
+function buildEducationalQuery(params) {
+  const parts = [params.topic];
+  if (params.grade) {
+    parts.push(params.grade);
+  }
+  if (params.resourceType && params.resourceType !== "any") {
+    const typeLabelMap = {
+      reading_exercise: "reading exercises",
+      phonics_activity: "phonics practice activities",
+      educational_game: "interactive learning game",
+      worksheet: "printable practice worksheet",
+      any: "",
+      unspecified: ""
+    };
+    const label = typeLabelMap[params.resourceType];
+    if (label) parts.push(label);
+  }
+  if (params.language && params.language !== "English") {
+    parts.push(params.language);
+  }
+  parts.push("educational resource");
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+function isValidWebUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+function inferResourceType(title, snippet, requestedType) {
+  if (requestedType && requestedType !== "any") {
+    return requestedType;
+  }
+  const combined = (title + " " + snippet).toLowerCase();
+  if (combined.includes("game") || combined.includes("play") || combined.includes("interactive")) {
+    return "educational_game";
+  }
+  if (combined.includes("worksheet") || combined.includes("printable") || combined.includes("pdf")) {
+    return "worksheet";
+  }
+  if (combined.includes("phonic") || combined.includes("sound") || combined.includes("letter")) {
+    return "phonics_activity";
+  }
+  if (combined.includes("read") || combined.includes("story") || combined.includes("passage") || combined.includes("comprehension")) {
+    return "reading_exercise";
+  }
+  return "unspecified";
+}
+async function handleTinyFishSearch(params, apiKey, fetchFn = fetch) {
+  const query = buildEducationalQuery(params);
+  const resolvedKey = apiKey && apiKey.trim() !== "" && !apiKey.includes("placeholder") && apiKey !== "your-tinyfish-api-key" ? apiKey.trim() : typeof process !== "undefined" && process.env?.TINYFISH_API_KEY && !process.env.TINYFISH_API_KEY.includes("placeholder") && process.env.TINYFISH_API_KEY !== "your-tinyfish-api-key" ? process.env.TINYFISH_API_KEY.trim() : void 0;
+  if (!resolvedKey) {
+    return {
+      success: false,
+      configured: false,
+      query,
+      totalResults: 0,
+      resources: [],
+      error: "TinyFish API key is not configured on the server. Please set TINYFISH_API_KEY in your Vercel Project Settings (Environment Variables) or local server configuration.",
+      disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+    };
+  }
+  const endpoint = `https://api.search.tinyfish.ai?query=${encodeURIComponent(query)}&location=US`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15e3);
+  try {
+    const res = await fetchFn(endpoint, {
+      method: "GET",
+      headers: {
+        "X-API-Key": resolvedKey,
+        "Accept": "application/json"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (res.status === 401 || res.status === 403) {
+      return {
+        success: false,
+        configured: true,
+        query,
+        totalResults: 0,
+        resources: [],
+        error: "TinyFish authentication failed. Please verify that TINYFISH_API_KEY is valid.",
+        disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+      };
+    }
+    if (res.status === 429) {
+      return {
+        success: false,
+        configured: true,
+        query,
+        totalResults: 0,
+        resources: [],
+        error: "TinyFish rate limit exceeded. Please wait a moment before trying again.",
+        disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+      };
+    }
+    if (!res.ok) {
+      return {
+        success: false,
+        configured: true,
+        query,
+        totalResults: 0,
+        resources: [],
+        error: `TinyFish service returned error status ${res.status} (${res.statusText || "Unknown"}).`,
+        disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+      };
+    }
+    const data = await res.json();
+    const rawResults = Array.isArray(data.results) ? data.results : [];
+    const resources = rawResults.filter((item) => item && typeof item.url === "string" && isValidWebUrl(item.url)).map((item, index) => {
+      let siteName = item.site_name;
+      if (!siteName) {
+        try {
+          siteName = new URL(item.url).hostname.replace(/^www\./, "");
+        } catch {
+          siteName = "Educational Source";
+        }
+      }
+      return {
+        id: `tf-${index + 1}-${Date.now().toString(36)}`,
+        title: item.title?.trim() || "Untitled Educational Resource",
+        url: item.url,
+        siteName,
+        summary: item.snippet?.trim() || "Factual summary unavailable from source.",
+        resourceType: inferResourceType(item.title || "", item.snippet || "", params.resourceType),
+        gradeLevel: params.grade || null,
+        language: params.language || "English",
+        verified: true,
+        accessibilityNotes: "Accessibility or dyslexia adaptation has not been clinically evaluated by DyslexiMate."
+      };
+    });
+    return {
+      success: true,
+      configured: true,
+      query,
+      totalResults: resources.length,
+      resources,
+      disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isAbort = err?.name === "AbortError";
+    const message = isAbort ? "The TinyFish search request timed out after 15 seconds. Please try again with a more specific topic." : err?.message || "Failed to connect to TinyFish service.";
+    return {
+      success: false,
+      configured: true,
+      query,
+      totalResults: 0,
+      resources: [],
+      error: message,
+      disclaimer: MEDICAL_ACCESSIBILITY_DISCLAIMER
+    };
+  }
+}
+export {
+  MEDICAL_ACCESSIBILITY_DISCLAIMER,
+  buildEducationalQuery,
+  handleTinyFishSearch,
+  isValidWebUrl,
+  validateSearchParams
+};

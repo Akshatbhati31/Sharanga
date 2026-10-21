@@ -32,6 +32,7 @@ import vercelStatusHandler from '../api/tinyfish/status';
 import vercelSearchHandler from '../api/tinyfish/search';
 import vercelResourcesHandler from '../api/resources/search';
 import vercelAiHandler from '../api/ai/generate-activity';
+import { TinyFishService } from '../src/services/tinyfishService';
 
 
 
@@ -1063,6 +1064,8 @@ async function runTests() {
     headers: { 'Content-Type': 'application/json' },
   }));
   assert(vSearchBadJson.status === 400, 'Vercel search handler invalid JSON returns 400');
+  const vSearchBadJsonData = await vSearchBadJson.json();
+  assert(typeof vSearchBadJsonData.error === 'string', 'Vercel search handler error is string on bad JSON');
 
   const vSearchEmpty = await vercelSearchHandler(new Request('http://localhost/api/tinyfish/search', {
     method: 'POST',
@@ -1070,10 +1073,126 @@ async function runTests() {
     headers: { 'Content-Type': 'application/json' },
   }));
   assert(vSearchEmpty.status === 400, 'Vercel search handler empty topic returns 400');
+  const vSearchEmptyData = await vSearchEmpty.json();
+  assert(typeof vSearchEmptyData.error === 'string', 'Vercel search handler error is string on empty topic');
+
+  // Valid POST via Web Request API
+  const vSearchValidWeb = await vercelSearchHandler(new Request('http://localhost/api/tinyfish/search', {
+    method: 'POST',
+    body: JSON.stringify({ topic: 'phonics sound blending', grade: 'Class 1' }),
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  assert(vSearchValidWeb.status === 200, 'Vercel search handler valid POST returns 200 (Web Request)');
+  const vSearchValidWebData = await vSearchValidWeb.json();
+  assert(typeof vSearchValidWebData.success === 'boolean', 'Vercel search handler returns boolean success');
+  assert(Array.isArray(vSearchValidWebData.resources), 'Vercel search handler returns resources array');
+
+  // Node.js Serverless runtime (Vercel) tests for tinyfish search
+  const nodeResSearchValidObj = createMockNodeRes();
+  await vercelSearchHandler({
+    method: 'POST',
+    body: { topic: 'sight words recognition', grade: 'Class 2' },
+  }, nodeResSearchValidObj);
+  assert(nodeResSearchValidObj._getStatus() === 200, 'Vercel Node search handler returns 200 with object body');
+  assert(Array.isArray(nodeResSearchValidObj._getData()?.resources), 'Vercel Node search handler returns resources array');
+
+  const nodeResSearchValidStr = createMockNodeRes();
+  await vercelSearchHandler({
+    method: 'POST',
+    body: JSON.stringify({ topic: 'vowel sounds' }),
+  }, nodeResSearchValidStr);
+  assert(nodeResSearchValidStr._getStatus() === 200, 'Vercel Node search handler returns 200 with string body');
+
+  const nodeResSearchGet = createMockNodeRes();
+  await vercelSearchHandler({
+    method: 'GET',
+    query: { topic: 'letter sounds' },
+  }, nodeResSearchGet);
+  assert(nodeResSearchGet._getStatus() === 200, 'Vercel Node search handler returns 200 with GET query');
+
+  const nodeResSearchEmpty = createMockNodeRes();
+  await vercelSearchHandler({
+    method: 'POST',
+    body: { topic: '' },
+  }, nodeResSearchEmpty);
+  assert(nodeResSearchEmpty._getStatus() === 400, 'Vercel Node search handler returns 400 on empty topic');
+  assert(typeof nodeResSearchEmpty._getData()?.error === 'string', 'Vercel Node search handler error is string on empty topic');
+
+  const nodeResSearchBadJson = createMockNodeRes();
+  await vercelSearchHandler({
+    method: 'POST',
+    body: 'not-valid-json{',
+  }, nodeResSearchBadJson);
+  assert(nodeResSearchBadJson._getStatus() === 400, 'Vercel Node search handler returns 400 on bad JSON string');
+  assert(typeof nodeResSearchBadJson._getData()?.error === 'string', 'Vercel Node search handler error is string on bad JSON');
 
   // 10.4: Vercel POST /api/resources/search (forwarding alias)
   const vResourcesCors = await vercelResourcesHandler(new Request('http://localhost/api/resources/search', { method: 'OPTIONS' }));
   assert(vResourcesCors.status === 204, 'Vercel resources handler OPTIONS preflight returns 204');
+
+  const nodeResAliasValid = createMockNodeRes();
+  await vercelResourcesHandler({
+    method: 'POST',
+    body: { topic: 'phonics exercises' },
+  }, nodeResAliasValid);
+  assert(nodeResAliasValid._getStatus() === 200, 'Vercel resources alias returns 200 on valid POST');
+
+  const nodeResAliasInvalid = createMockNodeRes();
+  await vercelResourcesHandler({
+    method: 'POST',
+    body: { topic: '' },
+  }, nodeResAliasInvalid);
+  assert(nodeResAliasInvalid._getStatus() === 400, 'Vercel resources alias returns 400 on invalid POST');
+  assert(typeof nodeResAliasInvalid._getData()?.error === 'string', 'Vercel resources alias error is string');
+
+  // Regression Test: Exact failure reproduction and prevention
+  // When backend/Vercel platform returns an error object e.g. { error: { code: 'FUNCTION_INVOCATION_FAILED', message: 'Timeout' } }
+  const tinyFishService = TinyFishService.getInstance();
+  const originalFetch = globalThis.fetch;
+
+  // Scenario A: Vercel platform error with { error: { code, message } }
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    error: {
+      code: 'FUNCTION_INVOCATION_FAILED',
+      message: 'Serverless function crashed or timed out.',
+    },
+  }), {
+    status: 504,
+    headers: { 'Content-Type': 'application/json' },
+  })) as any;
+
+  const vercelPlatformErrorResp = await tinyFishService.searchResources({ topic: 'phonics' });
+  assert(vercelPlatformErrorResp.success === false, 'Service handles Vercel platform error safely');
+  assert(typeof vercelPlatformErrorResp.error === 'string', 'Error object is normalized to string primitive');
+  assert(vercelPlatformErrorResp.error === 'Serverless function crashed or timed out.', 'Normalized error extracts human-readable message');
+
+  // Scenario B: Vercel error with code-only object
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    error: {
+      code: 'INTERNAL_SERVER_ERROR',
+    },
+  }), {
+    status: 500,
+    headers: { 'Content-Type': 'application/json' },
+  })) as any;
+
+  const vercelCodeOnlyResp = await tinyFishService.searchResources({ topic: 'phonics' });
+  assert(typeof vercelCodeOnlyResp.error === 'string', 'Error code object is normalized to string primitive');
+  assert(vercelCodeOnlyResp.error === 'INTERNAL_SERVER_ERROR', 'Normalized error code used when message omitted');
+
+  // Scenario C: Non-OK HTTP status without JSON error body
+  globalThis.fetch = (async () => new Response(JSON.stringify({}), {
+    status: 502,
+    statusText: 'Bad Gateway',
+    headers: { 'Content-Type': 'application/json' },
+  })) as any;
+
+  const httpErrorResp = await tinyFishService.searchResources({ topic: 'phonics' });
+  assert(typeof httpErrorResp.error === 'string', 'HTTP error status produces string error');
+  assert(httpErrorResp.error?.includes('502'), 'HTTP error includes status code');
+
+  // Restore fetch
+  globalThis.fetch = originalFetch;
 
   // 10.5: Vercel POST /api/ai/generate-activity (Web Request API)
   const vAiCors = await vercelAiHandler(new Request('http://localhost/api/ai/generate-activity', { method: 'OPTIONS' }));
@@ -1210,6 +1329,76 @@ async function runTests() {
   );
   assert(timeoutFallback.skillId === 'skill_spelling_cvc', 'Gemini network timeout gracefully falls back to deterministic curriculum');
   assert(Boolean(timeoutFallback.stepByStepHint), 'Timeout fallback provides step-by-step hint');
+
+  // 10.11: Vercel Node ESM Module Resolution & Bundled Worker Regression Tests
+  console.log('\n--- Test Group 11: Vercel Node ESM Module Resolution & Runtime Bundling ---');
+
+  // Verify physical bundled JS files exist in src/worker
+  const workerTinyfishJsPath = path.resolve('src/worker/tinyfishHandler.js');
+  const workerAiJsPath = path.resolve('src/worker/aiHandler.js');
+  assert(fs.existsSync(workerTinyfishJsPath), 'Bundled worker tinyfishHandler.js exists on disk');
+  assert(fs.existsSync(workerAiJsPath), 'Bundled worker aiHandler.js exists on disk');
+
+  // Verify dynamic ESM import succeeds in Node without ERR_MODULE_NOT_FOUND
+  const importedTinyfishModule = await import('../src/worker/tinyfishHandler.js');
+  assert(typeof importedTinyfishModule.handleTinyFishSearch === 'function', 'tinyfishHandler.js exports handleTinyFishSearch');
+  assert(typeof importedTinyfishModule.validateSearchParams === 'function', 'tinyfishHandler.js exports validateSearchParams');
+
+  const importedAiModule = await import('../src/worker/aiHandler.js');
+  assert(typeof importedAiModule.handleGenerateActivity === 'function', 'aiHandler.js exports handleGenerateActivity');
+  assert(typeof importedAiModule.validateActivityContent === 'function', 'aiHandler.js exports validateActivityContent');
+
+  // Verify API route files use explicit compatible .js extensions for worker imports
+  const apiSearchContent = fs.readFileSync(path.resolve('api/tinyfish/search.ts'), 'utf8');
+  const apiResourcesContent = fs.readFileSync(path.resolve('api/resources/search.ts'), 'utf8');
+  const apiAiContent = fs.readFileSync(path.resolve('api/ai/generate-activity.ts'), 'utf8');
+
+  assert(apiSearchContent.includes("from '../../src/worker/tinyfishHandler.js'"), 'api/tinyfish/search.ts has explicit .js extension import');
+  assert(apiResourcesContent.includes("from '../../src/worker/tinyfishHandler.js'"), 'api/resources/search.ts has explicit .js extension import');
+  assert(apiAiContent.includes("from '../../src/worker/aiHandler.js'"), 'api/ai/generate-activity.ts has explicit .js extension import');
+
+  // Verify vercel.json includes src/worker in function packaging
+  const vercelJson = JSON.parse(fs.readFileSync(path.resolve('vercel.json'), 'utf8'));
+  assert(Boolean(vercelJson.functions?.['api/**/*.ts']?.includeFiles?.includes('src/worker')), 'vercel.json bundles src/worker in includeFiles');
+
+  // Verify all 4 endpoints respond independently
+  const mockVercelRes = () => {
+    let statusCode = 200;
+    let jsonBody: any = null;
+    let headers: Record<string, string> = {};
+    let ended = false;
+    const resObj = {
+      status: (code: number) => { statusCode = code; return resObj; },
+      json: (data: any) => { jsonBody = data; return resObj; },
+      setHeader: (k: string, v: string) => { headers[k] = v; return resObj; },
+      end: () => { ended = true; return resObj; },
+      getStatusCode: () => statusCode,
+      getBody: () => jsonBody,
+      isEnded: () => ended,
+    };
+    return resObj;
+  };
+
+  // 1. GET /api/tinyfish/status
+  const res1 = mockVercelRes();
+  await vercelStatusHandler({ method: 'GET' }, res1);
+  assert(res1.getStatusCode() === 200 && res1.getBody()?.service === 'TinyFish', 'Endpoint GET /api/tinyfish/status functions independently');
+
+  // 2. POST /api/tinyfish/search
+  const res2 = mockVercelRes();
+  await vercelSearchHandler({ method: 'POST', body: { topic: 'vowels', grade: 'Grade 1' } }, res2);
+  assert(res2.getStatusCode() === 200 && res2.getBody()?.query !== undefined, 'Endpoint POST /api/tinyfish/search functions independently');
+
+  // 3. POST /api/resources/search
+  const res3 = mockVercelRes();
+  await vercelResourcesHandler({ method: 'POST', body: { topic: 'phonics' } }, res3);
+  assert(res3.getStatusCode() === 200 && res3.getBody()?.query !== undefined, 'Endpoint POST /api/resources/search functions independently');
+
+  // 4. POST /api/ai/generate-activity
+  const res4 = mockVercelRes();
+  await vercelAiHandler({ method: 'POST', body: { skillId: 'skill_letter_sounds_basic', difficulty: 'beginner' } }, res4);
+  assert(res4.getStatusCode() === 200 && res4.getBody()?.success === true, 'Endpoint POST /api/ai/generate-activity functions independently');
+
 
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);
