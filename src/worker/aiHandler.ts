@@ -1,4 +1,4 @@
-import type { InteractiveActivityContent, ActivityDifficulty } from '../types/adaptive';
+import type { InteractiveActivityContent, ActivityDifficulty } from '../types/adaptive.ts';
 
 export interface GenerateActivityRequest {
   skillId: string;
@@ -433,53 +433,127 @@ export async function handleGenerateActivity(
   apiKey?: string,
   fetchFn: typeof fetch = fetch
 ): Promise<InteractiveActivityContent> {
-  // If no external AI key is provided, return rich deterministic curriculum instantly
-  if (!apiKey || apiKey.trim() === '' || apiKey.includes('placeholder')) {
+  const resolvedKey =
+    (apiKey && apiKey.trim() !== '' && !apiKey.includes('placeholder'))
+      ? apiKey.trim()
+      : (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('placeholder'))
+        ? process.env.GEMINI_API_KEY.trim()
+        : undefined;
+
+  // If no external Gemini API key is provided, return rich deterministic curriculum instantly
+  if (!resolvedKey) {
     return getDeterministicActivity(req);
   }
 
-  // Optional: If an AI service key (e.g. Gemini / OpenAI / CF Workers AI) is provided:
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), 9000);
 
-  try {
-    const promptText = `Generate a single educational reading exercise for a child learning to read with dyslexia.
+  // Supported Gemini models (primary: gemini-2.5-flash or gemini-2.0-flash / gemini-1.5-flash)
+  const configuredModel =
+    typeof process !== 'undefined' && process.env?.GEMINI_MODEL
+      ? process.env.GEMINI_MODEL.trim()
+      : 'gemini-2.5-flash';
+
+  const modelsToTry = [configuredModel, 'gemini-2.0-flash', 'gemini-1.5-flash'].filter(
+    (m, idx, arr) => arr.indexOf(m) === idx
+  );
+
+  const promptText = `You are an expert pediatric reading specialist for children with dyslexia.
+Generate a single engaging, educational reading practice exercise.
 Skill category: ${req.skillId}
 Difficulty: ${req.difficulty}
-Language: ${req.language}
-Child interest: ${req.interest || 'animals and adventure'}
-Format strictly as JSON with keys: id, skillId, title, instruction, difficulty, language, type, prompt, items (array of {id, text, visual, isCorrect, feedbackHint}), stepByStepHint.`;
+Language: ${req.language || 'English'}
+${req.childName ? `Child name: ${req.childName}` : ''}
+${req.interest ? `Child interest: ${req.interest}` : 'Interest: animals, nature, and adventure'}
+${req.targetPattern ? `Target pattern: ${req.targetPattern}` : ''}
 
-    const res = await fetchFn('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: promptText }],
-        response_format: { type: 'json_object' },
-        max_tokens: 600,
-        temperature: 0.7,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json() as any;
-      const rawJson = JSON.parse(data.choices?.[0]?.message?.content || '{}');
-      const validation = validateActivityContent(rawJson);
-      if (validation.valid && validation.sanitized) {
-        return validation.sanitized;
-      }
+Strict requirements:
+- Use encouraging, positive, dyslexia-friendly language.
+- Distinguish letters and sounds clearly.
+- Provide between 2 and 4 answer choices in "items", with at least one item marked with isCorrect: true.
+- Each item MUST have: id (string), text (string), visual (emoji or single symbol), isCorrect (boolean), feedbackHint (supportive explanation).
+- Provide a stepByStepHint guiding the child gently.
+- Return ONLY a valid JSON object matching this schema:
+{
+  "id": "act_gemini_${Date.now()}",
+  "skillId": "${req.skillId}",
+  "title": "string",
+  "instruction": "string",
+  "difficulty": "${req.difficulty}",
+  "language": "${req.language || 'English'}",
+  "type": "word_match",
+  "prompt": "string",
+  "items": [
+    {
+      "id": "opt_1",
+      "text": "string",
+      "visual": "emoji",
+      "isCorrect": true,
+      "feedbackHint": "string"
+    },
+    {
+      "id": "opt_2",
+      "text": "string",
+      "visual": "emoji",
+      "isCorrect": false,
+      "feedbackHint": "string"
     }
-  } catch {
-    clearTimeout(timeoutId);
-    // Graceful fallback on network timeout or model failure
+  ],
+  "stepByStepHint": "string"
+}`;
+
+  for (const model of modelsToTry) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(resolvedKey)}`;
+
+      const res = await fetchFn(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: promptText }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+            maxOutputTokens: 1000,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (res.ok) {
+        clearTimeout(timeoutId);
+        const data = (await res.json()) as any;
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText && typeof rawText === 'string') {
+          let cleanJson = rawText.trim();
+          if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+          }
+          const parsed = JSON.parse(cleanJson);
+          const validation = validateActivityContent(parsed);
+          if (validation.valid && validation.sanitized) {
+            return validation.sanitized;
+          }
+        }
+      } else if (res.status === 404) {
+        // Model not available in this tier; continue to next fallback model
+        continue;
+      } else {
+        // For 429 quota or other errors, break and fall back to deterministic curriculum
+        break;
+      }
+    } catch {
+      // Network failure or abort timeout
+      break;
+    }
   }
 
+  clearTimeout(timeoutId);
   return getDeterministicActivity(req);
 }

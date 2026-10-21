@@ -58,7 +58,7 @@ export class ResourceFinderView {
               <div>
                 <strong>TinyFish API Key Setup Required:</strong>
                 <p style="margin:4px 0 0; font-size:12px;">
-                  The backend TinyFish integration is ready. To enable live web agent searches, configure <code>TINYFISH_API_KEY</code> in your Cloudflare Worker environment (<code>npx wrangler secret put TINYFISH_API_KEY</code>) or in your local <code>.env</code> file.
+                  The backend TinyFish integration is ready. To enable live web agent searches, configure <code>TINYFISH_API_KEY</code> in your Vercel Project Settings (Environment Variables) or in your local <code>.env</code> file.
                 </p>
               </div>
             </div>
@@ -297,7 +297,7 @@ export class ResourceFinderView {
                   ${this.escapeHtml(response.error || 'TinyFish API key is not configured on the server.')}
                 </p>
                 <div style="background:#fff; border-radius:10px; padding:10px 14px; border:1px solid #f6d2b3; font-size:12px; font-family:monospace; color:#333;">
-                  npx wrangler secret put TINYFISH_API_KEY
+                  Vercel Project Settings &gt; Environment Variables &gt; TINYFISH_API_KEY
                 </div>
               </div>
             </div>

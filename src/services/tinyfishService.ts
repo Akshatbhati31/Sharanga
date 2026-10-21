@@ -16,7 +16,7 @@ export class TinyFishService {
   }
 
   /**
-   * Check whether the TinyFish API is configured on the backend server / Cloudflare Worker.
+   * Check whether the TinyFish API is configured on the backend server / Vercel.
    */
   public async checkStatus(): Promise<{ configured: boolean; status: string }> {
     try {
