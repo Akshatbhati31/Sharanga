@@ -1,10 +1,10 @@
 import type {
   ChildProfile,
   ChildLearningData,
-  SupportedLanguage,
 } from '../types/auth';
 import { StorageService } from './storageService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { i18n } from '../i18n';
 
 export interface IProfileService {
   getChildren(parentId: string): Promise<ChildProfile[]>;
@@ -121,7 +121,7 @@ export class ProfileService implements IProfileService {
             parentId: row.parent_id,
             name: row.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
-            preferredLanguage: (row.preferred_language as SupportedLanguage) || 'English',
+            preferredLanguage: i18n.codeToSupportedLanguage(row.preferred_language) || 'English',
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -170,7 +170,7 @@ export class ProfileService implements IProfileService {
             parentId: data.parent_id,
             name: data.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
-            preferredLanguage: (data.preferred_language as SupportedLanguage) || 'English',
+            preferredLanguage: i18n.codeToSupportedLanguage(data.preferred_language) || 'English',
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -199,17 +199,25 @@ export class ProfileService implements IProfileService {
       throw new Error("Child's name is required.");
     }
 
+    const session = this.storage.getSession();
+    const effectiveParentId = parentId || session.userId;
+    if (!effectiveParentId) {
+      throw new Error('Authenticated parent account required to save child profile.');
+    }
+
     const sb = supabase;
-    const isDemoParent = parentId === 'parent-demo-1' || !isSupabaseConfigured() || !sb;
+    const isDemoParent = effectiveParentId === 'parent-demo-1' || !isSupabaseConfigured() || !sb;
+    const langCode = i18n.supportedLanguageToCode(data.preferredLanguage || 'en');
+    const supportedLang = i18n.codeToSupportedLanguage(langCode);
 
     if (!isDemoParent) {
       try {
         const { data: newRow, error } = await sb
           .from('child_profiles')
           .insert({
-            parent_id: parentId,
+            parent_id: effectiveParentId,
             display_name: data.name.trim(),
-            preferred_language: data.preferredLanguage || 'English',
+            preferred_language: langCode,
             learning_preferences: {
               grade: data.grade || 'Class 3 · Growing reader',
               avatar: data.avatar || '👧🏽',
@@ -235,7 +243,7 @@ export class ProfileService implements IProfileService {
           parentId: newRow.parent_id,
           name: newRow.display_name,
           grade: lp.grade || data.grade,
-          preferredLanguage: (newRow.preferred_language as SupportedLanguage) || data.preferredLanguage,
+          preferredLanguage: i18n.codeToSupportedLanguage(newRow.preferred_language) || supportedLang,
           avatar: lp.avatar || data.avatar,
           preferences: lp.preferences || data.preferences,
           createdAt: newRow.created_at,
@@ -368,7 +376,9 @@ export class ProfileService implements IProfileService {
           learning_preferences: mergedPreferences,
         };
         if (updates.name) dbPayload.display_name = updates.name.trim();
-        if (updates.preferredLanguage) dbPayload.preferred_language = updates.preferredLanguage;
+        if (updates.preferredLanguage) {
+          dbPayload.preferred_language = i18n.supportedLanguageToCode(updates.preferredLanguage);
+        }
 
         const { data: updatedRow, error } = await sb
           .from('child_profiles')
@@ -387,7 +397,7 @@ export class ProfileService implements IProfileService {
           parentId: updatedRow.parent_id,
           name: updatedRow.display_name,
           grade: lp.grade || current.grade,
-          preferredLanguage: (updatedRow.preferred_language as SupportedLanguage) || current.preferredLanguage,
+          preferredLanguage: i18n.codeToSupportedLanguage(updatedRow.preferred_language) || current.preferredLanguage,
           avatar: lp.avatar || current.avatar,
           preferences: lp.preferences || current.preferences,
           createdAt: updatedRow.created_at,
@@ -419,9 +429,14 @@ export class ProfileService implements IProfileService {
       throw new Error('Child profile not found.');
     }
 
+    const updatedLang = updates.preferredLanguage
+      ? (i18n.codeToSupportedLanguage(updates.preferredLanguage) || updates.preferredLanguage)
+      : current.preferredLanguage;
+
     const updated: ChildProfile = {
       ...current,
       ...updates,
+      preferredLanguage: updatedLang,
       id: current.id,
       parentId: current.parentId,
     };

@@ -10,10 +10,11 @@ const AVAILABLE_AVATARS = [
 
 export class ChildModalView {
   private profileService: ProfileService;
-  private onProfilesChanged: () => void;
+  private onProfilesChanged: (newChild?: ChildProfile) => void;
   private selectedAvatar: string = '👧🏽';
+  private isSubmitting: boolean = false;
 
-  constructor(onProfilesChanged: () => void) {
+  constructor(onProfilesChanged: (newChild?: ChildProfile) => void) {
     this.profileService = ProfileService.getInstance();
     this.onProfilesChanged = onProfilesChanged;
   }
@@ -23,6 +24,7 @@ export class ChildModalView {
   // -------------------------------------------------------------
   public openAddModal(parentId: string): void {
     this.selectedAvatar = '👧🏽';
+    this.isSubmitting = false;
     const modalEl = this.ensureModalElement();
 
     modalEl.innerHTML = `
@@ -36,6 +38,8 @@ export class ChildModalView {
         </div>
 
         <form id="childProfileForm">
+          <div id="childModalAlert" class="form-alert alert-error hidden" style="margin-bottom: 14px; font-size: 13px; line-height: 1.4;"></div>
+
           <div class="form-group">
             <label class="form-label" for="childNameInput">${i18n.t('childModal.nameLabel')}</label>
             <input
@@ -67,11 +71,11 @@ export class ChildModalView {
             <div class="form-group">
               <label class="form-label" for="childLangSelect">${i18n.t('childModal.langLabel')}</label>
               <select id="childLangSelect" class="form-input">
-                <option value="English" selected>EG English</option>
-                <option value="Hindi">HN हिन्दी</option>
-                <option value="Odia">OD ଓଡ଼ିଆ</option>
-                <option value="Punjabi">PB ਪੰਜਾਬੀ</option>
-                <option value="Tamil">TM தமிழ்</option>
+                <option value="en" selected>EG English</option>
+                <option value="hi">HN हिन्दी</option>
+                <option value="or">OD ଓଡ଼ିଆ</option>
+                <option value="pa">PB ਪੰਜਾਬੀ</option>
+                <option value="ta">TM தமிழ்</option>
               </select>
             </div>
           </div>
@@ -113,7 +117,7 @@ export class ChildModalView {
           </div>
 
           <div class="modal-controls">
-            <button type="submit" id="btnSaveChild" style="min-width: 130px;">
+            <button type="submit" id="btnSaveChild" style="min-width: 140px;">
               ${i18n.t('childModal.save')}
             </button>
             <button type="button" id="btnCancelChild" class="soft">
@@ -132,39 +136,78 @@ export class ChildModalView {
     const form = document.getElementById('childProfileForm') as HTMLFormElement;
     form?.addEventListener('submit', async e => {
       e.preventDefault();
+      if (this.isSubmitting) return;
+
       const nameInput = document.getElementById('childNameInput') as HTMLInputElement;
       const nameError = document.getElementById('childNameError') as HTMLElement;
-      const name = nameInput.value.trim();
+      const alertEl = document.getElementById('childModalAlert') as HTMLElement;
+      if (alertEl) {
+        alertEl.textContent = '';
+        alertEl.classList.add('hidden');
+      }
+      if (nameError) {
+        nameError.textContent = '';
+        nameError.classList.add('hidden');
+      }
+      nameInput.classList.remove('input-error');
 
+      const name = nameInput.value.trim();
       if (!name) {
-        nameError.textContent = i18n.t('childModal.nameError');
-        nameError.classList.remove('hidden');
+        if (nameError) {
+          nameError.textContent = i18n.t('childModal.nameError');
+          nameError.classList.remove('hidden');
+        }
         nameInput.classList.add('input-error');
+        nameInput.focus();
         return;
       }
 
-      const grade = (document.getElementById('childGradeSelect') as HTMLSelectElement).value;
-      const preferredLanguage = (document.getElementById('childLangSelect') as HTMLSelectElement).value as SupportedLanguage;
-      const dyslexiaFont = (document.getElementById('prefDyslexiaFont') as HTMLInputElement).checked;
-      const soundEffects = (document.getElementById('prefSoundEffects') as HTMLInputElement).checked;
-      const autoReadAloud = (document.getElementById('prefAutoReadAloud') as HTMLInputElement).checked;
+      const saveBtn = document.getElementById('btnSaveChild') as HTMLButtonElement;
+      const originalText = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span>⏳</span> ${i18n.t('common.loading')}`;
+      }
+      this.isSubmitting = true;
 
-      await this.profileService.createChild(parentId, {
-        name,
-        grade,
-        preferredLanguage,
-        avatar: this.selectedAvatar,
-        preferences: {
-          readingSpeed: 'normal',
-          dyslexiaFont,
-          highContrast: false,
-          soundEffects,
-          autoReadAloud,
-        },
-      });
+      try {
+        const grade = (document.getElementById('childGradeSelect') as HTMLSelectElement).value;
+        const rawLang = (document.getElementById('childLangSelect') as HTMLSelectElement).value;
+        const preferredLanguage = i18n.codeToSupportedLanguage(rawLang) || (rawLang as SupportedLanguage);
+        const dyslexiaFont = (document.getElementById('prefDyslexiaFont') as HTMLInputElement).checked;
+        const soundEffects = (document.getElementById('prefSoundEffects') as HTMLInputElement).checked;
+        const autoReadAloud = (document.getElementById('prefAutoReadAloud') as HTMLInputElement).checked;
 
-      this.closeModal();
-      this.onProfilesChanged();
+        const newChild = await this.profileService.createChild(parentId, {
+          name,
+          grade,
+          preferredLanguage,
+          avatar: this.selectedAvatar,
+          preferences: {
+            readingSpeed: 'normal',
+            dyslexiaFont,
+            highContrast: false,
+            soundEffects,
+            autoReadAloud,
+          },
+        });
+
+        this.profileService.setActiveChild(newChild);
+        this.closeModal();
+        this.onProfilesChanged(newChild);
+      } catch (err: any) {
+        console.error('Failed to create child profile:', err);
+        if (alertEl) {
+          alertEl.textContent = err?.message || 'Failed to save child profile. Please try again.';
+          alertEl.classList.remove('hidden');
+        }
+      } finally {
+        this.isSubmitting = false;
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = originalText;
+        }
+      }
     });
 
     modalEl.classList.remove('hidden');
@@ -176,7 +219,10 @@ export class ChildModalView {
   // -------------------------------------------------------------
   public openEditModal(child: ChildProfile): void {
     this.selectedAvatar = child.avatar || '👧🏽';
+    this.isSubmitting = false;
     const modalEl = this.ensureModalElement();
+
+    const currentLangCode = i18n.supportedLanguageToCode(child.preferredLanguage || 'en');
 
     modalEl.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -189,6 +235,8 @@ export class ChildModalView {
         </div>
 
         <form id="childProfileForm">
+          <div id="childModalAlert" class="form-alert alert-error hidden" style="margin-bottom: 14px; font-size: 13px; line-height: 1.4;"></div>
+
           <div class="form-group">
             <label class="form-label" for="childNameInput">${i18n.t('childModal.nameLabel')}</label>
             <input
@@ -220,11 +268,11 @@ export class ChildModalView {
             <div class="form-group">
               <label class="form-label" for="childLangSelect">${i18n.t('childModal.langLabel')}</label>
               <select id="childLangSelect" class="form-input">
-                <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>EG English</option>
-                <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
-                <option value="Odia" ${child.preferredLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
-                <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
-                <option value="Tamil" ${child.preferredLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
+                <option value="en" ${currentLangCode === 'en' ? 'selected' : ''}>EG English</option>
+                <option value="hi" ${currentLangCode === 'hi' ? 'selected' : ''}>HN हिन्दी</option>
+                <option value="or" ${currentLangCode === 'or' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+                <option value="pa" ${currentLangCode === 'pa' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+                <option value="ta" ${currentLangCode === 'ta' ? 'selected' : ''}>TM தமிழ்</option>
               </select>
             </div>
           </div>
@@ -266,7 +314,7 @@ export class ChildModalView {
           </div>
 
           <div class="modal-controls">
-            <button type="submit" id="btnSaveChild" style="min-width: 130px;">
+            <button type="submit" id="btnSaveChild" style="min-width: 140px;">
               ${i18n.t('childModal.update')}
             </button>
             <button type="button" id="btnCancelChild" class="soft">
@@ -297,33 +345,77 @@ export class ChildModalView {
     const form = document.getElementById('childProfileForm') as HTMLFormElement;
     form?.addEventListener('submit', async e => {
       e.preventDefault();
+      if (this.isSubmitting) return;
+
       const nameInput = document.getElementById('childNameInput') as HTMLInputElement;
+      const nameError = document.getElementById('childNameError') as HTMLElement;
+      const alertEl = document.getElementById('childModalAlert') as HTMLElement;
+      if (alertEl) {
+        alertEl.textContent = '';
+        alertEl.classList.add('hidden');
+      }
+      if (nameError) {
+        nameError.textContent = '';
+        nameError.classList.add('hidden');
+      }
+      nameInput.classList.remove('input-error');
+
       const name = nameInput.value.trim();
+      if (!name) {
+        if (nameError) {
+          nameError.textContent = i18n.t('childModal.nameError');
+          nameError.classList.remove('hidden');
+        }
+        nameInput.classList.add('input-error');
+        nameInput.focus();
+        return;
+      }
 
-      if (!name) return;
+      const saveBtn = document.getElementById('btnSaveChild') as HTMLButtonElement;
+      const originalText = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span>⏳</span> ${i18n.t('common.loading')}`;
+      }
+      this.isSubmitting = true;
 
-      const grade = (document.getElementById('childGradeSelect') as HTMLSelectElement).value;
-      const preferredLanguage = (document.getElementById('childLangSelect') as HTMLSelectElement).value as SupportedLanguage;
-      const dyslexiaFont = (document.getElementById('prefDyslexiaFont') as HTMLInputElement).checked;
-      const soundEffects = (document.getElementById('prefSoundEffects') as HTMLInputElement).checked;
-      const autoReadAloud = (document.getElementById('prefAutoReadAloud') as HTMLInputElement).checked;
+      try {
+        const grade = (document.getElementById('childGradeSelect') as HTMLSelectElement).value;
+        const rawLang = (document.getElementById('childLangSelect') as HTMLSelectElement).value;
+        const preferredLanguage = i18n.codeToSupportedLanguage(rawLang) || (rawLang as SupportedLanguage);
+        const dyslexiaFont = (document.getElementById('prefDyslexiaFont') as HTMLInputElement).checked;
+        const soundEffects = (document.getElementById('prefSoundEffects') as HTMLInputElement).checked;
+        const autoReadAloud = (document.getElementById('prefAutoReadAloud') as HTMLInputElement).checked;
 
-      await this.profileService.updateChild(child.id, {
-        name,
-        grade,
-        preferredLanguage,
-        avatar: this.selectedAvatar,
-        preferences: {
-          readingSpeed: child.preferences?.readingSpeed || 'normal',
-          dyslexiaFont,
-          highContrast: child.preferences?.highContrast || false,
-          soundEffects,
-          autoReadAloud,
-        },
-      });
+        const updated = await this.profileService.updateChild(child.id, {
+          name,
+          grade,
+          preferredLanguage,
+          avatar: this.selectedAvatar,
+          preferences: {
+            readingSpeed: child.preferences?.readingSpeed || 'normal',
+            dyslexiaFont,
+            highContrast: child.preferences?.highContrast || false,
+            soundEffects,
+            autoReadAloud,
+          },
+        });
 
-      this.closeModal();
-      this.onProfilesChanged();
+        this.closeModal();
+        this.onProfilesChanged(updated);
+      } catch (err: any) {
+        console.error('Failed to update child profile:', err);
+        if (alertEl) {
+          alertEl.textContent = err?.message || 'Failed to update child profile. Please try again.';
+          alertEl.classList.remove('hidden');
+        }
+      } finally {
+        this.isSubmitting = false;
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = originalText;
+        }
+      }
     });
 
     modalEl.classList.remove('hidden');
@@ -335,6 +427,7 @@ export class ChildModalView {
   // -------------------------------------------------------------
   public openDeleteConfirmModal(child: ChildProfile): void {
     const modalEl = this.ensureModalElement();
+    this.isSubmitting = false;
 
     modalEl.innerHTML = `
       <div class="modal" style="max-width: 440px;" role="dialog" aria-modal="true" aria-labelledby="delTitle">
@@ -353,6 +446,8 @@ export class ChildModalView {
             <small style="color: var(--muted);">${child.grade}</small>
           </div>
 
+          <div id="delModalAlert" class="form-alert alert-error hidden" style="margin-bottom: 14px; font-size: 13px; line-height: 1.4;"></div>
+
           <div class="form-alert alert-error" style="line-height: 1.5;">
             ${i18n.t('childModal.deleteConfirm', { name: child.name })}
           </div>
@@ -361,7 +456,7 @@ export class ChildModalView {
             <button
               type="button"
               id="btnConfirmDelete"
-              style="background: #c04830; color: #fff; padding: 11px 18px;"
+              style="background: #c04830; color: #fff; padding: 11px 18px; min-width: 130px;"
             >
               ${i18n.t('childModal.deleteAction')}
             </button>
@@ -377,9 +472,33 @@ export class ChildModalView {
     document.getElementById('btnCancelDelete')?.addEventListener('click', () => this.closeModal());
 
     document.getElementById('btnConfirmDelete')?.addEventListener('click', async () => {
-      await this.profileService.deleteChild(child.id);
-      this.closeModal();
-      this.onProfilesChanged();
+      if (this.isSubmitting) return;
+      const btn = document.getElementById('btnConfirmDelete') as HTMLButtonElement;
+      const origText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳</span> ${i18n.t('common.loading')}`;
+      }
+      this.isSubmitting = true;
+
+      try {
+        await this.profileService.deleteChild(child.id);
+        this.closeModal();
+        this.onProfilesChanged();
+      } catch (err: any) {
+        console.error('Failed to delete child profile:', err);
+        const alertEl = document.getElementById('delModalAlert');
+        if (alertEl) {
+          alertEl.textContent = err?.message || 'Failed to remove child profile.';
+          alertEl.classList.remove('hidden');
+        }
+      } finally {
+        this.isSubmitting = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      }
     });
 
     modalEl.classList.remove('hidden');

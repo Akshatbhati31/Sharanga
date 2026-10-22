@@ -81,7 +81,7 @@ export class ProfileSelectView {
                 class="btn-action-pill ${this.isManageMode ? 'active' : ''}"
                 aria-pressed="${this.isManageMode}"
               >
-                <span>⚙️</span> ${this.isManageMode ? i18n.t('profileSelect.doneManaging') : i18n.t('profileSelect.manageProfiles')}
+                <span>${this.isManageMode ? '✓' : '⚙️'}</span> ${this.isManageMode ? i18n.t('profileSelect.doneManaging') : i18n.t('profileSelect.manageProfiles')}
               </button>
             </div>
 

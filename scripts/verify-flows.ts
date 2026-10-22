@@ -37,6 +37,7 @@ import { i18n, SUPPORTED_LANGUAGES } from '../src/i18n/index';
 import { SpeechService } from '../src/services/speechService';
 import { ActivityRunnerModal } from '../src/ui/activityRunnerModal';
 import { LearningJourneyView } from '../src/ui/learningJourneyView';
+import { ChildModalView } from '../src/ui/childModalView';
 import type { SupportedLanguage, AppLanguageCode, ChildProfile } from '../src/types/auth';
 
 // Polyfill localStorage, document & SpeechSynthesis for Node test environment
@@ -69,7 +70,21 @@ class MockDomElement {
     },
     contains: (cls: string) => this.className.includes(cls),
   };
-  addEventListener() {}
+  listeners: Record<string, Array<(e?: any) => any>> = {};
+  addEventListener(type: string, cb: (e?: any) => any) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(cb);
+  }
+  dispatchEvent(event: any) {
+    const type = event?.type || 'click';
+    if (!event.preventDefault) event.preventDefault = () => {};
+    if (this.listeners[type]) {
+      for (const cb of this.listeners[type]) {
+        cb(event);
+      }
+    }
+    return true;
+  }
   appendChild(child: MockDomElement) {
     this.children.push(child);
     return child;
@@ -2595,6 +2610,134 @@ async function runTests() {
   assert(taJourneyHtml.includes('இடைநிலை'), 'UI contains localized Tamil difficulty tag (இடைநிலை)');
   assert(taJourneyHtml.includes('இப்போதே தொடங்கு 🌟'), 'UI contains localized Tamil Start Now button');
   assert(taJourneyHtml.includes('முன்னோட்டம்'), 'UI contains localized Tamil Preview button');
+
+  // -------------------------------------------------------------
+  // Test Group 17: Save Child Profile & Duplicate Icons Regression Tests
+  // -------------------------------------------------------------
+  console.log('\n--- Group 17: Save Child Profile & Duplicate Icons Regression Tests ---');
+
+  // 17.1 ProfileService createChild & language code normalization
+  const ps = ProfileService.getInstance();
+  const group17ParentId = 'parent-test-regression-17';
+
+  // Test empty name validation error
+  let emptyNameErrorCaught = false;
+  try {
+    await ps.createChild(group17ParentId, {
+      name: '   ',
+      grade: 'Class 3',
+      preferredLanguage: 'Hindi',
+      avatar: '🦊',
+    });
+  } catch (err: any) {
+    emptyNameErrorCaught = true;
+    assert(err.message.includes("name is required"), 'Rejects empty child name with meaningful error message');
+  }
+  assert(emptyNameErrorCaught, 'Validation error thrown when child name is empty');
+
+  // Test successful creation with Punjabi language
+  const createdChild = await ps.createChild(group17ParentId, {
+    name: 'Kirat Singh',
+    grade: 'Class 4 · Little reader',
+    preferredLanguage: 'Punjabi',
+    avatar: '🦁',
+    preferences: {
+      readingSpeed: 'slow',
+      dyslexiaFont: true,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: true,
+    },
+  });
+
+  assert(createdChild.name === 'Kirat Singh', 'Child profile saved with correct name');
+  assert(createdChild.grade === 'Class 4 · Little reader', 'Child profile saved with correct grade');
+  assert(createdChild.preferredLanguage === 'Punjabi', 'Child profile saved with correct preferredLanguage');
+  assert(createdChild.avatar === '🦁', 'Child profile saved with selected avatar');
+  assert(createdChild.preferences?.dyslexiaFont === true, 'Child profile preserves dyslexia font preference');
+  assert(createdChild.preferences?.autoReadAloud === true, 'Child profile preserves autoReadAloud preference');
+  assert(createdChild.parentId === group17ParentId, 'Child profile is attached to the authenticated parent ID');
+
+  // Test updating child profile
+  const updatedChild = await ps.updateChild(createdChild.id, {
+    name: 'Kirat S.',
+    preferredLanguage: 'Tamil',
+  });
+  assert(updatedChild.name === 'Kirat S.', 'Child profile update preserves modified name');
+  assert(updatedChild.preferredLanguage === 'Tamil', 'Child profile update properly modifies language');
+
+  // 17.2 Language Code mappings across all 5 supported languages
+  const group17SupportedLangs: Array<{ code: 'en' | 'hi' | 'or' | 'pa' | 'ta'; name: 'English' | 'Hindi' | 'Odia' | 'Punjabi' | 'Tamil' }> = [
+    { code: 'en', name: 'English' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'or', name: 'Odia' },
+    { code: 'pa', name: 'Punjabi' },
+    { code: 'ta', name: 'Tamil' },
+  ];
+
+  for (const item of group17SupportedLangs) {
+    assert(i18n.supportedLanguageToCode(item.name) === item.code, `Language ${item.name} maps to code ${item.code}`);
+    assert(i18n.codeToSupportedLanguage(item.code) === item.name, `Code ${item.code} maps to language ${item.name}`);
+  }
+
+  // 17.3 Verify No Duplicate Icons in translation strings
+  await i18n.setLanguage('en');
+  const enAddChild = i18n.t('profileSelect.addChildBtn');
+  assert(!enAddChild.startsWith('+'), `profileSelect.addChildBtn in en does not contain redundant hardcoded '+': "${enAddChild}"`);
+
+  const enManage = i18n.t('profileSelect.manageProfilesBtn');
+  assert(!enManage.includes('⚙️'), `profileSelect.manageProfilesBtn in en does not contain redundant hardcoded gear: "${enManage}"`);
+
+  const enParentDash = i18n.t('profileSelect.parentDashBtn');
+  assert(!enParentDash.includes('🔒'), `profileSelect.parentDashBtn in en does not contain redundant hardcoded lock: "${enParentDash}"`);
+
+  const enStartReading = i18n.t('profileSelect.startReadingBtn');
+  assert(!enStartReading.includes('→'), `profileSelect.startReadingBtn in en does not contain redundant hardcoded arrow: "${enStartReading}"`);
+
+  const enEdit = i18n.t('profileSelect.editBtn');
+  assert(!enEdit.includes('✏️'), `profileSelect.editBtn in en does not contain redundant hardcoded pencil: "${enEdit}"`);
+
+  // Check Hindi locale strings as well
+  await i18n.setLanguage('hi');
+  const hiAddChild = i18n.t('profileSelect.addChildBtn');
+  assert(!hiAddChild.startsWith('+'), `profileSelect.addChildBtn in hi does not contain redundant '+': "${hiAddChild}"`);
+  const hiStartReading = i18n.t('profileSelect.startReadingBtn');
+  assert(!hiStartReading.includes('→'), `profileSelect.startReadingBtn in hi does not contain redundant arrow: "${hiStartReading}"`);
+  await i18n.setLanguage('en');
+
+  // 17.4 ChildModalView UI creation and event wiring
+  let profilesChangedChild: any = null;
+  const childModalView = new ChildModalView((newChild) => {
+    profilesChangedChild = newChild;
+  });
+
+  childModalView.openAddModal('parent-demo-1');
+  const modalDom = document.getElementById('childActionModal');
+  assert(modalDom !== null, 'childActionModal is rendered to DOM');
+  assert(document.getElementById('childNameInput') !== null, 'childNameInput input exists');
+  assert(document.getElementById('childGradeSelect') !== null, 'childGradeSelect select exists');
+  assert(document.getElementById('childLangSelect') !== null, 'childLangSelect select exists');
+  assert(document.getElementById('childModalAlert') !== null, 'childModalAlert alert exists for user feedback');
+  assert(document.getElementById('btnSaveChild') !== null, 'btnSaveChild button exists');
+
+  // Submit valid child via form
+  const nameInputEl = document.getElementById('childNameInput') as HTMLInputElement;
+  nameInputEl.value = 'Rohan';
+  const gradeSelectEl = document.getElementById('childGradeSelect') as HTMLSelectElement;
+  gradeSelectEl.value = 'Class 2 · Early reader';
+  const langSelectEl = document.getElementById('childLangSelect') as HTMLSelectElement;
+  langSelectEl.value = 'hi';
+
+  const childFormEl = document.getElementById('childProfileForm') as HTMLFormElement;
+  childFormEl.dispatchEvent(new Event('submit', { cancelable: true }));
+
+  // Allow async save to settle
+  await new Promise(r => setTimeout(r, 100));
+
+  assert(profilesChangedChild !== null, 'onProfilesChanged callback fired with new child');
+  assert(profilesChangedChild.name === 'Rohan', 'New child name passed to callback is Rohan');
+  assert(profilesChangedChild.preferredLanguage === 'Hindi', 'New child language mapped to Hindi from "hi" code');
+  assert(modalDom?.classList.contains('hidden'), 'Modal closed successfully after save');
 
   // Reset language to English at end of suite
   await i18n.setLanguage('en');
