@@ -2,6 +2,7 @@ import { ProfileService } from '../services/profileService';
 import { ActivityTrackerService } from '../services/activityTrackerService';
 import { AuthService } from '../services/authService';
 import { SpeechService } from '../services/speechService';
+import { StorageService } from '../services/storageService';
 import type { ChildProfile, SupportedLanguage, AppLanguageCode } from '../types/auth';
 import type { ParentDashboardView } from './parentDashboardView';
 import { ResourceFinderView } from './resourceFinderView';
@@ -13,6 +14,7 @@ import { LetterMirrorBDModal } from './letterMirrorBDModal';
 import { ACTIVITY_CATALOG } from '../services/activityCatalog';
 import { getLocalizedSkillTitle } from '../services/recommendationEngine';
 import { ReadingChartService } from '../services/readingChartService';
+import { StoryShelfService } from '../services/storyShelfService';
 import { i18n } from '../i18n';
 
 export class DashboardController {
@@ -30,7 +32,48 @@ export class DashboardController {
   private learningPathService: LearningPathService;
   private homeReadingChart: ReadingConfidenceChart | null = null;
   private progressReadingChart: ReadingConfidenceChart | null = null;
+  private storyShelfService: StoryShelfService = StoryShelfService.getInstance();
+  private currentStoryLanguage: SupportedLanguage = 'English';
   private currentPage: 'home' | 'learn' | 'progress' | 'stories' | 'resources' = 'home';
+  private currentSpellingWord = 'ship';
+  private previousSpellingWord = '';
+
+  // Language-specific spelling word banks for "Say it, spell it!"
+  private readonly spellingWordBanks: Record<
+    SupportedLanguage,
+    { beginner: string[]; intermediate: string[]; advanced: string[] }
+  > = {
+    English: {
+      beginner: ['ship', 'bell', 'fish', 'frog', 'star', 'nest', 'duck', 'tree', 'moon', 'pink'],
+      intermediate: ['brush', 'cloud', 'train', 'plant', 'spoon', 'green', 'clock', 'smile'],
+      advanced: ['bridge', 'splash', 'bright', 'stream', 'shadow', 'flight'],
+    },
+    Hindi: {
+      beginner: ['घर', 'फल', 'जल', 'नाव', 'पेड़', 'तारा', 'फूल', 'किताब', 'सूरज', 'चाँद'],
+      intermediate: ['कमल', 'मटर', 'सड़क', 'पहाड़', 'नदी', 'जंगल', 'बगीचा', 'चिड़िया'],
+      advanced: ['मित्रता', 'प्रकाश', 'प्रकृति', 'आनंद', 'सुंदर', 'विश्वास'],
+    },
+    Odia: {
+      beginner: ['ଘର', 'ଫଳ', 'ଜଳ', 'ଡଙ୍ଗା', 'ଗଛ', 'ତାରା', 'ଫୁଲ', 'ବହି', 'ସୂର୍ଯ୍ୟ', 'ଜହ୍ନ'],
+      intermediate: ['କମଳ', 'ମଟର', 'ରାସ୍ତା', 'ପାହାଡ଼', 'ନଦୀ', 'ଜଙ୍ଗଲ', 'ବଗିଚା', 'ଚଢ଼େଇ'],
+      advanced: ['ମିତ୍ରତା', 'ପ୍ରକାଶ', 'ପ୍ରକୃତି', 'ଆନନ୍ଦ', 'ସୁନ୍ଦର', 'ବିଶ୍ୱାସ'],
+    },
+    Punjabi: {
+      beginner: ['ਘਰ', 'ਫਲ', 'ਜਲ', 'ਕਿਸ਼ਤੀ', 'ਰੁੱਖ', 'ਤਾਰਾ', 'ਫੁੱਲ', 'ਕਿਤਾਬ', 'ਸੂਰਜ', 'ਚੰਨ'],
+      intermediate: ['ਕਮਲ', 'ਮਟਰ', 'ਸੜਕ', 'ਪਹਾੜ', 'ਦਰਿਆ', 'ਜੰਗਲ', 'ਬਗੀਚਾ', 'ਚਿੜੀ'],
+      advanced: ['ਮਿੱਤਰਤਾ', 'ਰੌਸ਼ਨੀ', 'ਕੁਦਰਤ', 'ਆਨੰਦ', 'ਸੁੰਦਰ', 'ਵਿਸ਼ਵਾਸ'],
+    },
+    Tamil: {
+      beginner: ['வீடு', 'பழம்', 'நீர்', 'படகு', 'மரம்', 'விண்மீன்', 'மலர்', 'நூல்', 'சூரியன்', 'நிலா'],
+      intermediate: ['தாமரை', 'பச்சை', 'சாலை', 'மலை', 'ஆறு', 'காடு', 'தோட்டம்', 'பறவை'],
+      advanced: ['நட்பு', 'ஒளி', 'இயற்கை', 'மகிழ்ச்சி', 'அழகு', 'நம்பிக்கை'],
+    },
+    Bengali: {
+      beginner: ['ঘর', 'ফল', 'জল', 'নৌকা', 'গাছ', 'তারা', 'ফুল', 'বই', 'সূর্য', 'চাঁদ'],
+      intermediate: ['কমল', 'মটর', 'রাস্তা', 'পাহাড়', 'নদী', 'জঙ্গল', 'বাগান', 'পাখি'],
+      advanced: ['বন্ধুত্ব', 'আলো', 'প্রকৃতি', 'আনন্দ', 'সুন্দর', 'বিশ্বাস'],
+    },
+  };
 
   // Language word banks for Picture Word Match
   private readonly wordBanks: Record<
@@ -103,15 +146,11 @@ export class DashboardController {
 
   public render(child: ChildProfile): void {
     this.activeChild = child;
+    this.currentStoryLanguage = child.preferredLanguage || 'English';
     const progress = this.profileService.getChildProgress(child.id);
-
-    // Start tracking active learning session
-    this.activityTracker.startActivity(
-      child.parentId,
-      child.id,
-      'general_learning',
-      'Home Learning Dashboard'
-    );
+    const dailyAttempts = StorageService.getInstance().getDailyAttempts(child.id);
+    const dailyGoal = 10;
+    const dailyPct = Math.min(100, Math.round((dailyAttempts / dailyGoal) * 100));
 
     // Apply dyslexia font mode if preferred
     document.body.classList.toggle('dyslexia-font-mode', Boolean(child.preferences?.dyslexiaFont));
@@ -201,17 +240,17 @@ export class DashboardController {
               <div class="stat">
                 <div class="stat-top">${i18n.t('home.statPracticeTime')} <span class="stat-icon">⏱️</span></div>
                 <strong id="statPracticeTime">${progress.practiceMinutes} <small>min</small></strong>
-                <small><span class="positive">↑ 12 min</span> ${i18n.t('home.statPracticeTimeFromLastWeek')}</small>
+                <small id="statPracticeTimeSub"><span class="${progress.practiceMinutes > 0 ? 'positive' : ''}">${progress.practiceMinutes > 0 ? `↑ ${progress.practiceMinutes} min` : '0 min'}</span> ${i18n.t('home.statPracticeTimeFromLastWeek')}</small>
               </div>
               <div class="stat">
                 <div class="stat-top">${i18n.t('home.statWordsLearned')} <span class="stat-icon" style="background:#fff2d0">📚</span></div>
                 <strong id="statWordsLearned">${progress.wordsLearned}</strong>
-                <small><span class="positive">↑ 6 new</span> ${i18n.t('home.statWordsLearnedNew')}</small>
+                <small id="statWordsLearnedSub"><span class="${progress.wordsLearned > 0 ? 'positive' : ''}">${progress.wordsLearned > 0 ? `↑ ${progress.wordsLearned} new` : '0 new'}</span> ${i18n.t('home.statWordsLearnedNew')}</small>
               </div>
               <div class="stat">
                 <div class="stat-top">${i18n.t('home.statFluency')} <span class="stat-icon" style="background:#fce9e3">🌿</span></div>
                 <strong id="statFluency">${progress.fluencyWpm} <small>wpm</small></strong>
-                <small><span class="positive">↑ 4 wpm</span> ${i18n.t('home.statFluencyGrowing')}</small>
+                <small id="statFluencySub"><span class="${progress.fluencyWpm > 0 ? 'positive' : ''}">${progress.fluencyWpm > 0 ? `↑ ${progress.fluencyWpm} wpm` : 'Baseline'}</span> ${i18n.t('home.statFluencyGrowing')}</small>
               </div>
               <div class="stat">
                 <div class="stat-top">${i18n.t('home.statHappyPoints')} <span class="stat-icon" style="background:#f0edff">⭐</span></div>
@@ -323,9 +362,11 @@ export class DashboardController {
                 <strong>${i18n.t('practice.dailyChallenge')}</strong>
                 <p>${i18n.t('practice.dailyChallengeSub')}</p>
               </div>
-              <div class="progress-small">
-                <div>4 / 10 min</div>
-                <div class="bar"><i></i></div>
+              <div class="progress-small" id="dailyChallengeContainer">
+                <div id="dailyChallengeAttemptLabel">Attempts: ${dailyAttempts} / ${dailyGoal}</div>
+                <div class="bar" id="dailyChallengeBar" role="progressbar" aria-valuenow="${dailyAttempts}" aria-valuemin="0" aria-valuemax="${dailyGoal}" aria-label="Daily challenge attempts">
+                  <i id="dailyChallengeProgressBar" style="width: ${dailyPct}%"></i>
+                </div>
               </div>
             </div>
 
@@ -511,54 +552,7 @@ export class DashboardController {
 
           <!-- Section: Story Shelf Page -->
           <section id="storiesPage" class="hidden">
-            <div class="learn-heading">
-              <div>
-                <h1>${i18n.t('stories.heading')}</h1>
-                <p>${i18n.t('stories.sub', { name: child.name, grade: child.grade })}</p>
-              </div>
-              <div class="lang-select">
-                <select id="storyLanguageSelect">
-                  <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>EG English</option>
-                  <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
-                  <option value="Odia" ${child.preferredLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
-                  <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
-                  <option value="Tamil" ${child.preferredLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="hero" style="background:#496a9a; min-height:150px">
-              <div class="hero-copy">
-                <div class="eyebrow" id="storyHeroGrade">${i18n.t('stories.storyOfDayTag')} · ${child.grade.toUpperCase()}</div>
-                <h1>${i18n.t('stories.sunnyTitle')}</h1>
-                <p>${i18n.t('stories.sunnyDesc')}</p>
-                <button class="hero-cta" id="btnReadSunnyStory">${i18n.t('stories.readStoryBtn')}</button>
-              </div>
-              <div class="hero-figure" aria-hidden="true">🪁</div>
-            </div>
-
-            <div class="section-head">
-              <div>
-                <h2>${i18n.t('stories.moreStories')}</h2>
-                <p>${i18n.t('stories.moreStoriesSub')}</p>
-              </div>
-              <span class="tag" id="storyTagLevel">${child.preferredLanguage.toUpperCase()} · ${child.grade.toUpperCase()}</span>
-            </div>
-
-            <div class="content-grid">
-              <div class="card">
-                <div style="font-size:34px">🐘</div>
-                <h3 style="font:900 16px Nunito; margin:9px 0 4px">${i18n.t('stories.minaTitle')}</h3>
-                <p style="font-size:11px; color:#829094; margin:0">${i18n.t('stories.minaDesc')}</p>
-                <button class="text-link" style="padding:12px 0 0" id="btnReadMina">${i18n.t('stories.readStory')} →</button>
-              </div>
-              <div class="card">
-                <div style="font-size:34px">🌻</div>
-                <h3 style="font:900 16px Nunito; margin:9px 0 4px">${i18n.t('stories.sunflowerTitle')}</h3>
-                <p style="font-size:11px; color:#829094; margin:0">${i18n.t('stories.sunflowerDesc')}</p>
-                <button class="text-link" style="padding:12px 0 0" id="btnReadSunflower">${i18n.t('stories.readStory')} →</button>
-              </div>
-            </div>
+            <div id="storiesContainer"></div>
 
             <div class="resource-card" style="margin-top:16px">
               <div class="resource-icon">🌐</div>
@@ -634,20 +628,17 @@ export class DashboardController {
 
     if (this.activeChild) {
       if (name === 'home') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Home Learning Dashboard');
         if (this.learningJourneyView && this.activeChild) {
           this.learningJourneyView.render(this.activeChild);
         }
         this.homeReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'learn') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'practice_game', 'Picture Word Match Game');
+        this.updateDailyChallengeUI();
       } else if (name === 'progress') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Progress View');
         this.progressReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'stories') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'story_reading', 'Story Shelf Exploration');
+        this.renderStoryShelf(true);
       } else if (name === 'resources') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Educational Resource Finder');
         const resourcesContainer = this.container.querySelector('#resourcesPage') as HTMLElement;
         if (resourcesContainer) {
           if (!this.resourceFinderView) {
@@ -772,16 +763,8 @@ export class DashboardController {
       this.showToast(`Practice language set to ${newLang}! 🌈`);
     });
 
-    // Language Change on Stories page
-    const storyLangSelect = this.container.querySelector('#storyLanguageSelect') as HTMLSelectElement;
-    storyLangSelect?.addEventListener('change', () => {
-      const val = storyLangSelect.value;
-      const tag = this.container.querySelector('#storyTagLevel');
-      if (tag && this.activeChild) {
-        tag.textContent = `${val.toUpperCase()} · ${this.activeChild.grade.toUpperCase()}`;
-      }
-      this.showToast(`Story shelf updated for ${val} 📚`);
-    });
+    // Initialize Story Shelf
+    this.renderStoryShelf(false);
 
     // Picture word match option selection
     this.bindGameOptions();
@@ -792,15 +775,18 @@ export class DashboardController {
 
     // Activities
     this.container.querySelector('#actMirror')?.addEventListener('click', () => this.openLetterGame());
-    this.container.querySelector('#actStory')?.addEventListener('click', () => this.openStory('Sunny and the little kite'));
+    this.container.querySelector('#actStory')?.addEventListener('click', () => {
+      const { featured } = this.storyShelfService.getFeaturedAndShelfStories(
+        this.currentStoryLanguage,
+        this.activeChild?.grade
+      );
+      this.openStory(featured.id, this.currentStoryLanguage);
+    });
     this.container.querySelector('#actVoice')?.addEventListener('click', () => this.openVoicePractice());
     this.container.querySelector('#btnVoicePractice')?.addEventListener('click', () => this.openVoicePractice());
     this.container.querySelector('#cardBadge')?.addEventListener('click', () => this.openBadgeModal());
 
-    // Story buttons
-    this.container.querySelector('#btnReadSunnyStory')?.addEventListener('click', () => this.openStory('Sunny and the little kite'));
-    this.container.querySelector('#btnReadMina')?.addEventListener('click', () => this.openStory('Mina and the river'));
-    this.container.querySelector('#btnReadSunflower')?.addEventListener('click', () => this.openStory("The sunflower's wish"));
+    // Resource finder button
     this.container.querySelector('#btnFindTinyFishStories')?.addEventListener('click', () => this.openTinyFishFinder());
 
     // Modal close
@@ -852,9 +838,7 @@ export class DashboardController {
         );
       });
     });
-  }
-
-  // -------------------------------------------------------------
+  }  // -------------------------------------------------------------
   // Game Logic (Picture Word Match)
   // -------------------------------------------------------------
   private bindGameOptions(): void {
@@ -873,17 +857,33 @@ export class DashboardController {
     const data = this.wordBanks[lang] || this.wordBanks.English;
     const targetWordEl = this.container.querySelector('#targetWord');
     const instructionEl = this.container.querySelector('#instruction');
-    if (targetWordEl) targetWordEl.textContent = data.words[0];
+    const targetWord = data.words[0];
+    if (targetWordEl) targetWordEl.textContent = targetWord;
     if (instructionEl) instructionEl.textContent = data.prompt;
+
+    const choices = data.words.map((w, idx) => ({
+      word: w,
+      picture: data.pictures[idx] || '🌟',
+      isCorrect: w === targetWord,
+    }));
+
+    // Fisher-Yates shuffle choices so correct option isn't always at index 0
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
 
     const optButtons = this.container.querySelectorAll('.options .option');
     optButtons.forEach((btn, index) => {
+      const choice = choices[index];
+      if (!choice) return;
       const strong = btn.querySelector('strong');
       const pic = btn.querySelector('.picture');
-      if (strong) strong.textContent = data.words[index] || '';
-      if (pic) pic.textContent = data.pictures[index] || '🌟';
-      (btn as HTMLElement).dataset.word = data.words[index];
-      (btn as HTMLElement).dataset.correct = index === 0 ? 'true' : 'false';
+      if (strong) strong.textContent = choice.word;
+      if (pic) pic.textContent = choice.picture;
+      (btn as HTMLElement).dataset.word = choice.word;
+      (btn as HTMLElement).dataset.correct = choice.isCorrect ? 'true' : 'false';
+      (btn as HTMLElement).dataset.rewarded = '';
       btn.classList.remove('selected', 'correct', 'wrong');
     });
 
@@ -902,6 +902,12 @@ export class DashboardController {
         feedback.textContent = i18n.tForLang(childLangCode, 'practice.tapToChoose') || "Choose a picture first — you've got this!";
       }
       return;
+    }
+
+    // Increment daily challenge attempt only when answer is actually submitted
+    if (this.activeChild) {
+      StorageService.getInstance().incrementDailyAttempt(this.activeChild.id);
+      this.updateDailyChallengeUI();
     }
 
     if (selected.dataset.correct === 'true') {
@@ -973,7 +979,7 @@ export class DashboardController {
           skillId: 'skill_letter_sounds_basic',
           activityType: 'word_match',
           score: 50,
-          accuracy: 0.5,
+          accuracy: 0.0,
           totalQuestions: 1,
           correctAnswers: 0,
           incorrectAnswers: 1,
@@ -1021,24 +1027,43 @@ export class DashboardController {
       ],
       Bengali: [
         ['নৌকা', 'ঘর', 'ফল', '🚣', '🏠', '🍎'],
-        ['বই', 'ফুল', 'গাছ', '📖', '🌸', '🌳'],
+        ['বই', 'फूल', 'গাছ', '📖', '🌸', '🌳'],
       ],
     };
 
     const bank = langBanks[currentLang] || langBanks.English;
-    const rand = bank[Math.floor(Math.random() * bank.length)];
+    const currentWord = (this.container.querySelector('#targetWord')?.textContent || '').trim();
+    const available = bank.filter(g => g[0] !== currentWord);
+    const chosenList = available.length > 0 ? available : bank;
+    const rand = chosenList[Math.floor(Math.random() * chosenList.length)];
+    const targetWord = rand[0];
+
     const targetEl = this.container.querySelector('#targetWord');
-    if (targetEl) targetEl.textContent = rand[0];
+    if (targetEl) targetEl.textContent = targetWord;
+
+    const choices = [
+      { word: rand[0], picture: rand[3], isCorrect: true },
+      { word: rand[1], picture: rand[4], isCorrect: false },
+      { word: rand[2], picture: rand[5], isCorrect: false },
+    ];
+
+    // Fisher-Yates shuffle choices so correct option isn't always at index 0
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
 
     const optButtons = this.container.querySelectorAll('.options .option');
     optButtons.forEach((btn, i) => {
-      (btn as HTMLElement).dataset.word = rand[i];
-      (btn as HTMLElement).dataset.correct = i === 0 ? 'true' : 'false';
+      const choice = choices[i];
+      if (!choice) return;
+      (btn as HTMLElement).dataset.word = choice.word;
+      (btn as HTMLElement).dataset.correct = choice.isCorrect ? 'true' : 'false';
       (btn as HTMLElement).dataset.rewarded = '';
       const strong = btn.querySelector('strong');
       const pic = btn.querySelector('.picture');
-      if (strong) strong.textContent = rand[i];
-      if (pic) pic.textContent = rand[i + 3];
+      if (strong) strong.textContent = choice.word;
+      if (pic) pic.textContent = choice.picture;
       btn.classList.remove('selected', 'correct', 'wrong');
     });
 
@@ -1056,149 +1081,127 @@ export class DashboardController {
   }
 
   // -------------------------------------------------------------
-  // Modals & Stories
+  // Story Shelf & Reading
   // -------------------------------------------------------------
-  private openStory(title: string): void {
+  private renderStoryShelf(advance: boolean = false): void {
+    const storiesContainer = this.container.querySelector('#storiesContainer');
+    if (!storiesContainer) return;
+
+    const childGrade = this.activeChild?.grade || 'Class 1';
+    const { featured, shelf } = this.storyShelfService.getFeaturedAndShelfStories(
+      this.currentStoryLanguage,
+      childGrade,
+      advance
+    );
+
+    storiesContainer.innerHTML = `
+      <div class="learn-heading">
+        <div>
+          <h1>${i18n.t('stories.heading')}</h1>
+          <p>${i18n.t('stories.sub', { name: this.activeChild?.name || 'Reader', grade: childGrade })}</p>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="button" class="soft" id="btnShuffleStories" title="Shuffle stories">🔄 Shuffle</button>
+          <div class="lang-select">
+            <select id="storyLanguageSelect">
+              <option value="English" ${this.currentStoryLanguage === 'English' ? 'selected' : ''}>EG English</option>
+              <option value="Hindi" ${this.currentStoryLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
+              <option value="Odia" ${this.currentStoryLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+              <option value="Punjabi" ${this.currentStoryLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+              <option value="Tamil" ${this.currentStoryLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero" style="background:#496a9a; min-height:150px">
+        <div class="hero-copy">
+          <div class="eyebrow" id="storyHeroGrade">
+            ${i18n.t('stories.storyOfDayTag')} · ${featured.readingLevel.toUpperCase()} · ⏱️ ${featured.estimatedMinutes} min
+          </div>
+          <h1>${featured.title}</h1>
+          <p>${featured.synopsis}</p>
+          <button class="hero-cta" id="btnReadHeroStory" data-story-id="${featured.id}">${i18n.t('stories.readStoryBtn')}</button>
+        </div>
+        <div class="hero-figure" aria-hidden="true">${featured.emoji}</div>
+      </div>
+
+      <div class="section-head">
+        <div>
+          <h2>${i18n.t('stories.moreStories')}</h2>
+          <p>${i18n.t('stories.moreStoriesSub')}</p>
+        </div>
+        <span class="tag" id="storyTagLevel">${this.currentStoryLanguage.toUpperCase()} · ${childGrade.toUpperCase()}</span>
+      </div>
+
+      <div class="content-grid">
+        ${shelf.map(story => `
+          <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+              <div style="font-size:34px">${story.emoji}</div>
+              <div style="display:flex; gap:6px; margin:6px 0 4px; align-items:center;">
+                <span class="tag" style="font-size:10px; padding:2px 6px;">${story.readingLevel}</span>
+                <span style="font-size:11px; color:#829094;">⏱️ ${story.estimatedMinutes}m</span>
+              </div>
+              <h3 style="font:900 16px Nunito; margin:4px 0 4px">${story.title}</h3>
+              <p style="font-size:11px; color:#829094; margin:0">${story.synopsis}</p>
+            </div>
+            <button class="text-link btn-read-shelf-story" style="padding:12px 0 0; text-align:left;" data-story-id="${story.id}">${i18n.t('stories.readStory')} →</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    // Bind events for newly rendered shelf elements
+    storiesContainer.querySelector('#btnShuffleStories')?.addEventListener('click', () => {
+      this.renderStoryShelf(true);
+      this.showToast('Story shelf rotated 🔄');
+    });
+
+    const langSelect = storiesContainer.querySelector('#storyLanguageSelect') as HTMLSelectElement;
+    langSelect?.addEventListener('change', () => {
+      this.currentStoryLanguage = langSelect.value as SupportedLanguage;
+      this.renderStoryShelf(false);
+      this.showToast(`Story shelf updated for ${this.currentStoryLanguage} 📚`);
+    });
+
+    storiesContainer.querySelector('#btnReadHeroStory')?.addEventListener('click', (e) => {
+      const storyId = (e.currentTarget as HTMLElement).dataset.storyId || featured.id;
+      this.openStory(storyId, this.currentStoryLanguage);
+    });
+
+    storiesContainer.querySelectorAll('.btn-read-shelf-story').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const storyId = (e.currentTarget as HTMLElement).dataset.storyId;
+        if (storyId) this.openStory(storyId, this.currentStoryLanguage);
+      });
+    });
+  }
+
+  private openStory(storyIdOrTitle: string, lang?: SupportedLanguage): void {
+    const storyLang = lang || this.currentStoryLanguage || this.activeChild?.preferredLanguage || 'English';
+    const story = this.storyShelfService.getStoryById(storyIdOrTitle, storyLang);
+    if (!story) return;
+
     if (this.activeChild) {
       this.activityTracker.startActivity(
         this.activeChild.parentId,
         this.activeChild.id,
         'story_reading',
-        `Story: ${title}`
+        `Story: ${story.title}`
       );
     }
 
-    const childLangCode = i18n.supportedLanguageToCode(this.activeChild?.preferredLanguage || i18n.getCurrentLanguage());
-    const storiesMultilingual: Record<AppLanguageCode, Record<string, { title: string; paragraphs: string[] }>> = {
-      en: {
-        'Sunny and the little kite': {
-          title: "Sunny and the little kite",
-          paragraphs: [
-            'One breezy afternoon, Sunny took her bright red kite to the hill. The kite tugged at its string, but it would not fly.',
-            'Sunny took a breath. She ran a little faster, and the wind lifted the kite into the blue sky. “I kept trying!” she laughed. Her friends cheered below.',
-          ],
-        },
-        'Mina and the river': {
-          title: "Mina and the river",
-          paragraphs: [
-            'Mina the elephant heard a soft cry near the river. A little bird had dropped its nest beside the water.',
-            'Mina used her strong trunk to lift a branch. Together, the friends made a safe new home. “Helping is better together,” said Mina.',
-          ],
-        },
-        "The sunflower's wish": {
-          title: "The sunflower's wish",
-          paragraphs: [
-            'A tiny seed dreamed of seeing the sun. Rain tapped the soil, and warm sunlight reached down. Slowly, the seed began to grow.',
-            'One morning, a yellow flower opened its petals. The little sunflower smiled at the sky. Growing takes time, and every day matters.',
-          ],
-        },
-      },
-      hi: {
-        'Sunny and the little kite': {
-          title: 'सन्नी और छोटी पतंग',
-          paragraphs: [
-            'एक हवादार दोपहर में, सन्नी अपनी लाल पतंग लेकर पहाड़ी पर गई। पतंग हवा में उड़ने की कोशिश कर रही थी पर उड़ नहीं पा रही थी।',
-            'सन्नी ने गहरी सांस ली। वह थोड़ी और तेज़ दौड़ी और हवा ने पतंग को नीले आसमान में उठा लिया। “मैंने कोशिश जारी रखी!” वह हंसी। उसके दोस्त नीचे खुशी से चिल्लाए।',
-          ],
-        },
-        'Mina and the river': {
-          title: 'मीना और नदी',
-          paragraphs: [
-            'मीना हथनी ने नदी किनारे एक धीमी आवाज़ सुनी। एक नन्ही चिड़िया का घोंसला पानी के पास गिर गया था।',
-            'मीना ने अपनी मजबूत सूंड से एक डाली उठाई। दोनों ने मिलकर एक सुरक्षित नया घर बनाया। “साथ मिलकर मदद करना सबसे अच्छा है,” मीना ने कहा।',
-          ],
-        },
-        "The sunflower's wish": {
-          title: 'सूरजमुखी की इच्छा',
-          paragraphs: [
-            'एक छोटे बीज ने सूरज को देखने का सपना देखा। बारिश की बूंदों ने मिट्टी को छुआ और गुनगुनी धूप नीचे पहुंची। धीरे-धीरे बीज बड़ा होने लगा।',
-            'एक सुबह, एक पीले फूल ने अपनी पंखुड़ियाँ खोलीं। छोटे सूरजमुखी ने आसमान की ओर देखकर मुस्कुराया। बढ़ने में समय लगता है और हर दिन महत्वपूर्ण है।',
-          ],
-        },
-      },
-      or: {
-        'Sunny and the little kite': {
-          title: 'ସନ୍ନି ଏବଂ ଛୋଟ ଗୁଡ଼ି',
-          paragraphs: [
-            'ଗୋଟିଏ ପବନିଆ ଅପରାହ୍ନରେ, ସନ୍ନି ନିଜର ଲାଲ ଗୁଡ଼ି ଧରି ପାହାଡ଼ ଉପରକୁ ଗଲା। ଗୁଡ଼ିଟି ଉଡ଼ିବାକୁ ଚେଷ୍ଟା କରୁଥିଲା କିନ୍ତୁ ଉଡ଼ିପାରୁନଥିଲା।',
-            'ସନ୍ନି ଧୈର୍ଯ୍ୟ ଧରି ଆହୁରି ଜୋରରେ ଦୌଡ଼ିଲା, ଏବଂ ପବନ ଗୁଡ଼ିଟିକୁ ନୀଳ ଆକାଶକୁ ନେଇଗଲା। “ମୁଁ ଚେଷ୍ଟା ଛାଡ଼ିଲି ନାହିଁ!” ସେ ହସି କହିଲା। ସାଙ୍ଗମାନେ ତଳେ ଖୁସିରେ ତାଳି ବଜାଇଲେ।',
-          ],
-        },
-        'Mina and the river': {
-          title: 'ମିନା ଏବଂ ନଦୀ',
-          paragraphs: [
-            'ମିନା ହାତୀ ନଦୀ କୂଳରେ ଗୋଟିଏ କାନ୍ଦଣା ଶବ୍ଦ ଶୁଣିଲା। ଗୋଟିଏ ଛୋଟ ଚଢ଼େଇର ବସା ପାଣି ପାଖରେ ଖସିପଡ଼ିଥିଲା।',
-            'ମିନା ନିଜର ଶକ୍ତ ଶୁଣ୍ଢରେ ଗୋଟିଏ ଡାଳ ଉଠାଇଲା। ସାଙ୍ଗମାନେ ମିଶି ଗୋଟିଏ ସୁରକ୍ଷିତ ନୂଆ ଘର ତିଆରି କଲେ। “ଏକାଠି ସାହାଯ୍ୟ କରିବା ସବୁଠାରୁ ଭଲ,” ମିନା କହିଲା।',
-          ],
-        },
-        "The sunflower's wish": {
-          title: 'ସୂର୍ଯ୍ୟମୁଖୀର ଇଚ୍ଛା',
-          paragraphs: [
-            'ଗୋଟିଏ ଛୋଟ ମଞ୍ଜି ସୂର୍ଯ୍ୟଙ୍କୁ ଦେଖିବା ପାଇଁ ସ୍ୱପ୍ନ ଦେଖୁଥିଲା। ବର୍ଷା ଟୋପା ମାଟିକୁ ଛୁଇଁଲା ଏବଂ ସୂର୍ଯ୍ୟ କିରଣ ତଳକୁ ଆସିଲା। ଧୀରେ ଧୀରେ ମଞ୍ଜିଟି ବଢ଼ିବାକୁ ଲାଗିଲା।',
-            'ଗୋଟିଏ ସକାଳେ, ଗୋଟିଏ ହଳଦିଆ ଫୁଲ ନିଜର ପାଖୁଡ଼ା ମେଲାଇଲା। ଛୋଟ ସୂର୍ଯ୍ୟମୁଖୀ ଆକାଶକୁ ଚାହିଁ ହସିଲା। ବଢ଼ିବାକୁ ସମୟ ଲାଗେ ଏବଂ ପ୍ରତ୍ୟେକ ଦିନ ଗୁରୁତ୍ୱପୂର୍ଣ୍ଣ।',
-          ],
-        },
-      },
-      pa: {
-        'Sunny and the little kite': {
-          title: 'ਸੰਨੀ ਅਤੇ ਛੋਟੀ ਪਤੰਗ',
-          paragraphs: [
-            'ਇੱਕ ਹਵਾਦਾਰ ਦੁਪਹਿਰ ਨੂੰ, ਸੰਨੀ ਆਪਣੀ ਲਾਲ ਪਤੰਗ ਲੈ ਕੇ ਪਹਾੜੀ ਤੇ ਗਈ। ਪਤੰਗ ਉੱਡਣ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰ ਰਹੀ ਸੀ ਪਰ ਉੱਡ ਨਹੀਂ ਰਹੀ ਸੀ।',
-            'ਸੰਨੀ ਨੇ ਲੰਮਾ ਸਾਹ ਲਿਆ ਅਤੇ ਥੋੜ੍ਹਾ ਤੇਜ਼ ਦੌੜੀ, ਅਤੇ ਹਵਾ ਨੇ ਪਤੰਗ ਨੂੰ ਨੀਲੇ ਅਸਮਾਨ ਵਿੱਚ ਉਡਾ ਦਿੱਤਾ। “ਮੈਂ ਕੋਸ਼ਿਸ਼ ਕਰਦੀ ਰਹੀ!” ਉਹ ਹੱਸੀ। ਉਸਦੇ ਦੋਸਤ ਹੇਠਾਂ ਖੁਸ਼ ਹੋਏ।',
-          ],
-        },
-        'Mina and the river': {
-          title: 'ਮੀਨਾ ਅਤੇ ਦਰਿਆ',
-          paragraphs: [
-            'ਮੀਨਾ ਹੱਥਣੀ ਨੇ ਦਰਿਆ ਕੋਲ ਇੱਕ ਹੌਲੀ ਆਵਾਜ਼ ਸੁਣੀ। ਇੱਕ ਨਿੱਕੀ ਚਿੜੀ ਦਾ ਆਲ੍ਹਣਾ ਪਾਣੀ ਕੋਲ ਡਿੱਗ ਗਿਆ ਸੀ।',
-            'ਮੀਨਾ ਨੇ ਆਪਣੀ ਮਜ਼ਬੂਤ ਸੁੰਡ ਨਾਲ ਇੱਕ ਟਾਹਣੀ ਚੁੱਕੀ। ਦੋਵਾਂ ਨੇ ਮਿਲ ਕੇ ਇੱਕ ਸੁਰੱਖਿਅਤ ਨਵਾਂ ਘਰ ਬਣਾਇਆ। “ਇਕੱਠੇ ਮਦਦ ਕਰਨਾ ਬਹੁਤ ਵਧੀਆ ਹੈ,” ਮੀਨਾ ਨੇ ਕਿਹਾ।',
-          ],
-        },
-        "The sunflower's wish": {
-          title: 'ਸੂਰਜਮੁਖੀ ਦੀ ਇੱਛਾ',
-          paragraphs: [
-            'ਇੱਕ ਛੋਟੇ ਬੀਜ ਨੇ ਸੂਰਜ ਨੂੰ ਵੇਖਣ ਦਾ ਸੁਪਨਾ ਲਿਆ। ਮੀਂਹ ਦੀਆਂ ਬੂੰਦਾਂ ਮਿੱਟੀ ਨੂੰ ਛੂਹੀਆਂ ਅਤੇ ਨਿੱਘੀ ਧੁੱਪ ਹੇਠਾਂ ਆਈ। ਹੌਲੀ-ਹੌਲੀ ਬੀਜ ਵਧਣ ਲੱਗਾ।',
-            'ਇੱਕ ਸਵੇਰ, ਇੱਕ ਪੀਲੇ ਫੁੱਲ ਨੇ ਆਪਣੀਆਂ ਪੱਤੀਆਂ ਖੋਲ੍ਹੀਆਂ। ਛੋਟੇ ਸੂਰਜਮੁਖੀ ਨੇ ਅਸਮਾਨ ਵੱਲ ਵੇਖ ਕੇ ਮੁਸਕੁਰਾਇਆ। ਵਧਣ ਵਿੱਚ ਸਮਾਂ ਲੱਗਦਾ ਹੈ ਅਤੇ ਹਰ ਦਿਨ ਮਹੱਤਵਪੂਰਨ ਹੈ।',
-          ],
-        },
-      },
-      ta: {
-        'Sunny and the little kite': {
-          title: 'சன்னியும் சிறிய பட்டமும்',
-          paragraphs: [
-            'ஒரு காற்று வீசும் பிற்பகலில், சன்னி தனது சிவப்புப் பட்டத்துடன் குன்றுக்குச் சென்றாள். பட்டம் பறக்க முயன்றது ஆனால் பறக்கவில்லை.',
-            'சன்னி ஒரு பெருமூச்சு விட்டு இன்னும் வேகமாக ஓடினாள், காற்று பட்டத்தை நீல வானத்திற்கு உயர்த்தியது. “நான் தொடர்ந்து முயற்சித்தேன்!” என்று சிரித்தாள். அவளது நண்பர்கள் கீழே ஆரவாரம் செய்தனர்.',
-          ],
-        },
-        'Mina and the river': {
-          title: 'மீனாவும் ஆறும்',
-          paragraphs: [
-            'மீனா யானை ஆற்றின் அருகே ஒரு மெல்லிய அழுகை ஒலியைக் கேட்டது. ஒரு சிறிய பறவையின் கூடு தண்ணீரின் அருகில் விழுந்துவிட்டது.',
-            'மீனா தனது பலமான தும்பிக்கையால் ஒரு கிளையைத் தூக்கியது. நண்பர்கள் ஒன்றிணைந்து ஒரு பாதுகாப்பான புதிய வீட்டைக் கட்டினர். “சேர்ந்து உதவுவதே சிறந்தது,” என்றாள் மீனா.',
-          ],
-        },
-        "The sunflower's wish": {
-          title: 'சூரியகாந்தியின் ஆசை',
-          paragraphs: [
-            'ஒரு சிறிய விதை சூரியனைக் காண கனவு கண்டது. மழைத்துளி மண்ணைத் தொட்டது, வெதுவெதுப்பான சூரிய ஒளி கீழே இறங்கியது. மெதுவாக விதை வளரத் தொடங்கியது.',
-            'ஒரு காலை வேளையில், ஒரு மஞ்சள் பூ தன் இதழ்களைத் திறந்தது. சிறிய சூரியகாந்தி வானத்தைப் பார்த்து புன்னகைத்தது. வளர்ச்சிக்கு நேரம் எடுக்கும், ஒவ்வொரு நாளும் முக்கியமானது.',
-          ],
-        },
-      },
-    };
-
-    const langStories = storiesMultilingual[childLangCode] || storiesMultilingual.en;
-    const storyItem = langStories[title] || langStories['Sunny and the little kite'] || {
-      title,
-      paragraphs: ['Reading story...'],
-    };
+    const childLangCode = i18n.supportedLanguageToCode(storyLang);
+    let comprehensionAnswered = 0;
+    const totalQuestions = story.comprehensionQuestions.length;
 
     this.openDashModal(
-      storyItem.title,
-      'Read at your own pace · listen along',
+      `${story.emoji} ${story.title}`,
+      `${story.readingLevel.toUpperCase()} · ⏱️ ${story.estimatedMinutes} min read`,
       `
       <div id="readerText" class="reader-text">
-        ${storyItem.paragraphs.map(p => `<p>${p}</p>`).join('')}
+        ${story.paragraphs.map(p => `<p>${p}</p>`).join('')}
       </div>
       <div class="modal-controls">
         <button type="button" id="btnModalReadAloud">🔊 ${i18n.t('voice.listenAloud')}</button>
@@ -1206,8 +1209,33 @@ export class DashboardController {
         <button type="button" class="soft" id="btnResizeLarger">A+</button>
         <button type="button" class="soft" id="btnFinishStory">${i18n.t('stories.finishReading')} ✓</button>
       </div>
-      <p class="prototype-note">
-        Accessible Story Reader: Supports high-contrast, speech read-aloud, and dyslexia-adapted font size.
+
+      ${totalQuestions > 0 ? `
+        <div class="story-comprehension-section" style="margin-top:20px; padding-top:16px; border-top:2px dashed #cbd5e1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font:900 16px Nunito; margin:0; color:#1e293b;">🧠 Comprehension Check</h3>
+            <span id="compScoreTag" class="tag" style="background:#e0f2fe; color:#0369a1;">0 / ${totalQuestions} Answered</span>
+          </div>
+          <div class="questions-list" style="display:flex; flex-direction:column; gap:14px;">
+            ${story.comprehensionQuestions.map((q, qIdx) => `
+              <div class="question-card" data-qid="${q.id}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                <p style="font-weight:700; margin:0 0 10px; color:#1e293b;">${qIdx + 1}. ${q.question}</p>
+                <div class="question-options" style="display:flex; flex-direction:column; gap:6px;">
+                  ${q.options.map((opt, oIdx) => `
+                    <button type="button" class="btn-comp-option" data-qid="${q.id}" data-opt-idx="${oIdx}" style="text-align:left; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:white; font-size:13px; cursor:pointer; transition:all 0.15s ease;">
+                      ${opt}
+                    </button>
+                  `).join('')}
+                </div>
+                <div class="comp-feedback" id="feedback_${q.id}" style="margin-top:8px; font-size:12px; font-weight:600; display:none;"></div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <p class="prototype-note" style="margin-top:16px;">
+        Accessible Story Reader: Supports high-contrast, speech read-aloud in ${storyLang}, text resizing, and reading comprehension.
       </p>
     `
     );
@@ -1237,6 +1265,98 @@ export class DashboardController {
       }
     });
 
+    // Wire comprehension question clicks
+    const answeredMap = new Set<string>();
+    const modalEl = this.container.querySelector('#dashModalContent');
+    if (modalEl) {
+      modalEl.querySelectorAll('.btn-comp-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLButtonElement;
+          const qid = target.dataset.qid;
+          const optIdx = parseInt(target.dataset.optIdx || '-1', 10);
+          if (!qid || optIdx < 0) return;
+
+          const question = story.comprehensionQuestions.find(q => q.id === qid);
+          if (!question) return;
+
+          const feedbackEl = modalEl.querySelector(`#feedback_${qid}`) as HTMLElement;
+          const parentCard = target.closest('.question-card') as HTMLElement;
+
+          if (optIdx === question.correctIndex) {
+            target.style.background = '#dcfce7';
+            target.style.borderColor = '#16a34a';
+            target.style.color = '#15803d';
+            target.style.fontWeight = '700';
+
+            // Disable siblings for this question
+            parentCard?.querySelectorAll('.btn-comp-option').forEach(b => {
+              (b as HTMLButtonElement).disabled = true;
+            });
+
+            if (feedbackEl) {
+              feedbackEl.style.display = 'block';
+              feedbackEl.style.color = '#15803d';
+              feedbackEl.textContent = `✓ Correct! ${question.explanation}`;
+            }
+
+            if (!answeredMap.has(qid)) {
+              answeredMap.add(qid);
+              comprehensionAnswered++;
+
+              const scoreTag = modalEl.querySelector('#compScoreTag');
+              if (scoreTag) {
+                scoreTag.textContent = `${comprehensionAnswered} / ${totalQuestions} Correct ⭐`;
+              }
+
+              if (this.activeChild) {
+                // Award happy points
+                const prog = this.profileService.getChildProgress(this.activeChild.id);
+                const updated = this.profileService.updateChildProgress(this.activeChild.id, {
+                  happyPoints: prog.happyPoints + 5,
+                });
+                const pointsEl = this.container.querySelector('#points');
+                if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+                // Record attempt in learning path service
+                this.learningPathService.recordAttempt({
+                  id: `att_comp_${Date.now()}`,
+                  childId: this.activeChild.id,
+                  activityId: `act_story_${story.id}`,
+                  skillId: 'skill_reading_comprehension',
+                  activityType: 'story_comprehension',
+                  score: 100,
+                  accuracy: 1.0,
+                  totalQuestions: 1,
+                  correctAnswers: 1,
+                  incorrectAnswers: 0,
+                  attemptsRequired: 1,
+                  hintsRequested: 0,
+                  correctedAfterHint: 0,
+                  durationSeconds: 15,
+                  missedItems: [],
+                  completedAt: new Date().toISOString(),
+                });
+
+                // Increment daily challenge attempt counter
+                const storage = StorageService.getInstance();
+                storage.incrementDailyAttempt(this.activeChild.id);
+                this.updateDailyChallengeUI();
+              }
+            }
+          } else {
+            target.style.background = '#fee2e2';
+            target.style.borderColor = '#dc2626';
+            target.style.color = '#991b1b';
+            if (feedbackEl) {
+              feedbackEl.style.display = 'block';
+              feedbackEl.style.color = '#dc2626';
+              feedbackEl.textContent = 'Not quite — take another look at the story!';
+            }
+          }
+        });
+      });
+    }
+
     document.getElementById('btnFinishStory')?.addEventListener('click', () => {
       if (this.activeChild) {
         const prog = this.profileService.getChildProgress(this.activeChild.id);
@@ -1246,28 +1366,45 @@ export class DashboardController {
         });
         const pointsEl = this.container.querySelector('#points');
         if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+        const storage = StorageService.getInstance();
+        storage.incrementDailyAttempt(this.activeChild.id);
+        this.updateDailyChallengeUI();
       }
       this.showToast('Story complete — +5 happy points ⭐');
       this.closeDashModal();
     });
   }
 
-  private openVoicePractice(): void {
-    if (this.activeChild) {
-      this.activityTracker.startActivity(
-        this.activeChild.parentId,
-        this.activeChild.id,
-        'voice_spelling',
-        'Say it, spell it! (Voice practice)'
-      );
+  private selectNextSpellingWord(lang: SupportedLanguage, grade?: string): string {
+    const bank = this.spellingWordBanks[lang] || this.spellingWordBanks.English;
+    let pool = bank.beginner;
+    const lowerGrade = (grade || '').toLowerCase();
+    if (lowerGrade.includes('3') || lowerGrade.includes('4') || lowerGrade.includes('intermediate')) {
+      pool = bank.intermediate;
+    } else if (lowerGrade.includes('5') || lowerGrade.includes('6') || lowerGrade.includes('advanced')) {
+      pool = bank.advanced;
     }
-    const target = this.container.querySelector('#targetWord')?.textContent || 'ship';
+
+    const available = pool.filter(w => w !== this.currentSpellingWord && w !== this.previousSpellingWord);
+    const chosenList = available.length > 0 ? available : pool;
+    const next = chosenList[Math.floor(Math.random() * chosenList.length)];
+    this.previousSpellingWord = this.currentSpellingWord;
+    this.currentSpellingWord = next;
+    return next;
+  }
+
+  private openVoicePractice(): void {
+    const lang = this.activeChild?.preferredLanguage || 'English';
+    const childLangCode = i18n.supportedLanguageToCode(lang);
+    const target = this.selectNextSpellingWord(lang, this.activeChild?.grade);
+
     this.openDashModal(
       'Say it, spell it! 🎙️',
       'Listen to the word, then say or type what you heard.',
       `
       <div class="modal-callout">
-        Word to spell: <strong>${target}</strong> &nbsp;
+        Word to spell: <strong id="spellingTargetWord">${target}</strong> &nbsp;
         <button type="button" class="demo-action" id="btnHearModalWord">🔊 Hear it</button>
       </div>
       <input
@@ -1279,40 +1416,126 @@ export class DashboardController {
       <div class="modal-controls">
         <button type="button" id="btnStartVoice">🎙️ Start voice input</button>
         <button type="button" class="soft" id="btnCheckVoice">Check spelling</button>
+        <button type="button" class="primary" id="btnNextSpellingWord">Next word ❯</button>
       </div>
       <p id="pitchVoiceFeedback" class="feedback" style="margin-top:10px;"></p>
-      <p class="prototype-note">Speech recognition uses browser Web Speech API with keyboard fallback.</p>
+      <p class="prototype-note">Speech recognition uses browser Web Speech API with native ${lang} voice synthesis & recognition.</p>
     `
     );
 
-    document.getElementById('btnHearModalWord')?.addEventListener('click', () => this.speakCurrentWord());
+    const playWordAudio = () => {
+      const res = this.speechService.speak(this.currentSpellingWord, { langCode: childLangCode });
+      if (!res.spoken && res.message) {
+        this.showToast(res.message);
+      }
+    };
+
+    document.getElementById('btnHearModalWord')?.addEventListener('click', playWordAudio);
+
+    const handleNextWord = () => {
+      const newWord = this.selectNextSpellingWord(lang, this.activeChild?.grade);
+      const targetEl = document.getElementById('spellingTargetWord');
+      if (targetEl) targetEl.textContent = newWord;
+      const inputEl = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
+      if (inputEl) {
+        inputEl.value = '';
+        inputEl.focus();
+      }
+      const fb = document.getElementById('pitchVoiceFeedback');
+      if (fb) fb.textContent = '';
+      submittedForWord = false;
+      playWordAudio();
+    };
+
+    document.getElementById('btnNextSpellingWord')?.addEventListener('click', handleNextWord);
+
+    let submittedForWord = false;
 
     document.getElementById('btnCheckVoice')?.addEventListener('click', () => {
       const input = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
       const fb = document.getElementById('pitchVoiceFeedback');
       if (!input || !fb) return;
 
-      if (input.value.trim().toLowerCase() === target.trim().toLowerCase()) {
+      const userVal = input.value.trim().toLowerCase();
+      if (!userVal) {
+        fb.style.color = '#b37b30';
+        fb.textContent = 'Please say or type the word first.';
+        return;
+      }
+
+      if (this.activeChild && !submittedForWord) {
+        submittedForWord = true;
+        StorageService.getInstance().incrementDailyAttempt(this.activeChild.id);
+        this.updateDailyChallengeUI();
+      }
+
+      const expected = this.currentSpellingWord.trim().toLowerCase();
+      const isCorrect = userVal === expected;
+
+      if (isCorrect) {
         fb.style.color = '#3b9b75';
         fb.textContent = 'That matches! Lovely spelling. +5 happy points ⭐';
         if (this.activeChild) {
           const prog = this.profileService.getChildProgress(this.activeChild.id);
           const updated = this.profileService.updateChildProgress(this.activeChild.id, {
             happyPoints: prog.happyPoints + 5,
+            wordsLearned: prog.wordsLearned + 1,
           });
           const pointsEl = this.container.querySelector('#points');
           if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+          this.learningPathService.recordAttempt({
+            id: `att_spelling_${Date.now()}`,
+            childId: this.activeChild.id,
+            activityId: 'act_voice_spelling',
+            skillId: 'skill_letter_sounds_basic',
+            activityType: 'word_match',
+            score: 100,
+            accuracy: 1.0,
+            totalQuestions: 1,
+            correctAnswers: 1,
+            incorrectAnswers: 0,
+            attemptsRequired: 1,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [],
+            completedAt: new Date().toISOString(),
+          }).then(() => {
+            this.refreshCharts();
+          });
         }
       } else {
         fb.style.color = '#c87961';
-        fb.textContent = 'Good try! Listen once more, then try again.';
+        fb.textContent = `Good try! Listen once more, then try again. (${this.currentSpellingWord})`;
+        if (this.activeChild) {
+          this.learningPathService.recordAttempt({
+            id: `att_spelling_${Date.now()}`,
+            childId: this.activeChild.id,
+            activityId: 'act_voice_spelling',
+            skillId: 'skill_letter_sounds_basic',
+            activityType: 'word_match',
+            score: 50,
+            accuracy: 0.0,
+            totalQuestions: 1,
+            correctAnswers: 0,
+            incorrectAnswers: 1,
+            attemptsRequired: 2,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [this.currentSpellingWord],
+            completedAt: new Date().toISOString(),
+          }).then(() => {
+            this.refreshCharts();
+          });
+        }
       }
     });
 
     document.getElementById('btnStartVoice')?.addEventListener('click', () => {
       const input = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
-      const lang = i18n.getCurrentLanguage();
-      const rec = this.speechService.startSpeechRecognition(lang, {
+      const rec = this.speechService.startSpeechRecognition(childLangCode, {
         onStart: () => {
           this.showToast('Listening… say the word now 🎙️');
         },
@@ -1332,6 +1555,8 @@ export class DashboardController {
         this.showToast('Voice input is unavailable in this browser. Please type your spelling.');
       }
     });
+
+    playWordAudio();
   }
 
   private openLetterGame(): void {
@@ -1395,13 +1620,29 @@ export class DashboardController {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    if (this.activeChild) {
-      this.activityTracker.startActivity(
-        this.activeChild.parentId,
-        this.activeChild.id,
-        'general_learning',
-        'Dashboard Navigation'
-      );
+  }
+
+  public updateDailyChallengeUI(): void {
+    if (!this.activeChild) return;
+    const dailyAttempts = StorageService.getInstance().getDailyAttempts(this.activeChild.id);
+    const dailyGoal = 10;
+    const dailyPct = Math.min(100, Math.round((dailyAttempts / dailyGoal) * 100));
+
+    const label = this.container.querySelector('#dailyChallengeAttemptLabel');
+    if (label) {
+      label.textContent = `Attempts: ${dailyAttempts} / ${dailyGoal}`;
+    }
+
+    const barEl = this.container.querySelector('#dailyChallengeBar');
+    if (barEl) {
+      barEl.setAttribute('aria-valuenow', String(dailyAttempts));
+      barEl.setAttribute('aria-valuemax', String(dailyGoal));
+      barEl.setAttribute('aria-label', `Daily challenge: ${dailyAttempts} of ${dailyGoal} attempts completed`);
+    }
+
+    const fillEl = this.container.querySelector('#dailyChallengeProgressBar') as HTMLElement | null;
+    if (fillEl) {
+      fillEl.style.width = `${dailyPct}%`;
     }
   }
 
@@ -1421,6 +1662,7 @@ export class DashboardController {
     if (statHappyPoints) statHappyPoints.innerHTML = `${progress.happyPoints} <small>pts</small>`;
     if (topStreak) topStreak.textContent = `🔥 ${progress.streakDays} ${i18n.t('home.streakDays')}`;
     if (streakText) streakText.textContent = i18n.t('home.streak', { count: progress.streakDays });
+    this.updateDailyChallengeUI();
   }
 
   public async refreshCharts(): Promise<void> {

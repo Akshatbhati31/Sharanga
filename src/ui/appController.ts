@@ -98,6 +98,14 @@ export class AppController {
       }
     );
 
+    // Subscribe to auth state changes to react to sign-in / sign-out
+    this.authService.onAuthStateChanged((user) => {
+      if (!user && this.currentScreen !== AppScreen.AUTH) {
+        this.profileService.setActiveChild(null);
+        this.navigateTo(AppScreen.AUTH);
+      }
+    });
+
     // Subscribe to reactive language changes across screens
     i18n.onLanguageChanged(() => {
       if (this.currentScreen === AppScreen.AUTH) {
@@ -113,19 +121,38 @@ export class AppController {
     });
   }
 
-  public init(): void {
+  private renderLoadingSplash(): void {
+    this.rootElement.innerHTML = `
+      <div style="min-height: 100vh; display: grid; place-items: center; background: #fafaf8; font-family: 'Comic Neue', Nunito, sans-serif;">
+        <div style="text-align: center; padding: 24px;">
+          <div style="width: 48px; height: 48px; border: 4px solid #e0f2ea; border-top-color: #1a7f64; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px;"></div>
+          <h2 style="font: 900 22px Nunito, sans-serif; color: #1c2e36; margin: 0 0 6px;">DyslexiMate ✿</h2>
+          <p style="font-size: 14px; color: #6a7c85; margin: 0;">Restoring your learning space…</p>
+        </div>
+      </div>
+    `;
+  }
+
+  public async init(): Promise<void> {
+    this.renderLoadingSplash();
+
+    await this.authService.waitForAuthReady();
+
     const currentUser = this.authService.getCurrentUser();
-    const activeChild = this.profileService.getActiveChild();
+    if (currentUser) {
+      await this.profileService.restoreActiveChild(currentUser.id);
+      const activeChild = this.profileService.getActiveChild();
 
-    i18n.resolveInitialLanguage({
-      authenticatedUserLang: currentUser?.interfaceLanguage,
-      childPreferredLang: activeChild?.preferredLanguage,
-    });
+      i18n.resolveInitialLanguage({
+        authenticatedUserLang: currentUser?.interfaceLanguage,
+        childPreferredLang: activeChild?.preferredLanguage,
+      });
 
-    if (currentUser && activeChild) {
-      this.navigateTo(AppScreen.DASHBOARD);
-    } else if (currentUser) {
-      this.navigateTo(AppScreen.PROFILE_SELECT);
+      if (activeChild) {
+        this.navigateTo(AppScreen.DASHBOARD);
+      } else {
+        this.navigateTo(AppScreen.PROFILE_SELECT);
+      }
     } else {
       this.navigateTo(AppScreen.AUTH);
     }

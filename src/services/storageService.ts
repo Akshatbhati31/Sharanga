@@ -320,13 +320,41 @@ export class StorageService {
 
   public saveActivity(record: ActivityLogRecord): void {
     const list = this.getRawActivities();
-    list.push(record);
+    const existingIndex = list.findIndex(a => a.id === record.id);
+    if (existingIndex >= 0) {
+      list[existingIndex] = record;
+    } else {
+      list.push(record);
+    }
     this.saveRawActivities(list);
   }
 
   public getActivitiesForChild(childId: string): ActivityLogRecord[] {
     const list = this.getRawActivities();
     return list.filter(a => a.childId === childId);
+  }
+
+  // --- Daily Challenge Attempts ---
+  public getDailyAttempts(childId: string, dateKey?: string): number {
+    try {
+      const dKey = dateKey || new Date().toLocaleDateString('en-CA');
+      const raw = localStorage.getItem(`dysleximate_daily_attempts_${childId}_${dKey}`);
+      return raw ? parseInt(raw, 10) || 0 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  public incrementDailyAttempt(childId: string, dateKey?: string): number {
+    try {
+      const dKey = dateKey || new Date().toLocaleDateString('en-CA');
+      const current = this.getDailyAttempts(childId, dKey);
+      const next = current + 1;
+      localStorage.setItem(`dysleximate_daily_attempts_${childId}_${dKey}`, String(next));
+      return next;
+    } catch {
+      return 1;
+    }
   }
 
   // --- Session ---
