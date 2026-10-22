@@ -189,7 +189,7 @@ export class ActivityRunnerModal {
             }
 
             <button type="button" id="btnFinishAct" class="rf-btn-search hidden" style="margin-left: auto; background: var(--teal); padding: 8px 18px; font-size: 12px;">
-              🌟 ${i18n.t('activity.nextAdventureBtn')} →
+              🌟 ${i18n.t('activity.nextAdventureBtn')}
             </button>
           </div>
         </div>

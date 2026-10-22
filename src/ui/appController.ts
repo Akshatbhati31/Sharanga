@@ -34,12 +34,15 @@ export class AppController {
     this.profileService = ProfileService.getInstance();
 
     // 1. Child Modal View (Add, Edit, Delete modals)
-    this.childModalView = new ChildModalView(() => {
+    this.childModalView = new ChildModalView((newChild?: ChildProfile) => {
       // Callback when profiles are added/edited/deleted
       if (this.currentScreen === AppScreen.PROFILE_SELECT) {
         this.profileSelectView.render();
       } else if (this.currentScreen === AppScreen.DASHBOARD) {
-        // If active child was edited, re-render dashboard
+        if (newChild) {
+          this.profileService.setActiveChild(newChild);
+        }
+        // If active child was edited or created, re-render dashboard
         const active = this.profileService.getActiveChild();
         if (active) {
           this.dashboardController.render(active);
