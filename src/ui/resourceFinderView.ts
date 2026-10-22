@@ -4,6 +4,7 @@ import type {
   ResourceSearchParams,
   ResourceType,
 } from '../types/tinyfish';
+import { i18n } from '../i18n';
 
 export class ResourceFinderView {
   private container: HTMLElement;
@@ -36,7 +37,7 @@ export class ResourceFinderView {
         <div class="section-head" style="margin-bottom: 0;">
           <div>
             <div style="display:flex; align-items:center; gap:8px;">
-              <h2 style="margin:0;">Educational Resource Finder 🌐</h2>
+              <h2 style="margin:0;">${i18n.t('resources.title')}</h2>
               <span class="tag" style="background:#eaf2fd; color:#2c62a8">Public Web Agent</span>
               ${
                 this.isConfigured
@@ -45,7 +46,7 @@ export class ResourceFinderView {
               }
             </div>
             <p style="margin:4px 0 0; color:var(--muted); font-size:13px;">
-              Retrieve real-world educational worksheets, phonics games, and reading activities from public educational sites.
+              ${i18n.t('resources.sub')}
             </p>
           </div>
         </div>
@@ -71,7 +72,7 @@ export class ResourceFinderView {
           <span style="font-size:18px; line-height:1;">ℹ️</span>
           <div>
             <strong>Educational Suggestion Notice:</strong>
-            Resources are retrieved from publicly accessible educational sources for learning practice. Accessibility or dyslexia adaptation has not been clinically evaluated by DyslexiMate. Review materials to ensure suitability for your learner.
+            ${i18n.t('resources.disclaimerNotice')}
           </div>
         </div>
 
@@ -81,12 +82,12 @@ export class ResourceFinderView {
             <div class="rf-search-grid">
               <!-- Topic Input -->
               <div class="rf-field-group">
-                <label for="rfTopicInput">Learning Topic or Subject *</label>
+                <label for="rfTopicInput">${i18n.t('resources.topicLabel')} *</label>
                 <input
                   type="text"
                   id="rfTopicInput"
                   class="rf-input"
-                  placeholder="e.g., phonics blending, sight words, short vowels"
+                  placeholder="${i18n.t('resources.topicPlaceholder')}"
                   maxlength="100"
                   required
                   aria-describedby="rfTopicError"
@@ -96,9 +97,9 @@ export class ResourceFinderView {
 
               <!-- Grade / Age Range -->
               <div class="rf-field-group">
-                <label for="rfGradeSelect">Grade / Level</label>
+                <label for="rfGradeSelect">${i18n.t('resources.gradeLabel')}</label>
                 <select id="rfGradeSelect" class="rf-select">
-                  <option value="any">Any Level</option>
+                  <option value="any">${i18n.t('resources.anyGrade')}</option>
                   <option value="Kindergarten · Early Reader" ${this.defaultGrade.toLowerCase().includes('early') || this.defaultGrade.toLowerCase().includes('kinder') ? 'selected' : ''}>Kindergarten · Early</option>
                   <option value="Class 1-2 · Growing Reader" ${this.defaultGrade.toLowerCase().includes('2') || this.defaultGrade.toLowerCase().includes('grow') ? 'selected' : ''}>Class 1–2 · Growing</option>
                   <option value="Class 3-4 · Fluent Reader" ${this.defaultGrade.toLowerCase().includes('4') ? 'selected' : ''}>Class 3–4 · Fluent</option>
@@ -108,25 +109,25 @@ export class ResourceFinderView {
 
               <!-- Resource Type -->
               <div class="rf-field-group">
-                <label for="rfTypeSelect">Resource Type</label>
+                <label for="rfTypeSelect">${i18n.t('resources.typeLabel')}</label>
                 <select id="rfTypeSelect" class="rf-select">
-                  <option value="any">Any Resource Type</option>
-                  <option value="reading_exercise">Reading Exercise</option>
-                  <option value="phonics_activity">Phonics Activity</option>
-                  <option value="educational_game">Educational Game</option>
-                  <option value="worksheet">Practice Worksheet</option>
+                  <option value="any">${i18n.t('resources.anyType')}</option>
+                  <option value="reading_exercise">${i18n.t('resources.typeReadingExercise')}</option>
+                  <option value="phonics_activity">${i18n.t('resources.typePhonicsActivity')}</option>
+                  <option value="educational_game">${i18n.t('resources.typeEducationalGame')}</option>
+                  <option value="worksheet">${i18n.t('resources.typeWorksheet')}</option>
                 </select>
               </div>
 
               <!-- Language -->
               <div class="rf-field-group">
-                <label for="rfLangSelect">Language</label>
+                <label for="rfLangSelect">${i18n.t('resources.langLabel')}</label>
                 <select id="rfLangSelect" class="rf-select">
-                  <option value="English" ${this.defaultLanguage === 'English' ? 'selected' : ''}>English</option>
-                  <option value="Hindi" ${this.defaultLanguage === 'Hindi' ? 'selected' : ''}>Hindi</option>
-                  <option value="Punjabi" ${this.defaultLanguage === 'Punjabi' ? 'selected' : ''}>Punjabi</option>
-                  <option value="Bengali" ${this.defaultLanguage === 'Bengali' ? 'selected' : ''}>Bengali</option>
-                  <option value="Spanish" ${this.defaultLanguage === 'Spanish' ? 'selected' : ''}>Spanish</option>
+                  <option value="English" ${this.defaultLanguage === 'English' ? 'selected' : ''}>EG English</option>
+                  <option value="Hindi" ${this.defaultLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
+                  <option value="Odia" ${this.defaultLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+                  <option value="Punjabi" ${this.defaultLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+                  <option value="Tamil" ${this.defaultLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
                 </select>
               </div>
 
@@ -134,7 +135,7 @@ export class ResourceFinderView {
               <div>
                 <button type="submit" id="rfSubmitBtn" class="rf-btn-search">
                   <span id="rfBtnSpinner" class="rf-loading-spinner hidden" aria-hidden="true"></span>
-                  <span id="rfBtnLabel">🔎 Find Resources</span>
+                  <span id="rfBtnLabel">${i18n.t('resources.findBtn')}</span>
                 </button>
               </div>
             </div>
@@ -162,9 +163,9 @@ export class ResourceFinderView {
         <div id="rfResultsArea">
           <div style="text-align:center; padding: 42px 18px; background:#fff; border-radius:18px; border:1px dashed var(--line);">
             <span style="font-size:42px; display:inline-block; margin-bottom:8px;">🔍</span>
-            <h3 style="font:900 17px Nunito; margin:0; color:var(--ink);">Search Public Educational Resources</h3>
+            <h3 style="font:900 17px Nunito; margin:0; color:var(--ink);">${i18n.t('resources.emptyTitle')}</h3>
             <p style="margin:6px auto 0; max-width:440px; color:var(--muted); font-size:12px; line-height:1.5;">
-              Enter a learning topic above to discover free, public reading exercises, phonics activities, and worksheets from verified educational repositories.
+              ${i18n.t('resources.emptySub')}
             </p>
           </div>
         </div>
@@ -424,7 +425,7 @@ export class ResourceFinderView {
             class="rf-open-link"
             aria-label="Open ${this.escapeHtml(resource.title)} in new tab"
           >
-            Open ↗
+            ${i18n.t('resources.open')} ↗
           </a>
         </div>
 
@@ -432,7 +433,7 @@ export class ResourceFinderView {
 
         <div class="rf-card-footer">
           <span>Source: <a href="${this.escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal); text-decoration:none;">${this.escapeHtml(resource.siteName)}</a></span>
-          <span>⚠️ Not clinically evaluated for dyslexia adaptation</span>
+          <span>⚠️ ${i18n.t('resources.nonClinical')}</span>
         </div>
       </div>
     `;

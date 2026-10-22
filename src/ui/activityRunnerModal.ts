@@ -1,6 +1,8 @@
 import { AiActivityService } from '../services/aiActivityService';
 import { LearningPathService } from '../services/learningPathService';
 import { ProfileService } from '../services/profileService';
+import { SpeechService } from '../services/speechService';
+import { i18n } from '../i18n';
 import type { AdaptiveRecommendation, InteractiveActivityContent } from '../types/adaptive';
 import type { ChildProfile } from '../types/auth';
 
@@ -52,12 +54,17 @@ export class ActivityRunnerModal {
     document.body.style.overflow = 'hidden';
 
     // Show loading state while fetching activity
+    const prepTitle = i18n.t('activity.preparingTitle');
+    const prepDesc = i18n.t('activity.preparingDesc')
+      .replace('{title}', rec.title)
+      .replace('{name}', child.name);
+
     modalEl.innerHTML = `
       <div class="modal" style="max-width: 580px; text-align: center; padding: 40px 24px;" role="dialog" aria-modal="true">
         <div class="rf-loading-spinner" style="width: 42px; height: 42px; border-width: 4px; border-color: #dff3e9; border-top-color: var(--teal); margin: 0 auto 16px;"></div>
-        <h3 style="font: 900 18px Nunito; margin: 0; color: var(--ink);">Preparing Your Reading Adventure...</h3>
+        <h3 style="font: 900 18px Nunito; margin: 0; color: var(--ink);">${prepTitle}</h3>
         <p style="color: var(--muted); font-size: 13px; margin: 6px 0 0;">
-          Customizing "${rec.title}" for ${child.name}.
+          ${prepDesc}
         </p>
       </div>
     `;
@@ -82,6 +89,9 @@ export class ActivityRunnerModal {
 
     modalEl.innerHTML = `
       <div class="modal activity-runner-modal" style="max-width: 620px;" role="dialog" aria-modal="true" aria-labelledby="actTitle">
+        <!-- Accessible Screen Reader Live Announcement Region -->
+        <div id="actSrLiveRegion" role="status" aria-live="polite" aria-atomic="true" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; white-space: nowrap;"></div>
+
         <!-- Modal Head -->
         <div class="modal-head" style="align-items: center;">
           <div style="display: flex; align-items: center; gap: 10px;">
@@ -93,41 +103,40 @@ export class ActivityRunnerModal {
                 <h2 id="actTitle" style="font: 900 17px Nunito; margin: 0; color: var(--ink);">${act.title}</h2>
                 <span class="tag" style="background:#eef8f4; color:var(--teal); font-size:10px;">${act.difficulty.toUpperCase()}</span>
               </div>
-              <p style="font-size: 11px; color: var(--muted); margin: 2px 0 0;">${rec.learningObjective}</p>
+              <p style="font-size: 11px; color: var(--muted); margin: 2px 0 0;">${act.instruction || rec.learningObjective}</p>
             </div>
           </div>
-          <button type="button" class="modal-close" id="btnCloseActModal" aria-label="Close activity">×</button>
+          <button type="button" class="modal-close" id="btnCloseActModal" aria-label="${i18n.t('activity.closeModalAria') || 'Close activity'}">×</button>
         </div>
 
         <!-- Modal Body -->
         <div class="modal-body" style="padding-top: 14px;">
-          <!-- Instruction Box -->
-          <div style="background: #fafbf9; border: 1.5px solid var(--line); border-radius: 16px; padding: 14px 18px; margin-bottom: 18px;">
-            <span style="font-size: 11px; font-weight: 800; color: #76868c; text-transform: uppercase; letter-spacing: 0.6px; display: block; margin-bottom: 4px;">
-              Instructions
-            </span>
-            <p style="font: 700 15px Nunito; margin: 0; color: var(--ink);">
-              ${act.instruction}
-            </p>
+          <!-- Instruction Box with Audio Read-Aloud -->
+          <div style="background: #fafbf9; border: 1.5px solid var(--line); border-radius: 16px; padding: 14px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+            <div>
+              <span style="font-size: 11px; font-weight: 800; color: #76868c; text-transform: uppercase; letter-spacing: 0.6px; display: block; margin-bottom: 4px;">
+                ${i18n.t('practice.instructions')}
+              </span>
+              <p style="font: 700 15px Nunito; margin: 0; color: var(--ink);">
+                ${act.instruction}
+              </p>
+            </div>
+            <button type="button" id="btnPlayActInstruction" class="btn-action-pill" aria-label="${i18n.t('activity.listenInstructionBtn') || 'Listen to instructions'}" style="flex-shrink: 0; font-size: 12px; padding: 6px 12px; white-space: nowrap;">
+              ${i18n.t('activity.listenInstructionBtn') || '🔊 Listen'}
+            </button>
           </div>
 
-          <!-- Prompt Question -->
+          <!-- Prompt Question with Dedicated Speaker Button -->
           <div style="text-align: center; padding: 10px 0 16px;">
             <span style="font: 900 22px Nunito; color: var(--ink); display: block;">
               ${act.prompt}
             </span>
-            ${
-              act.audioPrompt
-                ? `
-                <button type="button" id="btnPlayActAudio" class="btn-action-pill" style="margin-top: 8px; font-size: 12px; gap: 6px;">
-                  🔊 Listen to Prompt
-                </button>
-              `
-                : ''
-            }
+            <button type="button" id="btnPlayActAudio" class="btn-action-pill" aria-label="${i18n.t('activity.listenQuestionBtn')}" style="margin-top: 8px; font-size: 12px; gap: 6px;">
+              ${i18n.t('activity.listenQuestionBtn')}
+            </button>
           </div>
 
-          <!-- Interactive Choices Grid -->
+          <!-- Interactive Choices Grid with Individual Word Audio -->
           <div class="options" style="grid-template-columns: repeat(${act.items.length === 2 ? 2 : 3}, 1fr); gap: 12px; margin-bottom: 16px;">
             ${act.items
               .map(
@@ -136,13 +145,24 @@ export class ActivityRunnerModal {
                 class="option act-item-btn"
                 role="button"
                 tabindex="0"
+                aria-label="${item.text} - ${i18n.t('activity.audioListenOption') || 'Option'}"
                 data-item-id="${item.id}"
                 data-is-correct="${item.isCorrect}"
+                data-item-text="${item.text.replace(/"/g, '&quot;')}"
                 data-idx="${idx}"
-                style="padding: 16px 10px; cursor: pointer;"
+                style="padding: 16px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;"
               >
                 ${item.visual ? `<div class="picture" style="font-size: 36px; height: 60px;">${item.visual}</div>` : ''}
                 <strong style="font: 900 18px Nunito; color: var(--ink); margin-top: 4px;">${item.text}</strong>
+                <button
+                  type="button"
+                  class="act-choice-listen-btn"
+                  data-text="${item.text.replace(/"/g, '&quot;')}"
+                  aria-label="${i18n.t('activity.listenOptionAria', { text: item.text }) || `Listen: ${item.text}`}"
+                  style="margin-top: 6px; background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; padding: 2px 8px; font-size: 11px; color: var(--muted); cursor: pointer;"
+                >
+                  🔊
+                </button>
               </div>
             `
               )
@@ -150,26 +170,26 @@ export class ActivityRunnerModal {
           </div>
 
           <!-- Feedback Alert -->
-          <div id="actFeedbackBox" class="hidden" style="border-radius: 14px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 14px;"></div>
+          <div id="actFeedbackBox" role="status" aria-live="polite" class="hidden" style="border-radius: 14px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 14px;"></div>
 
           <!-- Action & Hint Controls -->
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line);">
             <button type="button" id="btnRequestHint" class="btn-action-pill" style="font-size: 12px; color: #6b5cd4; border-color: #d8d3f7; background: #f6f4fe;">
-              💡 Need a Hint?
+              💡 ${i18n.t('activity.hintBtn')}
             </button>
 
             ${
               act.workedExample
                 ? `
                 <button type="button" id="btnShowExample" class="btn-action-pill" style="font-size: 12px;">
-                  👀 Show Example
+                  👀 ${i18n.t('activity.exampleBtn')}
                 </button>
               `
                 : ''
             }
 
             <button type="button" id="btnFinishAct" class="rf-btn-search hidden" style="margin-left: auto; background: var(--teal); padding: 8px 18px; font-size: 12px;">
-              🌟 Continue Learning →
+              🌟 ${i18n.t('activity.nextAdventureBtn')} →
             </button>
           </div>
         </div>
@@ -179,21 +199,65 @@ export class ActivityRunnerModal {
     this.bindActivityEvents();
   }
 
+  private announceLiveRegion(message: string): void {
+    const liveEl = document.getElementById('actSrLiveRegion');
+    if (liveEl) {
+      liveEl.textContent = message;
+    }
+  }
+
   private bindActivityEvents(): void {
     const modalEl = this.ensureModalElement();
     const act = this.currentActivity!;
+    const childLangCode = i18n.supportedLanguageToCode(this.activeChild?.preferredLanguage || 'English');
+
+    // Announce opening of activity to screen readers / TalkBack
+    const openAnnouncement = i18n.t('activity.announcementOpened', { title: act.title, instruction: act.instruction }) || `${act.title}. ${act.instruction}`;
+    this.announceLiveRegion(openAnnouncement);
 
     // Close button
     modalEl.querySelector('#btnCloseActModal')?.addEventListener('click', () => this.close());
 
-    // Play Audio Speech Synthesis if available
-    modalEl.querySelector('#btnPlayActAudio')?.addEventListener('click', () => {
-      if (act.audioPrompt && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(act.audioPrompt);
-        utterance.rate = 0.85;
-        window.speechSynthesis.speak(utterance);
+    // Play Instruction Audio
+    modalEl.querySelector('#btnPlayActInstruction')?.addEventListener('click', () => {
+      if (act.instruction) {
+        const res = SpeechService.getInstance().speak(act.instruction, { langCode: childLangCode, rate: 0.85 });
+        if (!res.spoken && res.message) {
+          const fbBox = modalEl.querySelector('#actFeedbackBox') as HTMLElement;
+          if (fbBox) {
+            fbBox.className = 'rf-disclaimer-box';
+            fbBox.textContent = res.message;
+            fbBox.classList.remove('hidden');
+          }
+        }
       }
+    });
+
+    // Play Question Audio Speech Synthesis
+    modalEl.querySelector('#btnPlayActAudio')?.addEventListener('click', () => {
+      const textToSpeak = act.audioPrompt || act.prompt;
+      if (textToSpeak) {
+        const res = SpeechService.getInstance().speak(textToSpeak, { langCode: childLangCode, rate: 0.85 });
+        if (!res.spoken && res.message) {
+          const fbBox = modalEl.querySelector('#actFeedbackBox') as HTMLElement;
+          if (fbBox) {
+            fbBox.className = 'rf-disclaimer-box';
+            fbBox.textContent = res.message;
+            fbBox.classList.remove('hidden');
+          }
+        }
+      }
+    });
+
+    // Option Word Audio Read-Aloud
+    modalEl.querySelectorAll('.act-choice-listen-btn').forEach(btn => {
+      btn.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+        const text = (btn as HTMLElement).dataset.text || '';
+        if (text) {
+          SpeechService.getInstance().speak(text, { langCode: childLangCode, rate: 0.82 });
+        }
+      });
     });
 
     // Hint button
@@ -206,9 +270,13 @@ export class ActivityRunnerModal {
         fbBox.style.background = '#fff8e6';
         fbBox.style.borderColor = '#f6e4a8';
         fbBox.style.color = '#7d6200';
-        fbBox.innerHTML = `💡 <strong>Helpful Hint:</strong> ${act.stepByStepHint}`;
+        fbBox.innerHTML = `💡 <strong>${i18n.t('activity.helpfulHintTitle')}:</strong> ${act.stepByStepHint}`;
         fbBox.classList.remove('hidden');
       }
+
+      // Read aloud hint in child's learning language
+      SpeechService.getInstance().speak(act.stepByStepHint, { langCode: childLangCode, rate: 0.85 });
+      this.announceLiveRegion(act.stepByStepHint);
     });
 
     // Show Example
@@ -220,9 +288,13 @@ export class ActivityRunnerModal {
           fbBox.style.background = '#f2f8fc';
           fbBox.style.borderColor = '#cce3f5';
           fbBox.style.color = '#1f5782';
-          fbBox.innerHTML = `👀 <strong>Worked Example:</strong> ${act.workedExample.demonstration}<br><small style="color:#507998;">${act.workedExample.explanation}</small>`;
+          fbBox.innerHTML = `👀 <strong>${i18n.t('activity.workedExampleTitle')}:</strong> ${act.workedExample.demonstration}<br><small style="color:#507998;">${act.workedExample.explanation}</small>`;
           fbBox.classList.remove('hidden');
         }
+
+        const exampleText = `${act.workedExample.demonstration}. ${act.workedExample.explanation}`;
+        SpeechService.getInstance().speak(exampleText, { langCode: childLangCode, rate: 0.85 });
+        this.announceLiveRegion(exampleText);
       }
     });
 
@@ -231,6 +303,15 @@ export class ActivityRunnerModal {
     const finishBtn = modalEl.querySelector('#btnFinishAct') as HTMLElement;
 
     optionBtns.forEach(btn => {
+      // Keyboard support for accessibility (Enter and Space)
+      btn.addEventListener('keydown', (e: Event) => {
+        const keyEvent = e as KeyboardEvent;
+        if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+          keyEvent.preventDefault();
+          (btn as HTMLElement).click();
+        }
+      });
+
       btn.addEventListener('click', async () => {
         const isCorrect = (btn as HTMLElement).dataset.isCorrect === 'true';
         const itemId = (btn as HTMLElement).dataset.itemId || '';
@@ -245,6 +326,11 @@ export class ActivityRunnerModal {
             this.correctedAfterHint = 1;
           }
 
+          const winTitle = i18n.tForLang(childLangCode, 'activity.winTitle') || 'Wonderful Reading Win!';
+          const defaultWinSubtitle = i18n.tForLang(childLangCode, 'activity.winSubtitle') || 'Spot on! You found the right match.';
+          const feedbackMessage = itemObj?.feedbackHint || defaultWinSubtitle;
+          const fullSpokenFeedback = `${winTitle}. ${feedbackMessage}`;
+
           if (fbBox) {
             fbBox.className = 'rf-status-banner';
             fbBox.style.background = '#e6f8ee';
@@ -253,12 +339,16 @@ export class ActivityRunnerModal {
             fbBox.innerHTML = `
               <span style="font-size:22px;">🎉</span>
               <div>
-                <strong>Wonderful Reading Win!</strong>
-                <p style="margin:2px 0 0; font-size:12px;">${itemObj?.feedbackHint || 'Spot on! You found the right match.'}</p>
+                <strong>${winTitle}</strong>
+                <p style="margin:2px 0 0; font-size:12px;">${feedbackMessage}</p>
               </div>
             `;
             fbBox.classList.remove('hidden');
           }
+
+          // Voice narration of correct answer feedback in child's learning language
+          SpeechService.getInstance().speak(fullSpokenFeedback, { langCode: childLangCode, rate: 0.88 });
+          this.announceLiveRegion(fullSpokenFeedback);
 
           if (finishBtn) {
             finishBtn.classList.remove('hidden');
@@ -274,6 +364,11 @@ export class ActivityRunnerModal {
             this.missedItems.push(itemObj.text);
           }
 
+          const tryAgainTitle = i18n.tForLang(childLangCode, 'activity.tryAgainTitle') || "Nice try! Let's look again:";
+          const defaultTryAgainSubtitle = i18n.tForLang(childLangCode, 'activity.tryAgainSubtitle') || 'Check the shape and sound once more. You can do this!';
+          const feedbackMessage = itemObj?.feedbackHint || defaultTryAgainSubtitle;
+          const fullSpokenFeedback = `${tryAgainTitle}. ${feedbackMessage}`;
+
           if (fbBox) {
             fbBox.className = 'rf-status-banner';
             fbBox.style.background = '#fff4f0';
@@ -282,12 +377,16 @@ export class ActivityRunnerModal {
             fbBox.innerHTML = `
               <span style="font-size:20px;">🌱</span>
               <div>
-                <strong>Nice try! Let's look again:</strong>
-                <p style="margin:2px 0 0; font-size:12px;">${itemObj?.feedbackHint || 'Check the shape and sound once more. You can do this!'}</p>
+                <strong>${tryAgainTitle}</strong>
+                <p style="margin:2px 0 0; font-size:12px;">${feedbackMessage}</p>
               </div>
             `;
             fbBox.classList.remove('hidden');
           }
+
+          // Voice narration of retry feedback in child's learning language
+          SpeechService.getInstance().speak(fullSpokenFeedback, { langCode: childLangCode, rate: 0.88 });
+          this.announceLiveRegion(fullSpokenFeedback);
         }
       });
     });
@@ -341,6 +440,7 @@ export class ActivityRunnerModal {
   }
 
   public close(): void {
+    SpeechService.getInstance().stop();
     const modalEl = document.getElementById('actRunnerModalContainer');
     if (modalEl) {
       modalEl.classList.add('hidden');

@@ -1,5 +1,6 @@
 import { ProfileService } from '../services/profileService';
 import type { ChildProfile, SupportedLanguage } from '../types/auth';
+import { i18n } from '../i18n';
 
 const AVAILABLE_AVATARS = [
   '👧🏽', '👦🏻', '🦊', '🦁', '🐼',
@@ -28,15 +29,15 @@ export class ChildModalView {
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div class="modal-head">
           <div>
-            <h2 id="modalTitle">Add Child Profile</h2>
-            <p>Create a dedicated, encouraging space for your little reader.</p>
+            <h2 id="modalTitle">${i18n.t('childModal.addTitle')}</h2>
+            <p>${i18n.t('childModal.addSub')}</p>
           </div>
-          <button type="button" class="modal-close" id="btnCloseChildModal" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseChildModal" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <form id="childProfileForm">
           <div class="form-group">
-            <label class="form-label" for="childNameInput">Child's Name or Display Name *</label>
+            <label class="form-label" for="childNameInput">${i18n.t('childModal.nameLabel')}</label>
             <input
               type="text"
               id="childNameInput"
@@ -50,7 +51,7 @@ export class ChildModalView {
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="form-group">
-              <label class="form-label" for="childGradeSelect">Class / Grade</label>
+              <label class="form-label" for="childGradeSelect">${i18n.t('childModal.gradeLabel')}</label>
               <select id="childGradeSelect" class="form-input">
                 <option value="Class 1 · Early reader">Class 1</option>
                 <option value="Class 2 · Early reader">Class 2</option>
@@ -64,18 +65,19 @@ export class ChildModalView {
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="childLangSelect">Preferred Learning Language</label>
+              <label class="form-label" for="childLangSelect">${i18n.t('childModal.langLabel')}</label>
               <select id="childLangSelect" class="form-input">
-                <option value="English" selected>🇬🇧 English</option>
-                <option value="Hindi">🇮🇳 हिन्दी · Hindi</option>
-                <option value="Punjabi">🇮🇳 ਪੰਜਾਬੀ · Punjabi</option>
-                <option value="Bengali">🇮🇳 বাংলা · Bengali</option>
+                <option value="English" selected>EG English</option>
+                <option value="Hindi">HN हिन्दी</option>
+                <option value="Odia">OD ଓଡ଼ିଆ</option>
+                <option value="Punjabi">PB ਪੰਜਾਬੀ</option>
+                <option value="Tamil">TM தமிழ்</option>
               </select>
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Choose an Avatar</label>
+            <label class="form-label">${i18n.t('childModal.avatarLabel')}</label>
             <div class="avatar-selector-grid" id="avatarGrid">
               ${AVAILABLE_AVATARS.map(
                 av => `
@@ -94,28 +96,28 @@ export class ChildModalView {
 
           <div style="background: #f7f9f7; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 16px;">
             <strong style="font:800 12px Nunito; display:block; margin-bottom: 6px; color: var(--ink);">
-              Reading & Accessibility Options
+              ${i18n.t('childModal.optionsTitle')}
             </strong>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefDyslexiaFont" />
-              <span>Enhanced readability font spacing (increased letter & word spacing)</span>
+              <span>${i18n.t('childModal.dyslexiaFont')}</span>
             </label>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefSoundEffects" checked />
-              <span>Play gentle sound and speech rewards on correct answers</span>
+              <span>${i18n.t('childModal.soundEffects')}</span>
             </label>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefAutoReadAloud" />
-              <span>Automatically read instructions aloud when games load</span>
+              <span>${i18n.t('childModal.autoRead')}</span>
             </label>
           </div>
 
           <div class="modal-controls">
             <button type="submit" id="btnSaveChild" style="min-width: 130px;">
-              Save Profile ✨
+              ${i18n.t('childModal.save')}
             </button>
             <button type="button" id="btnCancelChild" class="soft">
-              Cancel
+              ${i18n.t('common.cancel')}
             </button>
           </div>
         </form>
@@ -135,7 +137,7 @@ export class ChildModalView {
       const name = nameInput.value.trim();
 
       if (!name) {
-        nameError.textContent = "Please enter the child's name.";
+        nameError.textContent = i18n.t('childModal.nameError');
         nameError.classList.remove('hidden');
         nameInput.classList.add('input-error');
         return;
@@ -180,15 +182,15 @@ export class ChildModalView {
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div class="modal-head">
           <div>
-            <h2 id="modalTitle">Edit Profile: ${child.name}</h2>
-            <p>Update class grade, language, or accessibility preferences.</p>
+            <h2 id="modalTitle">${i18n.t('childModal.editTitle', { name: child.name })}</h2>
+            <p>${i18n.t('childModal.editSub')}</p>
           </div>
-          <button type="button" class="modal-close" id="btnCloseChildModal" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseChildModal" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <form id="childProfileForm">
           <div class="form-group">
-            <label class="form-label" for="childNameInput">Child's Name *</label>
+            <label class="form-label" for="childNameInput">${i18n.t('childModal.nameLabel')}</label>
             <input
               type="text"
               id="childNameInput"
@@ -202,7 +204,7 @@ export class ChildModalView {
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="form-group">
-              <label class="form-label" for="childGradeSelect">Class / Grade</label>
+              <label class="form-label" for="childGradeSelect">${i18n.t('childModal.gradeLabel')}</label>
               <select id="childGradeSelect" class="form-input">
                 <option value="Class 1 · Early reader" ${child.grade.includes('Class 1') ? 'selected' : ''}>Class 1</option>
                 <option value="Class 2 · Early reader" ${child.grade.includes('Class 2') ? 'selected' : ''}>Class 2</option>
@@ -216,18 +218,19 @@ export class ChildModalView {
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="childLangSelect">Preferred Learning Language</label>
+              <label class="form-label" for="childLangSelect">${i18n.t('childModal.langLabel')}</label>
               <select id="childLangSelect" class="form-input">
-                <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>🇬🇧 English</option>
-                <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>🇮🇳 हिन्दी · Hindi</option>
-                <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>🇮🇳 ਪੰਜਾਬੀ · Punjabi</option>
-                <option value="Bengali" ${child.preferredLanguage === 'Bengali' ? 'selected' : ''}>🇮🇳 বাংলা · Bengali</option>
+                <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>EG English</option>
+                <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
+                <option value="Odia" ${child.preferredLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+                <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+                <option value="Tamil" ${child.preferredLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
               </select>
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Choose an Avatar</label>
+            <label class="form-label">${i18n.t('childModal.avatarLabel')}</label>
             <div class="avatar-selector-grid" id="avatarGrid">
               ${AVAILABLE_AVATARS.map(
                 av => `
@@ -246,35 +249,35 @@ export class ChildModalView {
 
           <div style="background: #f7f9f7; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 16px;">
             <strong style="font:800 12px Nunito; display:block; margin-bottom: 6px; color: var(--ink);">
-              Reading & Accessibility Options
+              ${i18n.t('childModal.optionsTitle')}
             </strong>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefDyslexiaFont" ${child.preferences?.dyslexiaFont ? 'checked' : ''} />
-              <span>Enhanced readability font spacing (increased letter & word spacing)</span>
+              <span>${i18n.t('childModal.dyslexiaFont')}</span>
             </label>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefSoundEffects" ${child.preferences?.soundEffects !== false ? 'checked' : ''} />
-              <span>Play gentle sound and speech rewards on correct answers</span>
+              <span>${i18n.t('childModal.soundEffects')}</span>
             </label>
             <label class="form-checkbox-label" style="margin: 6px 0;">
               <input type="checkbox" id="prefAutoReadAloud" ${child.preferences?.autoReadAloud ? 'checked' : ''} />
-              <span>Automatically read instructions aloud when games load</span>
+              <span>${i18n.t('childModal.autoRead')}</span>
             </label>
           </div>
 
           <div class="modal-controls">
             <button type="submit" id="btnSaveChild" style="min-width: 130px;">
-              Update Profile ✓
+              ${i18n.t('childModal.update')}
             </button>
             <button type="button" id="btnCancelChild" class="soft">
-              Cancel
+              ${i18n.t('common.cancel')}
             </button>
             <button
               type="button"
               id="btnDeleteFromEdit"
               style="margin-left: auto; background: #fff2ed; color: #c7563d; border: 1px solid #f7d2c8;"
             >
-              Remove Profile
+              ${i18n.t('childModal.remove')}
             </button>
           </div>
         </form>
@@ -337,10 +340,10 @@ export class ChildModalView {
       <div class="modal" style="max-width: 440px;" role="dialog" aria-modal="true" aria-labelledby="delTitle">
         <div class="modal-head">
           <div>
-            <h2 id="delTitle" style="color: #c04830;">Remove Profile?</h2>
-            <p>Parent confirmation required</p>
+            <h2 id="delTitle" style="color: #c04830;">${i18n.t('childModal.deleteTitle')}</h2>
+            <p>${i18n.t('childModal.deleteSub')}</p>
           </div>
-          <button type="button" class="modal-close" id="btnCloseDelModal" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseDelModal" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <div class="modal-body">
@@ -351,8 +354,7 @@ export class ChildModalView {
           </div>
 
           <div class="form-alert alert-error" style="line-height: 1.5;">
-            Are you sure you want to remove <strong>${child.name}</strong>'s profile?
-            All reading stats, badges, and progress for this profile will be permanently cleared.
+            ${i18n.t('childModal.deleteConfirm', { name: child.name })}
           </div>
 
           <div class="modal-controls" style="justify-content: center; gap: 12px; margin-top: 20px;">
@@ -361,10 +363,10 @@ export class ChildModalView {
               id="btnConfirmDelete"
               style="background: #c04830; color: #fff; padding: 11px 18px;"
             >
-              Yes, Remove Profile
+              ${i18n.t('childModal.deleteAction')}
             </button>
             <button type="button" id="btnCancelDelete" class="soft" style="padding: 11px 18px;">
-              Keep Profile
+              ${i18n.t('childModal.keepAction')}
             </button>
           </div>
         </div>

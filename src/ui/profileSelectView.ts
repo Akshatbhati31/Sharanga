@@ -1,8 +1,9 @@
 import { AuthService } from '../services/authService';
 import { ProfileService } from '../services/profileService';
-import type { ChildProfile } from '../types/auth';
+import type { ChildProfile, AppLanguageCode } from '../types/auth';
 import type { ChildModalView } from './childModalView';
 import type { ParentDashboardView } from './parentDashboardView';
+import { i18n } from '../i18n';
 
 export class ProfileSelectView {
   private container: HTMLElement;
@@ -42,7 +43,9 @@ export class ProfileSelectView {
     const langFlags: Record<string, string> = {
       English: '🇬🇧',
       Hindi: '🇮🇳',
+      Odia: '🇮🇳',
       Punjabi: '🇮🇳',
+      Tamil: '🇮🇳',
       Bengali: '🇮🇳',
     };
 
@@ -50,14 +53,19 @@ export class ProfileSelectView {
       <div class="auth-overlay-container">
         <div class="profile-select-view">
           <header class="profile-select-header">
-            <div class="auth-brand" style="margin-bottom:16px;">
-              <div class="brand-mark" aria-hidden="true">✿</div>
-              <div class="brand-name">Dyslexi<span>Mate</span></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <div class="auth-brand" style="margin-bottom:0;">
+                <div class="brand-mark" aria-hidden="true">✿</div>
+                <div class="brand-name">Dyslexi<span>Mate</span></div>
+              </div>
+              <div class="profile-lang-wrap">
+                ${i18n.renderLanguageSelect({ id: 'profileSelectLang', className: 'lang-selector-dropdown' })}
+              </div>
             </div>
             <div>
-              <span class="eyebrow-tag">Family Reading Hub</span>
-              <h1>Who's learning today?</h1>
-              <p>Welcome, ${parentUser.fullName}! Pick a profile to begin today's reading practice.</p>
+              <span class="eyebrow-tag">${i18n.t('profileSelect.familyHub')}</span>
+              <h1>${i18n.t('profileSelect.whoLearning')}</h1>
+              <p>${i18n.t('profileSelect.welcome', { name: parentUser.fullName })}</p>
             </div>
           </header>
 
@@ -65,7 +73,7 @@ export class ProfileSelectView {
           <div class="profile-action-bar">
             <div class="profile-action-group">
               <button type="button" id="btnAddChildTop" class="btn-action-pill pill-teal">
-                <span>+</span> Add Child Profile
+                <span>+</span> ${i18n.t('profileSelect.addChild')}
               </button>
               <button
                 type="button"
@@ -73,13 +81,13 @@ export class ProfileSelectView {
                 class="btn-action-pill ${this.isManageMode ? 'active' : ''}"
                 aria-pressed="${this.isManageMode}"
               >
-                <span>⚙️</span> ${this.isManageMode ? 'Done Managing' : 'Manage Profiles'}
+                <span>⚙️</span> ${this.isManageMode ? i18n.t('profileSelect.doneManaging') : i18n.t('profileSelect.manageProfiles')}
               </button>
             </div>
 
             <div class="profile-action-group">
               <button type="button" id="btnOpenParentDash" class="btn-action-pill">
-                <span>🔒</span> Parent Dashboard
+                <span>🔒</span> ${i18n.t('profileSelect.parentDash')}
               </button>
               <button
                 type="button"
@@ -87,7 +95,7 @@ export class ProfileSelectView {
                 class="btn-action-pill"
                 style="color: #ba472f; border-color: #fbd6ce;"
               >
-                <span>🚪</span> Log Out
+                <span>🚪</span> ${i18n.t('common.logOut')}
               </button>
             </div>
           </div>
@@ -98,13 +106,12 @@ export class ProfileSelectView {
               ? `
               <div class="empty-profiles-card" role="region" aria-labelledby="emptyTitle">
                 <div class="empty-icon" aria-hidden="true">🌱</div>
-                <h3 id="emptyTitle">No child profiles yet!</h3>
+                <h3 id="emptyTitle">${i18n.t('profileSelect.noProfiles')}</h3>
                 <p>
-                  Create a profile for your child to unlock personalized games, stories,
-                  and friendly voice-guided reading.
+                  ${i18n.t('profileSelect.noProfilesSub')}
                 </p>
                 <button type="button" id="btnCreateFirstChild" class="btn-primary-big" style="margin: 0 auto;">
-                  <span>✨</span> Create Your First Child Profile
+                  <span>✨</span> ${i18n.t('profileSelect.createFirst')}
                 </button>
               </div>
             `
@@ -136,13 +143,13 @@ export class ProfileSelectView {
                               class="btn-manage-edit"
                               data-edit-id="${child.id}"
                             >
-                              ✏️ Edit
+                              ✏️ ${i18n.t('profileSelect.edit')}
                             </button>
                             <button
                               type="button"
                               class="btn-manage-delete"
                               data-delete-id="${child.id}"
-                              title="Delete profile"
+                              title="${i18n.t('childModal.remove')}"
                             >
                               🗑️
                             </button>
@@ -154,7 +161,7 @@ export class ProfileSelectView {
                             class="btn-enter-child"
                             data-select-id="${child.id}"
                           >
-                            Start Learning →
+                            ${i18n.t('profileSelect.startLearning')} →
                           </button>
                         `
                       }
@@ -164,23 +171,31 @@ export class ProfileSelectView {
                   .join('')}
 
                 <!-- Add Another Card Tile -->
-                <div class="add-child-card" id="btnAddChildCard" role="button" tabindex="0" aria-label="Add another child profile">
+                <div class="add-child-card" id="btnAddChildCard" role="button" tabindex="0" aria-label="${i18n.t('profileSelect.addAnother')}">
                   <div class="add-child-icon" aria-hidden="true">+</div>
-                  <strong>Add Child Profile</strong>
-                  <p>Support another child's personalized reading growth</p>
+                  <strong>${i18n.t('profileSelect.addAnother')}</strong>
+                  <p>${i18n.t('profileSelect.addAnotherSub')}</p>
                 </div>
               </div>
             `
           }
 
           <div style="text-align: center; margin-top: 24px; font-size: 11px; color: var(--muted);">
-            DyslexiMate Parent Mode · Profile selection keeps each child's learning private.
+            ${i18n.t('profileSelect.footerNote')}
           </div>
         </div>
       </div>
     `;
 
     // Event Bindings
+    const langSelect = document.getElementById('profileSelectLang') as HTMLSelectElement;
+    langSelect?.addEventListener('change', async () => {
+      const newLang = langSelect.value as AppLanguageCode;
+      await i18n.setLanguage(newLang);
+      await this.authService.updateInterfaceLanguage(newLang);
+      await this.render();
+    });
+
     document.getElementById('btnAddChildTop')?.addEventListener('click', () => {
       this.childModalView.openAddModal(parentUser.id);
     });
@@ -205,7 +220,7 @@ export class ProfileSelectView {
     });
 
     document.getElementById('btnLogoutTop')?.addEventListener('click', () => {
-      if (confirm('Log out of DyslexiMate parent account?')) {
+      if (confirm(i18n.t('profileSelect.confirmLogout'))) {
         this.onLogout();
       }
     });

@@ -1,10 +1,11 @@
 import { AuthService } from '../services/authService';
 import { ProfileService } from '../services/profileService';
 import { ActivityTrackerService } from '../services/activityTrackerService';
-import type { ChildProfile } from '../types/auth';
+import type { ChildProfile, AppLanguageCode } from '../types/auth';
 import type { ChildModalView } from './childModalView';
 import { LearningPathService } from '../services/learningPathService';
 import { getSkillDefinition } from '../services/skillModel';
+import { i18n } from '../i18n';
 
 export class ParentDashboardView {
   private authService: AuthService;
@@ -64,10 +65,10 @@ export class ParentDashboardView {
       <div class="modal" style="max-width: 440px;" role="dialog" aria-modal="true" aria-labelledby="createPinTitle">
         <div class="modal-head">
           <div>
-            <h2 id="createPinTitle">Create Parent PIN 🔒</h2>
-            <p>Set a 4-digit PIN to safeguard parent settings and activity records.</p>
+            <h2 id="createPinTitle">${i18n.t('parent.createPinTitle')} 🔒</h2>
+            <p>${i18n.t('parent.createPinSub')}</p>
           </div>
-          <button type="button" class="modal-close" id="btnCloseCreatePin" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseCreatePin" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <div class="modal-body">
@@ -77,7 +78,7 @@ export class ParentDashboardView {
             </div>
 
             <div class="form-group" style="text-align:left;">
-              <label class="form-label" for="newPinInput1">Enter 4-Digit Parent PIN</label>
+              <label class="form-label" for="newPinInput1">${i18n.t('parent.enterPin')}</label>
               <input
                 type="password"
                 inputmode="numeric"
@@ -91,7 +92,7 @@ export class ParentDashboardView {
             </div>
 
             <div class="form-group" style="text-align:left; margin-top: 10px;">
-              <label class="form-label" for="newPinInput2">Confirm 4-Digit Parent PIN</label>
+              <label class="form-label" for="newPinInput2">${i18n.t('parent.confirmPin')}</label>
               <input
                 type="password"
                 inputmode="numeric"
@@ -112,10 +113,10 @@ export class ParentDashboardView {
 
           <div class="modal-controls" style="justify-content: center; margin-top: 18px;">
             <button type="button" id="btnSaveCreatedPin" style="min-width: 150px;">
-              Save Parent PIN
+              ${i18n.t('parent.pinSave')}
             </button>
             <button type="button" id="btnCancelCreatePin" class="soft">
-              Cancel
+              ${i18n.t('common.cancel')}
             </button>
           </div>
         </div>
@@ -132,14 +133,14 @@ export class ParentDashboardView {
       const val2 = pin2.value.trim();
 
       if (!/^\d{4}$/.test(val1)) {
-        errorEl.textContent = 'PIN must be exactly 4 numeric digits (0-9).';
+        errorEl.textContent = i18n.t('parent.pinErrorDigits');
         errorEl.classList.remove('hidden');
         pin1.focus();
         return;
       }
 
       if (val1 !== val2) {
-        errorEl.textContent = 'PIN confirmation does not match. Please verify.';
+        errorEl.textContent = i18n.t('parent.pinErrorMatch');
         errorEl.classList.remove('hidden');
         pin2.value = '';
         pin2.focus();
@@ -180,10 +181,10 @@ export class ParentDashboardView {
       <div class="modal" style="max-width: 440px;" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
         <div class="modal-head">
           <div>
-            <h2 id="gateTitle">Grown-Ups Only 🔒</h2>
-            <p>Please enter your 4-digit Parent PIN to continue.</p>
+            <h2 id="gateTitle">${i18n.t('parent.enterPinTitle')} 🔒</h2>
+            <p>${i18n.t('parent.enterPinSub')}</p>
           </div>
-          <button type="button" class="modal-close" id="btnCloseGate" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseGate" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <div class="modal-body">
@@ -192,7 +193,7 @@ export class ParentDashboardView {
               🛡️
             </div>
             <label class="form-label" for="parentPinInput" style="font-size:12px; margin-bottom:8px;">
-              Enter 4-Digit Parent PIN
+              ${i18n.t('parent.enterPin')}
             </label>
             <input
               type="password"
@@ -218,10 +219,10 @@ export class ParentDashboardView {
 
           <div class="modal-controls" style="justify-content: center; margin-top: 18px;">
             <button type="button" id="btnVerifyPin" style="min-width: 140px;">
-              Verify & Enter
+              ${i18n.t('parent.verifyPin')}
             </button>
             <button type="button" id="btnCancelGate" class="soft">
-              Cancel
+              ${i18n.t('common.cancel')}
             </button>
           </div>
         </div>
@@ -269,7 +270,7 @@ export class ParentDashboardView {
     const doVerify = async () => {
       const pin = pinInput.value.trim();
       if (pin.length !== 4) {
-        pinError.textContent = 'Please enter a complete 4-digit PIN.';
+        pinError.textContent = i18n.t('parent.pinErrorLength');
         pinError.classList.remove('hidden');
         return;
       }
@@ -343,19 +344,24 @@ export class ParentDashboardView {
     modalEl.innerHTML = `
       <div class="modal" style="max-width: 720px;" role="dialog" aria-modal="true" aria-labelledby="parentDashTitle">
         <div class="modal-head">
-          <div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <h2 id="parentDashTitle">Parent Dashboard</h2>
-              <span class="tag" style="background:#eaf2fd; color:#2c62a8">Parent Account</span>
-              ${
-                this.authService.isLiveDatabaseConnected()
-                  ? '<span class="tag" style="background:#e6f8ee; color:#18794e; border:1px solid #b7ebc9; font-weight:700;">🟢 Supabase PostgreSQL & RLS</span>'
-                  : '<span class="tag" style="background:#fffbe6; color:#7d6a26; border:1px solid #f6e69d; font-weight:700;">⚡ Demo Mode</span>'
-              }
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; margin-right:12px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <h2 id="parentDashTitle">${i18n.t('parent.title')}</h2>
+                <span class="tag" style="background:#eaf2fd; color:#2c62a8">Parent Account</span>
+                ${
+                  this.authService.isLiveDatabaseConnected()
+                    ? '<span class="tag" style="background:#e6f8ee; color:#18794e; border:1px solid #b7ebc9; font-weight:700;">🟢 Supabase PostgreSQL & RLS</span>'
+                    : '<span class="tag" style="background:#fffbe6; color:#7d6a26; border:1px solid #f6e69d; font-weight:700;">⚡ Demo Mode</span>'
+                }
+              </div>
+              <p>${i18n.t('parent.sub', { name: user.fullName })}</p>
             </div>
-            <p>Family management and reading telemetry for ${user.fullName} (${user.email})</p>
+            <div class="parent-lang-wrap">
+              ${i18n.renderLanguageSelect({ id: 'parentDashLangSelect', className: 'lang-selector-dropdown' })}
+            </div>
           </div>
-          <button type="button" class="modal-close" id="btnCloseParentDash" aria-label="Close">×</button>
+          <button type="button" class="modal-close" id="btnCloseParentDash" aria-label="${i18n.t('common.close')}">×</button>
         </div>
 
         <div class="modal-body">
@@ -372,15 +378,15 @@ export class ParentDashboardView {
           <!-- Aggregate Family Snapshot -->
           <div class="parent-stats">
             <div class="parent-stat">
-              <small>Linked Child Profiles</small>
+              <small>${i18n.t('parent.linkedProfiles')}</small>
               <strong>${children.length}</strong>
             </div>
             <div class="parent-stat">
-              <small>Combined Practice Time</small>
+              <small>${i18n.t('parent.combinedTime')}</small>
               <strong>${totalPracticeMinutes} min</strong>
             </div>
             <div class="parent-stat">
-              <small>Total Words Practiced</small>
+              <small>${i18n.t('parent.totalWords')}</small>
               <strong>${totalWordsPracticed}</strong>
             </div>
           </div>
@@ -390,23 +396,23 @@ export class ParentDashboardView {
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
               <div>
                 <h3 style="font:900 17px Nunito; margin:0; display:flex; align-items:center; gap:6px;">
-                  <span>⏱️</span> Activity Time & Usage
+                  <span>⏱️</span> ${i18n.t('parent.activityUsage')}
                 </h3>
                 <p style="font-size:11px; color:var(--muted); margin:3px 0 0;">
-                  Accurate active time tracking (idle periods & background tabs excluded)
+                  ${i18n.t('parent.activeTimeTracking')}
                 </p>
               </div>
 
               <!-- Time Period Filter -->
               <div style="display:flex; gap:6px; background:#f4f6f4; padding:3px; border-radius:10px;">
                 <button type="button" class="btn-action-pill ${this.selectedPeriod === 'today' ? 'pill-teal' : ''}" data-period="today" style="font-size:11px; padding:5px 10px;">
-                  Today
+                  ${i18n.t('parent.today')}
                 </button>
                 <button type="button" class="btn-action-pill ${this.selectedPeriod === '7days' ? 'pill-teal' : ''}" data-period="7days" style="font-size:11px; padding:5px 10px;">
-                  Last 7 Days
+                  ${i18n.t('parent.last7Days')}
                 </button>
                 <button type="button" class="btn-action-pill ${this.selectedPeriod === '30days' ? 'pill-teal' : ''}" data-period="30days" style="font-size:11px; padding:5px 10px;">
-                  Last 30 Days
+                  ${i18n.t('parent.last30Days')}
                 </button>
               </div>
             </div>
@@ -416,7 +422,7 @@ export class ParentDashboardView {
               children.length > 1
                 ? `
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
-                  <span style="font-size:11px; font-weight:700; color:#5e7078;">Select Child:</span>
+                  <span style="font-size:11px; font-weight:700; color:#5e7078;">${i18n.t('parent.selectChild')}:</span>
                   ${children
                     .map(
                       c => `
@@ -672,14 +678,14 @@ export class ParentDashboardView {
           <!-- Footer Actions -->
           <div class="modal-controls" style="margin-top: 24px;">
             <button type="button" id="btnReturnToProfiles" class="soft">
-              ← Return to Profile Selection
+              ← ${i18n.t('parent.returnProfiles')}
             </button>
             <button
               type="button"
               id="btnLogoutFromDash"
               style="margin-left: auto; background: #fff2ed; color: #c04830; border: 1px solid #f9d5cd;"
             >
-              Log Out of Parent Account
+              ${i18n.t('parent.logoutParent')}
             </button>
           </div>
         </div>
@@ -687,6 +693,14 @@ export class ParentDashboardView {
     `;
 
     // Event Bindings
+    const langSelect = document.getElementById('parentDashLangSelect') as HTMLSelectElement;
+    langSelect?.addEventListener('change', async () => {
+      const newLang = langSelect.value as AppLanguageCode;
+      await i18n.setLanguage(newLang);
+      await this.authService.updateInterfaceLanguage(newLang);
+      await this.openDashboard();
+    });
+
     document.getElementById('btnCloseParentDash')?.addEventListener('click', () => this.closeModal());
     document.getElementById('btnReturnToProfiles')?.addEventListener('click', () => {
       this.closeModal();
