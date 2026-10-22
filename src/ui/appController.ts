@@ -7,6 +7,7 @@ import { ChildModalView } from './childModalView';
 import { ParentDashboardView } from './parentDashboardView';
 import { ProfileSelectView } from './profileSelectView';
 import { DashboardController } from './dashboardController';
+import { i18n } from '../i18n';
 
 export enum AppScreen {
   AUTH = 'AUTH',
@@ -93,11 +94,30 @@ export class AppController {
         this.navigateTo(AppScreen.PROFILE_SELECT);
       }
     );
+
+    // Subscribe to reactive language changes across screens
+    i18n.onLanguageChanged(() => {
+      if (this.currentScreen === AppScreen.AUTH) {
+        this.authView.render();
+      } else if (this.currentScreen === AppScreen.PROFILE_SELECT) {
+        this.profileSelectView.render();
+      } else if (this.currentScreen === AppScreen.DASHBOARD) {
+        const active = this.profileService.getActiveChild();
+        if (active) {
+          this.dashboardController.render(active);
+        }
+      }
+    });
   }
 
   public init(): void {
     const currentUser = this.authService.getCurrentUser();
     const activeChild = this.profileService.getActiveChild();
+
+    i18n.resolveInitialLanguage({
+      authenticatedUserLang: currentUser?.interfaceLanguage,
+      childPreferredLang: activeChild?.preferredLanguage,
+    });
 
     if (currentUser && activeChild) {
       this.navigateTo(AppScreen.DASHBOARD);
@@ -126,6 +146,10 @@ export class AppController {
   }
 
   private handleAuthSuccess(): void {
+    const currentUser = this.authService.getCurrentUser();
+    if (currentUser?.interfaceLanguage) {
+      i18n.setLanguage(currentUser.interfaceLanguage);
+    }
     this.navigateTo(AppScreen.PROFILE_SELECT);
   }
 

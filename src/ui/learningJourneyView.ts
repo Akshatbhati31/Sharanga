@@ -2,6 +2,12 @@ import type { ChildProfile } from '../types/auth';
 import type { LearningPath } from '../types/adaptive';
 import { LearningPathService } from '../services/learningPathService';
 import { ActivityRunnerModal } from './activityRunnerModal';
+import { i18n } from '../i18n';
+import {
+  getLocalizedSkillTitle,
+  getLocalizedSkillObjective,
+  getLocalizedSkillDescription,
+} from '../services/recommendationEngine';
 
 export class LearningJourneyView {
   private container: HTMLElement;
@@ -24,6 +30,7 @@ export class LearningJourneyView {
 
     const path = this.currentPath;
     const topRec = path.recommendations[0];
+    const displayLang = i18n.getCurrentLanguage() || child.preferredLanguage || 'English';
 
     this.container.innerHTML = `
       <div class="learning-journey-container">
@@ -32,27 +39,27 @@ export class LearningJourneyView {
           <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
             <div style="flex: 1; min-width: 260px;">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span class="tag" style="background: var(--teal); color: #fff; font-weight: 800;">CONTINUE LEARNING JOURNEY</span>
+                <span class="tag" style="background: var(--teal); color: #fff; font-weight: 800;">${i18n.t('journey.continueTitle')}</span>
                 ${
                   path.isProvisional
-                    ? '<span class="tag" style="background: #fff8e4; color: #8f6c12; border: 1px solid #f6e69d;">🌱 Welcome Calibration</span>'
-                    : '<span class="tag" style="background: #f3edff; color: #6c5ce7; border: 1px solid #ddd7fc;">⚡ AI Adaptive Path</span>'
+                    ? `<span class="tag" style="background: #fff8e4; color: #8f6c12; border: 1px solid #f6e69d;">${i18n.t('journey.welcomeCalibration')}</span>`
+                    : `<span class="tag" style="background: #f3edff; color: #6c5ce7; border: 1px solid #ddd7fc;">${i18n.t('journey.aiAdaptivePath')}</span>`
                 }
               </div>
 
               <h2 style="font: 900 22px Nunito; margin: 0 0 6px; color: var(--ink);">
-                ${topRec ? topRec.title : 'Ready for your next reading win?'}
+                ${topRec ? getLocalizedSkillTitle(topRec.targetSkillId, displayLang, topRec.title) : i18n.t('journey.readyNextWin')}
               </h2>
 
               <p style="font-size: 13px; color: #516269; margin: 0 0 12px; line-height: 1.5;">
-                ${topRec ? topRec.description : 'Explore personalized phonics and sound games tailored to your level.'}
+                ${topRec ? getLocalizedSkillDescription(topRec.targetSkillId, displayLang, topRec.description) : i18n.t('journey.explorePhonics')}
               </p>
 
               <!-- Why this recommendation pill -->
               <div class="rf-disclaimer-box" style="background: #fbfdfc; border: 1.5px solid #d5ede1; color: #2d6b52; padding: 10px 14px; margin-bottom: 16px;">
                 <span>💡</span>
                 <span style="font-size: 12px; line-height: 1.4;">
-                  <strong>Why this step?</strong> ${topRec ? topRec.reason : path.explanation}
+                  <strong>${i18n.t('journey.whyThisStep')}</strong> ${topRec ? topRec.reason : path.explanation}
                 </span>
               </div>
 
@@ -62,13 +69,13 @@ export class LearningJourneyView {
                   topRec
                     ? `
                     <button type="button" id="btnStartRecommendedAct" class="hero-cta" style="font-size: 14px; padding: 12px 24px;">
-                      Play "${topRec.title}" (${topRec.estimatedMinutes} min) →
+                      ${i18n.t('journey.playBtn', { title: getLocalizedSkillTitle(topRec.targetSkillId, displayLang, topRec.title), minutes: topRec.estimatedMinutes })}
                     </button>
                   `
                     : ''
                 }
                 <button type="button" id="btnRegeneratePath" class="btn-action-pill" style="font-size: 12px;">
-                  ↻ Refresh Journey Path
+                  ${i18n.t('journey.refreshPath')}
                 </button>
               </div>
             </div>
@@ -76,8 +83,8 @@ export class LearningJourneyView {
             <!-- Visual Badge / Mascot -->
             <div style="text-align: center; padding: 10px 18px; background: #fff; border-radius: 20px; border: 1.5px solid #e1f0e8; box-shadow: var(--shadow);">
               <div style="font-size: 48px; line-height: 1; margin-bottom: 6px;">🦊</div>
-              <strong style="font: 900 13px Nunito; color: var(--teal); display: block;">Step ${path.version} Journey</strong>
-              <small style="font-size: 10px; color: var(--muted);">${path.demonstratedSkills.length} Skills Mastered</small>
+              <strong style="font: 900 13px Nunito; color: var(--teal); display: block;">${i18n.t('journey.stepJourney', { version: path.version })}</strong>
+              <small style="font-size: 10px; color: var(--muted);">${i18n.t('journey.skillsMastered', { count: path.demonstratedSkills.length })}</small>
             </div>
           </div>
         </div>
@@ -86,10 +93,10 @@ export class LearningJourneyView {
         <div class="card" style="margin-top: 18px;">
           <div class="card-title">
             <div>
-              <h3>Visual Learning Journey</h3>
-              <p>Your gentle step-by-step path to confident reading.</p>
+              <h3>${i18n.t('journey.roadmapTitle')}</h3>
+              <p>${i18n.t('journey.roadmapSubtitle')}</p>
             </div>
-            <span class="tag">PROGRESSION ROADMAP</span>
+            <span class="tag">${i18n.t('journey.roadmapTag')}</span>
           </div>
 
           <div class="journey-steps-track" style="display: flex; gap: 12px; margin-top: 18px; overflow-x: auto; padding-bottom: 8px;">
@@ -115,29 +122,29 @@ export class LearningJourneyView {
                   <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                       <span style="font-size: 11px; font-weight: 800; color: ${isCurrent ? 'var(--teal)' : '#7f8f94'};">
-                        STEP ${index + 1} ${isCurrent ? '· CURRENT' : ''}
+                        ${i18n.t('journey.stepNumber', { num: index + 1 })} ${isCurrent ? `· ${i18n.t('journey.currentStep')}` : ''}
                       </span>
                       <span style="width: 24px; height: 24px; border-radius: 8px; background: ${rec.actionBg}; display: grid; place-items: center; font-size: 12px;">
                         ${rec.actionIcon}
                       </span>
                     </div>
                     <strong style="font: 900 14px Nunito; color: var(--ink); display: block; margin-bottom: 4px;">
-                      ${rec.title}
+                      ${getLocalizedSkillTitle(rec.targetSkillId, displayLang, rec.title)}
                     </strong>
                     <p style="font-size: 11px; color: var(--muted); margin: 0; line-height: 1.4;">
-                      ${rec.learningObjective}
+                      ${getLocalizedSkillObjective(rec.targetSkillId, displayLang, rec.learningObjective)}
                     </p>
                   </div>
 
                   <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; align-items: center;">
-                    <span class="tag" style="font-size: 9px; padding: 2px 6px;">${rec.difficulty.toUpperCase()}</span>
+                    <span class="tag" style="font-size: 9px; padding: 2px 6px;">${i18n.t(('journey.' + rec.difficulty) as any) || rec.difficulty.toUpperCase()}</span>
                     <button
                       type="button"
                       class="btn-action-pill btn-start-step"
                       data-step-idx="${index}"
                       style="font-size: 10px; padding: 4px 8px; ${isCurrent ? 'background: var(--teal); color: #fff; border-color: var(--teal);' : ''}"
                     >
-                      ${isCurrent ? 'Start Now 🌟' : 'Preview'}
+                      ${isCurrent ? i18n.t('journey.startNow') : i18n.t('journey.preview')}
                     </button>
                   </div>
                 </div>
@@ -153,8 +160,8 @@ export class LearningJourneyView {
           <div class="card">
             <div class="card-title">
               <div>
-                <h3>Achievable Milestones 🏅</h3>
-                <p>Celebrate small steps every single day.</p>
+                <h3>${i18n.t('journey.milestonesTitle')}</h3>
+                <p>${i18n.t('journey.milestonesSubtitle')}</p>
               </div>
             </div>
 
@@ -187,8 +194,8 @@ export class LearningJourneyView {
           <div class="card">
             <div class="card-title">
               <div>
-                <h3>Revisit Previous Wins ✨</h3>
-                <p>Keep your reading superpowers sharp.</p>
+                <h3>${i18n.t('journey.revisitWinsTitle')}</h3>
+                <p>${i18n.t('journey.revisitWinsSubtitle')}</p>
               </div>
             </div>
 
@@ -204,11 +211,11 @@ export class LearningJourneyView {
                         <span>${rev.actionIcon}</span>
                         <div>
                           <strong style="font-size: 12px; display: block;">${rev.title}</strong>
-                          <small style="color: #7b888c; font-size: 10px;">Spaced review practice</small>
+                          <small style="color: #7b888c; font-size: 10px;">${i18n.t('journey.spacedReview')}</small>
                         </div>
                       </div>
                       <button type="button" class="btn-action-pill btn-start-review" data-act-id="${rev.activityId}" style="font-size: 10px; padding: 3px 8px;">
-                        Replay
+                        ${i18n.t('journey.replay')}
                       </button>
                     </div>
                   `
@@ -219,9 +226,9 @@ export class LearningJourneyView {
                 : `
                 <div style="text-align: center; padding: 24px 12px; background: #fafbf9; border-radius: 14px; border: 1px dashed var(--line); margin-top: 14px;">
                   <span style="font-size: 28px;">🌟</span>
-                  <strong style="font: 800 13px Nunito; display: block; margin-top: 4px;">Memory Bank Fresh!</strong>
+                  <strong style="font: 800 13px Nunito; display: block; margin-top: 4px;">${i18n.t('journey.memoryBankFresh')}</strong>
                   <p style="font-size: 11px; color: var(--muted); margin: 4px 0 0;">
-                    As ${child.name} masters new sounds, review quests will appear here for fun consolidation.
+                    ${i18n.t('journey.memoryBankDesc', { name: child.name })}
                   </p>
                 </div>
               `

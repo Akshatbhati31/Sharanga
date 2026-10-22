@@ -1,4 +1,5 @@
 import type { InteractiveActivityContent, ActivityDifficulty } from '../types/adaptive';
+import { getDeterministicActivity } from '../worker/aiHandler.ts';
 
 export class AiActivityService {
   private static instance: AiActivityService;
@@ -14,7 +15,7 @@ export class AiActivityService {
 
   /**
    * Fetches an adaptive interactive activity tailored to skill, level, and preferences.
-   * If offline or API fails, returns an instant rich fallback activity safely.
+   * If offline or API fails, returns an instant rich fallback activity safely in the requested learning language.
    */
   public async generateActivity(params: {
     skillId: string;
@@ -25,7 +26,11 @@ export class AiActivityService {
     targetPattern?: string;
   }): Promise<InteractiveActivityContent> {
     try {
-      const res = await fetch('/api/ai/generate-activity', {
+      const endpoint =
+        typeof window !== 'undefined'
+          ? '/api/ai/generate-activity'
+          : 'http://localhost:5173/api/ai/generate-activity';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -40,25 +45,11 @@ export class AiActivityService {
           return data.activity;
         }
       }
-    } catch (err) {
-      console.warn('Network error fetching AI activity, using local fallback:', err);
+    } catch {
+      // Graceful local deterministic fallback if network or endpoint is offline
     }
 
     // Client-side fallback if network or endpoint fails completely
-    return {
-      id: `act_client_fallback_${Date.now()}`,
-      skillId: params.skillId,
-      title: 'Sound Discovery Practice 🌟',
-      instruction: 'Find the picture that matches the sound:',
-      difficulty: params.difficulty,
-      language: params.language,
-      type: 'word_match',
-      prompt: 'Which word matches the sound?',
-      items: [
-        { id: 'opt_1', text: 'Star', visual: '⭐', isCorrect: true, feedbackHint: 'Great job! 🌟' },
-        { id: 'opt_2', text: 'Sun', visual: '☀️', isCorrect: false, feedbackHint: 'Nice try! Look closely.' },
-      ],
-      stepByStepHint: 'Take your time and listen closely to the word sound.',
-    };
+    return getDeterministicActivity(params);
   }
 }

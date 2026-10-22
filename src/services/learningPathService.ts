@@ -11,7 +11,12 @@ import {
   updateSkillStateWithAttempt,
   getSkillDefinition,
 } from './skillModel';
-import { RecommendationEngine } from './recommendationEngine';
+import {
+  RecommendationEngine,
+  getLocalizedSkillTitle,
+  getLocalizedSkillObjective,
+  getLocalizedSkillDescription,
+} from './recommendationEngine';
 import { StorageService } from './storageService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -191,9 +196,31 @@ export class LearningPathService {
   // -------------------------------------------------------------
   public async getOrGeneratePath(child: ChildProfile): Promise<LearningPath> {
     const existing = await this.getStoredPath(child.id);
-    if (existing) {
+    const targetLang = child.preferredLanguage || 'English';
+
+    // If an existing path has at least 3 recommendations, preserve the path and its skill identities
+    if (existing && existing.recommendations && existing.recommendations.length >= 3) {
+      if (existing.language !== targetLang) {
+        existing.language = targetLang;
+        existing.recommendations = existing.recommendations.map(rec => ({
+          ...rec,
+          title: getLocalizedSkillTitle(rec.targetSkillId, targetLang, rec.title),
+          learningObjective: getLocalizedSkillObjective(rec.targetSkillId, targetLang, rec.learningObjective),
+          description: getLocalizedSkillDescription(rec.targetSkillId, targetLang, rec.description),
+        }));
+        if (existing.reviewQueue) {
+          existing.reviewQueue = existing.reviewQueue.map(rec => ({
+            ...rec,
+            title: getLocalizedSkillTitle(rec.targetSkillId, targetLang, rec.title),
+            learningObjective: getLocalizedSkillObjective(rec.targetSkillId, targetLang, rec.learningObjective),
+            description: getLocalizedSkillDescription(rec.targetSkillId, targetLang, rec.description),
+          }));
+        }
+        await this.saveStoredPath(existing);
+      }
       return existing;
     }
+
     return this.generatePath(child);
   }
 
@@ -288,6 +315,7 @@ export class LearningPathService {
     const path: LearningPath = {
       id: `path_${child.id}`,
       childId: child.id,
+      language: child.preferredLanguage || 'English',
       version: previousVersion + 1,
       createdAt: existingPath?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),

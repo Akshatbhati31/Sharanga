@@ -3,9 +3,11 @@ import type {
   LoginCredentials,
   RegisterData,
   AuthResponse,
+  AppLanguageCode,
 } from '../types/auth';
 import { StorageService, hashPassword, hashPin, type StoredParentUser } from './storageService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { i18n } from '../i18n';
 
 export interface VerifyPinResult {
   success: boolean;
@@ -27,6 +29,7 @@ export interface IAuthService {
   getPinLockoutRemainingSeconds(): number;
   onAuthStateChanged(listener: (user: ParentUser | null) => void): () => void;
   isLiveDatabaseConnected(): boolean;
+  updateInterfaceLanguage(lang: AppLanguageCode): Promise<boolean>;
 }
 
 export class AuthService implements IAuthService {
@@ -119,6 +122,17 @@ export class AuthService implements IAuthService {
         .eq('id', user.id)
         .maybeSingle();
 
+      const { data: pref } = await supabase
+        .from('account_preferences')
+        .select('interface_language')
+        .eq('parent_id', user.id)
+        .maybeSingle();
+
+      const savedLang = (pref?.interface_language || profile?.interface_language) as AppLanguageCode | undefined;
+      if (savedLang) {
+        await i18n.setLanguage(savedLang);
+      }
+
       const fullName = profile?.full_name || user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'Parent');
       const hasPin = Boolean(profile?.parent_pin_hash);
 
@@ -128,6 +142,7 @@ export class AuthService implements IAuthService {
         fullName,
         hasPin,
         termsAccepted: true,
+        interfaceLanguage: savedLang || i18n.getCurrentLanguage(),
         createdAt: profile?.created_at || user.created_at || new Date().toISOString(),
       };
 
@@ -198,6 +213,13 @@ export class AuthService implements IAuthService {
       }
 
       const { passwordHash: _, pinHash: __, failedPinAttempts: ___, pinLockoutUntil: ____, ...safeUser } = candidate;
+      if (candidate.interfaceLanguage) {
+        await i18n.setLanguage(candidate.interfaceLanguage);
+      } else {
+        candidate.interfaceLanguage = i18n.getCurrentLanguage();
+        this.storage.saveRawUsers(users);
+      }
+      safeUser.interfaceLanguage = candidate.interfaceLanguage;
       this.currentUser = safeUser;
       const currentSession = this.storage.getSession();
       this.storage.saveSession(safeUser.id, currentSession.activeChildId);
@@ -247,6 +269,20 @@ export class AuthService implements IAuthService {
         .eq('id', data.user.id)
         .maybeSingle();
 
+      const { data: pref } = await supabase
+        .from('account_preferences')
+        .select('interface_language')
+        .eq('parent_id', data.user.id)
+        .maybeSingle();
+
+      const savedLang = (pref?.interface_language || profile?.interface_language) as AppLanguageCode | undefined;
+      if (savedLang) {
+        await i18n.setLanguage(savedLang);
+      } else {
+        const currentLang = i18n.getCurrentLanguage();
+        await this.updateInterfaceLanguage(currentLang);
+      }
+
       const fullName = profile?.full_name || data.user.user_metadata?.full_name || email.split('@')[0];
       const hasPin = Boolean(profile?.parent_pin_hash);
 
@@ -256,6 +292,7 @@ export class AuthService implements IAuthService {
         fullName,
         hasPin,
         termsAccepted: true,
+        interfaceLanguage: savedLang || i18n.getCurrentLanguage(),
         createdAt: profile?.created_at || data.user.created_at,
       };
 
@@ -307,6 +344,9 @@ export class AuthService implements IAuthService {
         return { success: false, error: 'An account with this email already exists. Please log in instead.' };
       }
 
+      const selectedInterfaceLang = data.interfaceLanguage || i18n.getCurrentLanguage();
+      await i18n.setLanguage(selectedInterfaceLang);
+
       const passwordHash = await hashPassword(password);
       const newParent: StoredParentUser = {
         id: 'parent-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
@@ -316,6 +356,7 @@ export class AuthService implements IAuthService {
         hasPin: false,
         failedPinAttempts: 0,
         termsAccepted: true,
+        interfaceLanguage: selectedInterfaceLang,
         createdAt: new Date().toISOString(),
       };
 
@@ -357,12 +398,20 @@ export class AuthService implements IAuthService {
         return { success: false, error: 'Registration failed. No user was returned by the auth server.' };
       }
 
+      const selectedInterfaceLang = data.interfaceLanguage || i18n.getCurrentLanguage();
+      await i18n.setLanguage(selectedInterfaceLang);
+
       // Upsert parent profile to prevent race conditions or missing profiles
       try {
         await supabase.from('parent_profiles').upsert({
           id: authData.user.id,
           full_name: fullName,
+          interface_language: selectedInterfaceLang,
         });
+        await supabase.from('account_preferences').upsert({
+          parent_id: authData.user.id,
+          interface_language: selectedInterfaceLang,
+        }, { onConflict: 'parent_id' });
       } catch (upsertErr) {
         console.warn('Upsert to parent_profiles encountered error:', upsertErr);
       }
@@ -381,6 +430,7 @@ export class AuthService implements IAuthService {
         fullName,
         hasPin: false,
         termsAccepted: true,
+        interfaceLanguage: selectedInterfaceLang,
         createdAt: authData.user.created_at,
       };
 
@@ -643,6 +693,42 @@ export class AuthService implements IAuthService {
     }
 
     return this.setupParentPin(pin);
+  }
+
+  public async updateInterfaceLanguage(lang: AppLanguageCode): Promise<boolean> {
+    if (this.currentUser) {
+      this.currentUser.interfaceLanguage = lang;
+    }
+
+    // Update in local demo storage
+    const users = this.storage.getRawUsers();
+    if (this.currentUser) {
+      const idx = users.findIndex(u => u.id === this.currentUser!.id);
+      if (idx !== -1) {
+        users[idx].interfaceLanguage = lang;
+        this.storage.saveRawUsers(users);
+      }
+    }
+
+    // Update in Supabase live tables if configured and not demo parent
+    if (isSupabaseConfigured() && supabase && this.currentUser && this.currentUser.id !== 'parent-demo-1') {
+      try {
+        await supabase
+          .from('parent_profiles')
+          .update({ interface_language: lang })
+          .eq('id', this.currentUser.id);
+
+        await supabase
+          .from('account_preferences')
+          .upsert(
+            { parent_id: this.currentUser.id, interface_language: lang },
+            { onConflict: 'parent_id' }
+          );
+      } catch (err) {
+        console.warn('Failed to update Supabase language preference:', err);
+      }
+    }
+    return true;
   }
 
   private isValidEmail(email: string): boolean {
