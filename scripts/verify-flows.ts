@@ -38,7 +38,9 @@ import { SpeechService } from '../src/services/speechService';
 import { ActivityRunnerModal } from '../src/ui/activityRunnerModal';
 import { LearningJourneyView } from '../src/ui/learningJourneyView';
 import { ChildModalView } from '../src/ui/childModalView';
+import { DashboardController } from '../src/ui/dashboardController';
 import type { SupportedLanguage, AppLanguageCode, ChildProfile } from '../src/types/auth';
+import { StoryShelfService } from '../src/services/storyShelfService';
 
 // Polyfill localStorage, document & SpeechSynthesis for Node test environment
 if (typeof globalThis.localStorage === 'undefined') {
@@ -2739,9 +2741,332 @@ async function runTests() {
   assert(profilesChangedChild.preferredLanguage === 'Hindi', 'New child language mapped to Hindi from "hi" code');
   assert(modalDom?.classList.contains('hidden'), 'Modal closed successfully after save');
 
+  // 17.5 Parent Profile Foreign Key & Self-Healing Regression Tests
+  console.log('Testing parent_profiles foreign key self-healing & mapping...');
+  const firstTimeParentId = '11111111-2222-3333-4444-555555555555';
+  const existingParentId = '99999999-8888-7777-6666-555555555555';
+
+  // Seed existing parent in local storage
+  const storageInstance = StorageService.getInstance();
+  const rawUsers = storageInstance.getRawUsers();
+  rawUsers.push({
+    id: existingParentId,
+    email: 'existing.parent@example.com',
+    fullName: 'Priya Sharma',
+    hasPin: false,
+    termsAccepted: true,
+    interfaceLanguage: 'en',
+    createdAt: new Date().toISOString(),
+    passwordHash: 'mock-hash',
+  });
+  storageInstance.saveRawUsers(rawUsers);
+
+  // Test ensureParentProfile for a first-time parent
+  const firstTimeEnsured = await ps.ensureParentProfile(firstTimeParentId);
+  assert(firstTimeEnsured === true, 'ensureParentProfile successfully completes for first-time parent');
+
+  // Test ensureParentProfile for an existing parent
+  const existingEnsured = await ps.ensureParentProfile(existingParentId);
+  assert(existingEnsured === true, 'ensureParentProfile successfully completes for existing parent');
+
+  // Test child creation for first-time parent maps parent_id correctly
+  const firstTimeChild = await ps.createChild(firstTimeParentId, {
+    name: 'Anaya',
+    grade: 'Class 1 · Early reader',
+    preferredLanguage: 'English',
+    avatar: '🌸',
+  });
+  assert(firstTimeChild.parentId === firstTimeParentId, 'First-time parent child profile has matching parent_id UUID');
+
+  // Test child creation for existing parent maps parent_id correctly
+  const existingParentChild = await ps.createChild(existingParentId, {
+    name: 'Dev',
+    grade: 'Class 3 · Growing reader',
+    preferredLanguage: 'Hindi',
+    avatar: '🚀',
+  });
+  assert(existingParentChild.parentId === existingParentId, 'Existing parent child profile has matching parent_id UUID');
+
+  // 17.6 Verify Migration SQL file contents
+  const fkMigrationPath = path.resolve(process.cwd(), 'supabase/migrations/20261022000001_fix_parent_profiles_fkey.sql');
+  assert(fs.existsSync(fkMigrationPath), 'Migration 20261022000001_fix_parent_profiles_fkey.sql exists');
+  const fkMigrationSql = fs.readFileSync(fkMigrationPath, 'utf8');
+  assert(fkMigrationSql.includes('GRANT SELECT, INSERT, UPDATE, DELETE ON public.parent_profiles TO authenticated'), 'Migration grants authenticated table permissions on parent_profiles');
+  assert(fkMigrationSql.includes('GRANT SELECT, INSERT, UPDATE, DELETE ON public.child_profiles TO authenticated'), 'Migration grants authenticated table permissions on child_profiles');
+  assert(fkMigrationSql.includes('INSERT INTO public.parent_profiles'), 'Migration backfills missing parent_profiles from auth.users');
+  assert(fkMigrationSql.includes('CREATE TRIGGER on_auth_user_created'), 'Migration defines on_auth_user_created trigger with SECURITY DEFINER');
+
   // Reset language to English at end of suite
   await i18n.setLanguage('en');
   assert(i18n.getCurrentLanguage() === 'en', 'Language safely reset to English after verification');
+
+  console.log(`\n--- Test Group 18: Complete Bug Fix Verification (Bugs 1 - 6) ---`);
+
+  // 18.1 Bug 1: Login Session Persistence & Restoration
+  console.log('Testing Bug 1: Session persistence and restoration...');
+  const authInstance = AuthService.getInstance();
+  assert(typeof (authInstance as any).waitForAuthReady === 'function', 'AuthService provides waitForAuthReady method');
+  const readyUser = await authInstance.waitForAuthReady();
+  assert(readyUser !== undefined, 'waitForAuthReady successfully resolves without hanging');
+
+  // Verify restoreActiveChild recovers active child for authenticated parent
+  const bug1ParentId = 'parent-session-persist-' + Date.now();
+  const bug1Child = await ps.createChild(bug1ParentId, {
+    name: 'Kabir',
+    grade: 'Class 2',
+    preferredLanguage: 'Hindi',
+    avatar: '🦁',
+  });
+  ps.setActiveChild(bug1Child);
+  assert(ps.getActiveChild()?.id === bug1Child.id, 'Active child set in profile service');
+  const restoredChild = await ps.restoreActiveChild(bug1ParentId);
+  assert(restoredChild !== null, 'restoreActiveChild successfully restores child profile on simulated refresh');
+  assert(restoredChild?.id === bug1Child.id, 'Restored child ID matches selected child');
+  assert(restoredChild?.name === 'Kabir', 'Restored child profile has complete data');
+
+  // Verify expired session safety: an unauthenticated parent returns null and does not fall back to demo mode in production
+  const restoredNull = await ps.restoreActiveChild('non-existent-parent-id');
+  assert(restoredNull === null, 'restoreActiveChild safely returns null for unknown/unauthenticated parent');
+
+  // Verify explicit logout clears active child and session
+  await authInstance.logout();
+  assert(authInstance.getCurrentUser() === null, 'logout clears current authenticated user');
+
+  // 18.2 Bug 2: Reading Accuracy Graph Honest Calculation
+  console.log('Testing Bug 2: Reading accuracy graph calculation...');
+  const honestChildId = 'child-honest-calc-' + Date.now();
+  // Brand new child: 0 attempts
+  const emptyGraphSummary = await chartService.getChartSummary(honestChildId, 'week');
+  assert(emptyGraphSummary.isEmpty === true, 'Brand new child chart is marked isEmpty = true');
+  assert(emptyGraphSummary.overallAccuracy === null, 'Brand new child overallAccuracy is null (empty state, never fabricated 100%)');
+  assert(emptyGraphSummary.points.length === 0, 'No points fabricated for child with zero attempts');
+
+  // Record 1 correct attempt and 1 incorrect attempt (2 answered attempts, 1 correct)
+  await learningPathService.recordAttempt({
+    id: `att_honest_1_${Date.now()}`,
+    childId: honestChildId,
+    activityId: 'act_letter_sounds',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 100,
+    accuracy: 1.0,
+    totalQuestions: 1,
+    correctAnswers: 1,
+    incorrectAnswers: 0,
+    attemptsRequired: 1,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 20,
+    missedItems: [],
+    completedAt: new Date().toISOString(),
+  });
+  await learningPathService.recordAttempt({
+    id: `att_honest_2_${Date.now()}`,
+    childId: honestChildId,
+    activityId: 'act_letter_sounds',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'word_match',
+    score: 0,
+    accuracy: 0.0,
+    totalQuestions: 1,
+    correctAnswers: 0,
+    incorrectAnswers: 1,
+    attemptsRequired: 2,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 20,
+    missedItems: ['mistake'],
+    completedAt: new Date().toISOString(),
+  });
+
+  const updatedGraphSummary = await chartService.getChartSummary(honestChildId, 'week');
+  assert(updatedGraphSummary.isEmpty === false, 'Chart is not empty after recording answered attempts');
+  assert(updatedGraphSummary.overallAccuracy === 50, 'Overall accuracy calculated as exactly 50% (1 correct / 2 answered attempts * 100), not fabricated 100%');
+  assert(updatedGraphSummary.totalAttempts === 2, 'Total answered attempts correctly recorded as 2');
+
+  // 18.3 Bug 3: Daily Challenge Attempt Counter
+  console.log('Testing Bug 3: 10-minute challenge attempt counter...');
+  const challengeChildId = 'child-challenge-test-' + Date.now();
+  const todayKey = new Date().toISOString().split('T')[0];
+  const initialAttempts = storageInstance.getDailyAttempts(challengeChildId, todayKey);
+  assert(initialAttempts === 0, 'Daily challenge attempts start at 0 for a new child/day');
+
+  // Increment on answer submission
+  const afterOne = storageInstance.incrementDailyAttempt(challengeChildId, todayKey);
+  assert(afterOne === 1, 'First answer submission increments daily attempts to 1');
+  const afterTwo = storageInstance.incrementDailyAttempt(challengeChildId, todayKey);
+  assert(afterTwo === 2, 'Second answer submission increments daily attempts to 2');
+  assert(storageInstance.getDailyAttempts(challengeChildId, todayKey) === 2, 'getDailyAttempts correctly reflects 2 attempts');
+
+  // Check that a different calendar day starts at 0 without deleting history
+  const tomorrowKey = '2099-01-01';
+  assert(storageInstance.getDailyAttempts(challengeChildId, tomorrowKey) === 0, 'New calendar day starts at 0 attempts');
+  assert(storageInstance.getDailyAttempts(challengeChildId, todayKey) === 2, 'Today attempts remain preserved after date query');
+
+  // 18.4 Bug 4: Spelling Activity Word Advancement & Indic Scripts
+  console.log('Testing Bug 4: Spelling activity word advancement & Indic language word banks...');
+  const dc = new DashboardController(document.createElement('div'), {} as any, () => {}) as any;
+  // Test English word bank
+  const word1 = dc.selectNextSpellingWord('English', 'Class 1');
+  const word2 = dc.selectNextSpellingWord('English', 'Class 1');
+  assert(typeof word1 === 'string' && word1.length > 0, 'Spelling word generated for English');
+  assert(word1 !== word2, 'Spelling activity does not immediately repeat the previous target word');
+
+  // Test Hindi word bank uses Devanagari script
+  const hiWord = dc.selectNextSpellingWord('Hindi', 'Class 1');
+  assert(/[\u0900-\u097F]/.test(hiWord), 'Hindi spelling activity uses authentic Devanagari native script');
+
+  // Test Odia word bank uses Odia script
+  const orWord = dc.selectNextSpellingWord('Odia', 'Class 1');
+  assert(/[\u0B00-\u0B7F]/.test(orWord), 'Odia spelling activity uses authentic Odia native script');
+
+  // Test Punjabi word bank uses Gurmukhi script
+  const paWord = dc.selectNextSpellingWord('Punjabi', 'Class 1');
+  assert(/[\u0A00-\u0A7F]/.test(paWord), 'Punjabi spelling activity uses authentic Gurmukhi native script');
+
+  // Test Tamil word bank uses Tamil script
+  const taWord = dc.selectNextSpellingWord('Tamil', 'Class 1');
+  assert(/[\u0B80-\u0BFF]/.test(taWord), 'Tamil spelling activity uses authentic Tamil native script');
+
+  // 18.5 Bug 5: Activities Replay & Shuffled Options
+  console.log('Testing Bug 5: Activity replay & shuffled choices...');
+  // Test variant in getDeterministicActivity
+  const baseActivity = getDeterministicActivity({
+    skillId: 'skill_confused_letters_bd',
+    difficulty: 'beginner',
+    language: 'English',
+    variant: 0,
+  });
+  const altActivity = getDeterministicActivity({
+    skillId: 'skill_confused_letters_bd',
+    difficulty: 'beginner',
+    language: 'English',
+    variant: 1,
+  });
+  assert(baseActivity.prompt !== altActivity.prompt, 'Variant 1 produces alternative question for replay');
+  assert(baseActivity.items.some(i => i.isCorrect), 'Base activity has correct answer marked');
+  assert(altActivity.items.some(i => i.isCorrect), 'Variant activity has correct answer marked');
+
+  // 18.6 Bug 6: Progress Data Honesty & Session Deduplication
+  console.log('Testing Bug 6: Progress data honesty and session deduplication...');
+  const newChildId = 'child-honesty-' + Date.now();
+  const freshProgress = ps.getChildProgress(newChildId);
+  assert(freshProgress.practiceMinutes === 0, 'New child starts with 0 practice minutes');
+  assert(freshProgress.wordsLearned === 0, 'New child starts with 0 words learned');
+  assert(freshProgress.fluencyWpm === 0, 'New child starts with 0 fluency WPM');
+  assert(freshProgress.accuracyPercent === 0, 'New child starts with 0% accuracy baseline');
+  assert(freshProgress.streakDays === 0, 'New child starts with 0 streak days');
+  assert(freshProgress.happyPoints === 0, 'New child starts with 0 happy points');
+
+  // Test StorageService deduplication by activity ID
+  const testActId = 'act_dedup_test_' + Date.now();
+  storageInstance.saveActivity({
+    id: testActId,
+    parentId: 'parent-1',
+    childId: newChildId,
+    activityType: 'practice_game',
+    title: 'Deduplication Test',
+    timestamp: new Date().toISOString(),
+    durationMinutes: 5,
+  });
+  const countBefore = storageInstance.getActivitiesForChild(newChildId).length;
+  // Try to save duplicate record
+  storageInstance.saveActivity({
+    id: testActId,
+    parentId: 'parent-1',
+    childId: newChildId,
+    activityType: 'practice_game',
+    title: 'Deduplication Test',
+    timestamp: new Date().toISOString(),
+    durationMinutes: 5,
+  });
+  const countAfter = storageInstance.getActivitiesForChild(newChildId).length;
+  assert(countBefore === countAfter, 'StorageService deduplicates activity records with identical id');
+
+  // 18.7 Bug 7: Story Shelf - Collection Variety, Language Passages, Rotation, and Comprehension
+  console.log('Testing Bug 7: Story Shelf collection variety, language matching, rotation, and comprehension questions...');
+  const shelfService = StoryShelfService.getInstance();
+  const testLangs: SupportedLanguage[] = ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil'];
+
+  // 1. Meaningful collection of medium-to-long stories across reading levels
+  for (const lang of testLangs) {
+    const stories = shelfService.getStories(lang);
+    assert(stories.length >= 5, `${lang} story shelf has at least 5 curated stories`);
+
+    const levels = new Set(stories.map(s => s.readingLevel));
+    assert(levels.has('early') && levels.has('growing') && levels.has('confident'), `${lang} covers early, growing, and confident reading levels`);
+
+    // Verify medium-to-long length (paragraphs count and character length)
+    for (const story of stories) {
+      assert(story.paragraphs.length >= 3, `${lang} story "${story.title}" has at least 3 paragraphs`);
+      const totalChars = story.paragraphs.join(' ').length;
+      assert(totalChars >= 250, `${lang} story "${story.title}" has medium-to-long passage text (${totalChars} chars)`);
+      assert(story.estimatedMinutes >= 3, `${lang} story has reasonable estimated read time (>= 3 min)`);
+    }
+  }
+
+  // 2. Story passages and comprehension questions match the selected learning language
+  const scriptChecks: Record<string, { regex: RegExp; name: string }> = {
+    Hindi: { regex: /[\u0900-\u097F]/, name: 'Devanagari' },
+    Odia: { regex: /[\u0B00-\u0B7F]/, name: 'Odia' },
+    Punjabi: { regex: /[\u0A00-\u0A7F]/, name: 'Gurmukhi' },
+    Tamil: { regex: /[\u0B80-\u0BFF]/, name: 'Tamil' },
+  };
+
+  for (const [lang, { regex, name }] of Object.entries(scriptChecks)) {
+    const stories = shelfService.getStories(lang as SupportedLanguage);
+    for (const story of stories) {
+      assert(regex.test(story.title), `${lang} story title "${story.title}" contains authentic ${name} script`);
+      assert(regex.test(story.synopsis), `${lang} story synopsis contains authentic ${name} script`);
+      assert(story.paragraphs.every(p => regex.test(p)), `${lang} story paragraphs all contain authentic ${name} script`);
+      assert(story.comprehensionQuestions.length > 0, `${lang} story has comprehension questions`);
+      for (const q of story.comprehensionQuestions) {
+        assert(regex.test(q.question), `${lang} comprehension question contains authentic ${name} script`);
+        assert(q.options.every(opt => regex.test(opt)), `${lang} comprehension options all contain authentic ${name} script`);
+        assert(regex.test(q.explanation), `${lang} comprehension explanation contains authentic ${name} script`);
+      }
+    }
+  }
+
+  // 3. Comprehension questions and answers are strictly aligned with each story
+  for (const lang of testLangs) {
+    const stories = shelfService.getStories(lang);
+    for (const story of stories) {
+      assert(story.comprehensionQuestions.length >= 2, `${lang} story "${story.title}" has at least 2 comprehension questions`);
+      for (const q of story.comprehensionQuestions) {
+        assert(q.options.length >= 3, `Comprehension question "${q.id}" provides at least 3 choices`);
+        assert(q.correctIndex >= 0 && q.correctIndex < q.options.length, `Correct option index ${q.correctIndex} is valid within options`);
+        assert(typeof q.options[q.correctIndex] === 'string' && q.options[q.correctIndex].length > 0, `Correct answer choice is non-empty string`);
+        assert(typeof q.explanation === 'string' && q.explanation.length > 0, `Question includes helpful explanation`);
+      }
+    }
+  }
+
+  // 4. Rotation and shuffling: reopening or refreshing rotates featured and shelf stories
+  const initialSelection = shelfService.getFeaturedAndShelfStories('English', 'Class 1', false);
+  const rotatedSelection1 = shelfService.getFeaturedAndShelfStories('English', 'Class 1', true);
+  assert(initialSelection.featured.id !== rotatedSelection1.featured.id, 'Advancing rotation changes the featured story');
+  assert(!rotatedSelection1.shelf.some(s => s.id === rotatedSelection1.featured.id), 'Shelf stories exclude the currently featured story');
+
+  const rotatedSelection2 = shelfService.getFeaturedAndShelfStories('English', 'Class 1', true);
+  assert(rotatedSelection1.featured.id !== rotatedSelection2.featured.id, 'Second rotation advances to next story in collection');
+
+  // Verify cycling wraps around cleanly
+  const allEnglishCount = shelfService.getStories('English', 'Class 1').length;
+  let currentFeaturedId = rotatedSelection2.featured.id;
+  for (let i = 0; i < allEnglishCount; i++) {
+    const next = shelfService.getFeaturedAndShelfStories('English', 'Class 1', true);
+    currentFeaturedId = next.featured.id;
+  }
+  assert(typeof currentFeaturedId === 'string', 'Rotation smoothly cycles through collection without errors');
+
+  // 5. Lookup by ID and Title fallback
+  const foundById = shelfService.getStoryById('story_kite_en', 'English');
+  assert(foundById !== null && foundById.id === 'story_kite_en', 'getStoryById finds story by ID');
+  const foundByTitle = shelfService.getStoryById('Sunny and the Brave Little Kite', 'English');
+  assert(foundByTitle !== null && foundByTitle.id === 'story_kite_en', 'getStoryById finds story by exact title');
+  const foundBySubstring = shelfService.getStoryById('little kite', 'English');
+  assert(foundBySubstring !== null && foundBySubstring.id === 'story_kite_en', 'getStoryById finds story by title substring');
 
 
   console.log(`\n==========================================`);

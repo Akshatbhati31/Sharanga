@@ -7,6 +7,7 @@ export interface GenerateActivityRequest {
   childName?: string;
   interest?: string;
   targetPattern?: string;
+  variant?: number;
 }
 
 /**
@@ -154,10 +155,30 @@ export function getDeterministicActivity(req: GenerateActivityRequest): Interact
   const isOdia = rawLang.startsWith('or') || rawLang.includes('odia') || rawLang.includes('oriya');
   const isPunjabi = rawLang.startsWith('pa') || rawLang.includes('punjabi') || rawLang.includes('gurmukhi');
   const isTamil = rawLang.startsWith('ta') || rawLang.includes('tamil');
+  const isAlt = typeof req.variant === 'number' && req.variant > 0 && req.variant % 2 === 1;
 
   // 1. Confused Letters
   if (req.skillId === 'skill_confused_letters_bd') {
     if (isHindi) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_hi_alt_${Date.now()}`,
+          skillId: 'skill_confused_letters_bd',
+          title: 'अक्षर पहचान: भ और ब 🔍',
+          instruction: 'अक्षर "भ" की पहचान कीजिए (जिसके सिर पर गोल घुंडी होती है):',
+          difficulty: req.difficulty,
+          language: 'Hindi',
+          type: 'letter_distinction',
+          prompt: 'इनमें से कौन-सा अक्षर "भ" है?',
+          audioPrompt: 'अक्षर भ को पहचानिए',
+          targetPattern: 'bha_vs_ba',
+          items: [
+            { id: 'opt_bha', text: 'भ', visual: '🐻', isCorrect: true, feedbackHint: 'बहुत अच्छा! यह अक्षर "भ" (भालू) है! 🌟' },
+            { id: 'opt_ba', text: 'ब', visual: '🐐', isCorrect: false, feedbackHint: 'यह "ब" (बकरी) है। गोल घुंडी वाला "भ" चुनें।' },
+          ],
+          stepByStepHint: 'ऊपर छोटा गोला बनाकर नीचे डंडा खींचिए: भ!',
+        };
+      }
       return {
         id: `act_mirror_bd_hi_${Date.now()}`,
         skillId: 'skill_confused_letters_bd',
@@ -177,6 +198,25 @@ export function getDeterministicActivity(req: GenerateActivityRequest): Interact
       };
     }
     if (isOdia) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_or_alt_${Date.now()}`,
+          skillId: 'skill_confused_letters_bd',
+          title: 'ଅକ୍ଷର ଚିହ୍ନଟ: ଧ ଏବଂ ବ 🔍',
+          instruction: 'ଅକ୍ଷର "ଧ" କୁ ଚିହ୍ନଟ କରନ୍ତୁ:',
+          difficulty: req.difficulty,
+          language: 'Odia',
+          type: 'letter_distinction',
+          prompt: 'ଏଗୁଡ଼ିକ ମଧ୍ୟରୁ କେଉଁଟି "ଧ" ଅଟେ?',
+          audioPrompt: 'ଅକ୍ଷର ଧ କୁ ସ୍ପର୍ଶ କରନ୍ତୁ',
+          targetPattern: 'dha_vs_ba',
+          items: [
+            { id: 'opt_dha', text: 'ଧ', visual: '🏹', isCorrect: true, feedbackHint: 'ଚମତ୍କାର! ଏହା ଅକ୍ଷର "ଧ" (ଧନୁ) ଅଟେ! 🌟' },
+            { id: 'opt_ba', text: 'ବ', visual: '🐸', isCorrect: false, feedbackHint: 'ଏହା "ବ" (ବେଙ୍ଗ) ଅଟେ। "ଧ" କୁ ବାଛନ୍ତୁ।' },
+          ],
+          stepByStepHint: 'ଧନୁ ଭଳି ବଙ୍କା ଅକ୍ଷର: ଧ!',
+        };
+      }
       return {
         id: `act_mirror_bd_or_${Date.now()}`,
         skillId: 'skill_confused_letters_bd',
@@ -196,6 +236,25 @@ export function getDeterministicActivity(req: GenerateActivityRequest): Interact
       };
     }
     if (isPunjabi) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_pa_alt_${Date.now()}`,
+          skillId: 'skill_confused_letters_bd',
+          title: 'ਅੱਖਰ ਪਛਾਣ: ਭ ਅਤੇ ਬ 🔍',
+          instruction: 'ਅੱਖਰ "ਭ" ਦੀ ਪਛਾਣ ਕਰੋ:',
+          difficulty: req.difficulty,
+          language: 'Punjabi',
+          type: 'letter_distinction',
+          prompt: 'ਇਹਨਾਂ ਵਿੱਚੋਂ ਕਿਹੜਾ ਅੱਖਰ "ਭ" ਹੈ?',
+          audioPrompt: 'ਅੱਖਰ ਭ ਨੂੰ ਛੂਹੋ',
+          targetPattern: 'bha_vs_ba',
+          items: [
+            { id: 'opt_bha', text: 'ਭ', visual: '🐻', isCorrect: true, feedbackHint: 'ਬਹੁਤ ਵਧੀਆ! ਇਹ ਅੱਖਰ "ਭ" (ਭਾਲੂ) ਹੈ! 🌟' },
+            { id: 'opt_ba', text: 'ਬ', visual: '🦆', isCorrect: false, feedbackHint: 'ਇਹ "ਬ" (ਬੱਤਖ) ਹੈ। ਸਹੀ "ਭ" ਚੁਣੋ।' },
+          ],
+          stepByStepHint: 'ਧਿਆਨ ਨਾਲ ਦੇਖੋ: ਭ ਉੱਪਰੋਂ ਵਿਲੱਖਣ ਹੈ!',
+        };
+      }
       return {
         id: `act_mirror_bd_pa_${Date.now()}`,
         skillId: 'skill_confused_letters_bd',
@@ -215,6 +274,25 @@ export function getDeterministicActivity(req: GenerateActivityRequest): Interact
       };
     }
     if (isTamil) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_ta_alt_${Date.now()}`,
+          skillId: 'skill_confused_letters_bd',
+          title: 'எழுத்து வேறுபாடு: ற மற்றும் ர 🔍',
+          instruction: 'வல்லின "ற" எழுத்தைக் கண்டறியவும்:',
+          difficulty: req.difficulty,
+          language: 'Tamil',
+          type: 'letter_distinction',
+          prompt: 'இவற்றில் எது "ற" எழுத்து?',
+          audioPrompt: 'ற எழுத்தைத் தொடவும்',
+          targetPattern: 'rra_vs_ra',
+          items: [
+            { id: 'opt_rra', text: 'ற', visual: '🐦', isCorrect: true, feedbackHint: 'அருமை! இது "ற" (பறவை) எழுத்து! 🌟' },
+            { id: 'opt_ra', text: 'ர', visual: '🚆', isCorrect: false, feedbackHint: 'இது மென்மையான "ர" (ரயில்). "ற" ஐத் தேர்ந்தெடுக்கவும்.' },
+          ],
+          stepByStepHint: 'வளைந்து மேல் ஏறும் கூர்மையான வடிவம்: ற!',
+        };
+      }
       return {
         id: `act_mirror_bd_ta_${Date.now()}`,
         skillId: 'skill_confused_letters_bd',
@@ -231,6 +309,26 @@ export function getDeterministicActivity(req: GenerateActivityRequest): Interact
           { id: 'opt_rra', text: 'ற', visual: '🐦', isCorrect: false, feedbackHint: 'இது வல்லின "ற" (பறவை). மென்மையான "ர" ஐத் தேர்ந்தெடுக்கவும்.' },
         ],
         stepByStepHint: 'மேலிருந்து கீழ் வந்து வளையும் எளிய வடிவம்: ர!',
+      };
+    }
+
+    if (isAlt) {
+      return {
+        id: `act_mirror_bd_alt_${Date.now()}`,
+        skillId: 'skill_confused_letters_bd',
+        title: 'Letter Mirror: b and d Detective 🔍',
+        instruction: 'Find the letter "d" (round belly points left like a Donut, tall bat on the right):',
+        difficulty: req.difficulty,
+        language: 'English',
+        type: 'letter_distinction',
+        prompt: 'Which letter is "d"?',
+        audioPrompt: 'Touch the letter d',
+        targetPattern: 'd_vs_b',
+        items: [
+          { id: 'opt_d', text: 'd', visual: '🍩', isCorrect: true, feedbackHint: 'Awesome! The round donut comes first on the left, then the tall bat! 🌟' },
+          { id: 'opt_b', text: 'b', visual: '🏏', isCorrect: false, feedbackHint: 'That is "b" with the bat on the left. Find "d" with the round belly on the left!' },
+        ],
+        stepByStepHint: 'Make a donut shape first on the left, then draw a straight line down on the right: d!',
       };
     }
 

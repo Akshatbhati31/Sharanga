@@ -24,6 +24,7 @@ export class AiActivityService {
     childName?: string;
     interest?: string;
     targetPattern?: string;
+    variant?: number;
   }): Promise<InteractiveActivityContent> {
     try {
       const endpoint =

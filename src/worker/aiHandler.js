@@ -104,8 +104,28 @@ function getDeterministicActivity(req) {
   const isOdia = rawLang.startsWith("or") || rawLang.includes("odia") || rawLang.includes("oriya");
   const isPunjabi = rawLang.startsWith("pa") || rawLang.includes("punjabi") || rawLang.includes("gurmukhi");
   const isTamil = rawLang.startsWith("ta") || rawLang.includes("tamil");
+  const isAlt = typeof req.variant === "number" && req.variant > 0 && req.variant % 2 === 1;
   if (req.skillId === "skill_confused_letters_bd") {
     if (isHindi) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_hi_alt_${Date.now()}`,
+          skillId: "skill_confused_letters_bd",
+          title: "\u0905\u0915\u094D\u0937\u0930 \u092A\u0939\u091A\u093E\u0928: \u092D \u0914\u0930 \u092C \u{1F50D}",
+          instruction: '\u0905\u0915\u094D\u0937\u0930 "\u092D" \u0915\u0940 \u092A\u0939\u091A\u093E\u0928 \u0915\u0940\u091C\u093F\u090F (\u091C\u093F\u0938\u0915\u0947 \u0938\u093F\u0930 \u092A\u0930 \u0917\u094B\u0932 \u0918\u0941\u0902\u0921\u0940 \u0939\u094B\u0924\u0940 \u0939\u0948):',
+          difficulty: req.difficulty,
+          language: "Hindi",
+          type: "letter_distinction",
+          prompt: '\u0907\u0928\u092E\u0947\u0902 \u0938\u0947 \u0915\u094C\u0928-\u0938\u093E \u0905\u0915\u094D\u0937\u0930 "\u092D" \u0939\u0948?',
+          audioPrompt: "\u0905\u0915\u094D\u0937\u0930 \u092D \u0915\u094B \u092A\u0939\u091A\u093E\u0928\u093F\u090F",
+          targetPattern: "bha_vs_ba",
+          items: [
+            { id: "opt_bha", text: "\u092D", visual: "\u{1F43B}", isCorrect: true, feedbackHint: '\u092C\u0939\u0941\u0924 \u0905\u091A\u094D\u091B\u093E! \u092F\u0939 \u0905\u0915\u094D\u0937\u0930 "\u092D" (\u092D\u093E\u0932\u0942) \u0939\u0948! \u{1F31F}' },
+            { id: "opt_ba", text: "\u092C", visual: "\u{1F410}", isCorrect: false, feedbackHint: '\u092F\u0939 "\u092C" (\u092C\u0915\u0930\u0940) \u0939\u0948\u0964 \u0917\u094B\u0932 \u0918\u0941\u0902\u0921\u0940 \u0935\u093E\u0932\u093E "\u092D" \u091A\u0941\u0928\u0947\u0902\u0964' }
+          ],
+          stepByStepHint: "\u090A\u092A\u0930 \u091B\u094B\u091F\u093E \u0917\u094B\u0932\u093E \u092C\u0928\u093E\u0915\u0930 \u0928\u0940\u091A\u0947 \u0921\u0902\u0921\u093E \u0916\u0940\u0902\u091A\u093F\u090F: \u092D!"
+        };
+      }
       return {
         id: `act_mirror_bd_hi_${Date.now()}`,
         skillId: "skill_confused_letters_bd",
@@ -125,6 +145,25 @@ function getDeterministicActivity(req) {
       };
     }
     if (isOdia) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_or_alt_${Date.now()}`,
+          skillId: "skill_confused_letters_bd",
+          title: "\u0B05\u0B15\u0B4D\u0B37\u0B30 \u0B1A\u0B3F\u0B39\u0B4D\u0B28\u0B1F: \u0B27 \u0B0F\u0B2C\u0B02 \u0B2C \u{1F50D}",
+          instruction: '\u0B05\u0B15\u0B4D\u0B37\u0B30 "\u0B27" \u0B15\u0B41 \u0B1A\u0B3F\u0B39\u0B4D\u0B28\u0B1F \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41:',
+          difficulty: req.difficulty,
+          language: "Odia",
+          type: "letter_distinction",
+          prompt: '\u0B0F\u0B17\u0B41\u0B21\u0B3C\u0B3F\u0B15 \u0B2E\u0B27\u0B4D\u0B5F\u0B30\u0B41 \u0B15\u0B47\u0B09\u0B01\u0B1F\u0B3F "\u0B27" \u0B05\u0B1F\u0B47?',
+          audioPrompt: "\u0B05\u0B15\u0B4D\u0B37\u0B30 \u0B27 \u0B15\u0B41 \u0B38\u0B4D\u0B2A\u0B30\u0B4D\u0B36 \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41",
+          targetPattern: "dha_vs_ba",
+          items: [
+            { id: "opt_dha", text: "\u0B27", visual: "\u{1F3F9}", isCorrect: true, feedbackHint: '\u0B1A\u0B2E\u0B24\u0B4D\u0B15\u0B3E\u0B30! \u0B0F\u0B39\u0B3E \u0B05\u0B15\u0B4D\u0B37\u0B30 "\u0B27" (\u0B27\u0B28\u0B41) \u0B05\u0B1F\u0B47! \u{1F31F}' },
+            { id: "opt_ba", text: "\u0B2C", visual: "\u{1F438}", isCorrect: false, feedbackHint: '\u0B0F\u0B39\u0B3E "\u0B2C" (\u0B2C\u0B47\u0B19\u0B4D\u0B17) \u0B05\u0B1F\u0B47\u0964 "\u0B27" \u0B15\u0B41 \u0B2C\u0B3E\u0B1B\u0B28\u0B4D\u0B24\u0B41\u0964' }
+          ],
+          stepByStepHint: "\u0B27\u0B28\u0B41 \u0B2D\u0B33\u0B3F \u0B2C\u0B19\u0B4D\u0B15\u0B3E \u0B05\u0B15\u0B4D\u0B37\u0B30: \u0B27!"
+        };
+      }
       return {
         id: `act_mirror_bd_or_${Date.now()}`,
         skillId: "skill_confused_letters_bd",
@@ -144,6 +183,25 @@ function getDeterministicActivity(req) {
       };
     }
     if (isPunjabi) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_pa_alt_${Date.now()}`,
+          skillId: "skill_confused_letters_bd",
+          title: "\u0A05\u0A71\u0A16\u0A30 \u0A2A\u0A1B\u0A3E\u0A23: \u0A2D \u0A05\u0A24\u0A47 \u0A2C \u{1F50D}",
+          instruction: '\u0A05\u0A71\u0A16\u0A30 "\u0A2D" \u0A26\u0A40 \u0A2A\u0A1B\u0A3E\u0A23 \u0A15\u0A30\u0A4B:',
+          difficulty: req.difficulty,
+          language: "Punjabi",
+          type: "letter_distinction",
+          prompt: '\u0A07\u0A39\u0A28\u0A3E\u0A02 \u0A35\u0A3F\u0A71\u0A1A\u0A4B\u0A02 \u0A15\u0A3F\u0A39\u0A5C\u0A3E \u0A05\u0A71\u0A16\u0A30 "\u0A2D" \u0A39\u0A48?',
+          audioPrompt: "\u0A05\u0A71\u0A16\u0A30 \u0A2D \u0A28\u0A42\u0A70 \u0A1B\u0A42\u0A39\u0A4B",
+          targetPattern: "bha_vs_ba",
+          items: [
+            { id: "opt_bha", text: "\u0A2D", visual: "\u{1F43B}", isCorrect: true, feedbackHint: '\u0A2C\u0A39\u0A41\u0A24 \u0A35\u0A27\u0A40\u0A06! \u0A07\u0A39 \u0A05\u0A71\u0A16\u0A30 "\u0A2D" (\u0A2D\u0A3E\u0A32\u0A42) \u0A39\u0A48! \u{1F31F}' },
+            { id: "opt_ba", text: "\u0A2C", visual: "\u{1F986}", isCorrect: false, feedbackHint: '\u0A07\u0A39 "\u0A2C" (\u0A2C\u0A71\u0A24\u0A16) \u0A39\u0A48\u0964 \u0A38\u0A39\u0A40 "\u0A2D" \u0A1A\u0A41\u0A23\u0A4B\u0964' }
+          ],
+          stepByStepHint: "\u0A27\u0A3F\u0A06\u0A28 \u0A28\u0A3E\u0A32 \u0A26\u0A47\u0A16\u0A4B: \u0A2D \u0A09\u0A71\u0A2A\u0A30\u0A4B\u0A02 \u0A35\u0A3F\u0A32\u0A71\u0A16\u0A23 \u0A39\u0A48!"
+        };
+      }
       return {
         id: `act_mirror_bd_pa_${Date.now()}`,
         skillId: "skill_confused_letters_bd",
@@ -163,6 +221,25 @@ function getDeterministicActivity(req) {
       };
     }
     if (isTamil) {
+      if (isAlt) {
+        return {
+          id: `act_mirror_bd_ta_alt_${Date.now()}`,
+          skillId: "skill_confused_letters_bd",
+          title: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1 \u0BB5\u0BC7\u0BB1\u0BC1\u0BAA\u0BBE\u0B9F\u0BC1: \u0BB1 \u0BAE\u0BB1\u0BCD\u0BB1\u0BC1\u0BAE\u0BCD \u0BB0 \u{1F50D}",
+          instruction: '\u0BB5\u0BB2\u0BCD\u0BB2\u0BBF\u0BA9 "\u0BB1" \u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC8\u0B95\u0BCD \u0B95\u0BA3\u0BCD\u0B9F\u0BB1\u0BBF\u0BAF\u0BB5\u0BC1\u0BAE\u0BCD:',
+          difficulty: req.difficulty,
+          language: "Tamil",
+          type: "letter_distinction",
+          prompt: '\u0B87\u0BB5\u0BB1\u0BCD\u0BB1\u0BBF\u0BB2\u0BCD \u0B8E\u0BA4\u0BC1 "\u0BB1" \u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1?',
+          audioPrompt: "\u0BB1 \u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC8\u0BA4\u0BCD \u0BA4\u0BCA\u0B9F\u0BB5\u0BC1\u0BAE\u0BCD",
+          targetPattern: "rra_vs_ra",
+          items: [
+            { id: "opt_rra", text: "\u0BB1", visual: "\u{1F426}", isCorrect: true, feedbackHint: '\u0B85\u0BB0\u0BC1\u0BAE\u0BC8! \u0B87\u0BA4\u0BC1 "\u0BB1" (\u0BAA\u0BB1\u0BB5\u0BC8) \u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1! \u{1F31F}' },
+            { id: "opt_ra", text: "\u0BB0", visual: "\u{1F686}", isCorrect: false, feedbackHint: '\u0B87\u0BA4\u0BC1 \u0BAE\u0BC6\u0BA9\u0BCD\u0BAE\u0BC8\u0BAF\u0BBE\u0BA9 "\u0BB0" (\u0BB0\u0BAF\u0BBF\u0BB2\u0BCD). "\u0BB1" \u0B90\u0BA4\u0BCD \u0BA4\u0BC7\u0BB0\u0BCD\u0BA8\u0BCD\u0BA4\u0BC6\u0B9F\u0BC1\u0B95\u0BCD\u0B95\u0BB5\u0BC1\u0BAE\u0BCD.' }
+          ],
+          stepByStepHint: "\u0BB5\u0BB3\u0BC8\u0BA8\u0BCD\u0BA4\u0BC1 \u0BAE\u0BC7\u0BB2\u0BCD \u0B8F\u0BB1\u0BC1\u0BAE\u0BCD \u0B95\u0BC2\u0BB0\u0BCD\u0BAE\u0BC8\u0BAF\u0BBE\u0BA9 \u0BB5\u0B9F\u0BBF\u0BB5\u0BAE\u0BCD: \u0BB1!"
+        };
+      }
       return {
         id: `act_mirror_bd_ta_${Date.now()}`,
         skillId: "skill_confused_letters_bd",
@@ -179,6 +256,25 @@ function getDeterministicActivity(req) {
           { id: "opt_rra", text: "\u0BB1", visual: "\u{1F426}", isCorrect: false, feedbackHint: '\u0B87\u0BA4\u0BC1 \u0BB5\u0BB2\u0BCD\u0BB2\u0BBF\u0BA9 "\u0BB1" (\u0BAA\u0BB1\u0BB5\u0BC8). \u0BAE\u0BC6\u0BA9\u0BCD\u0BAE\u0BC8\u0BAF\u0BBE\u0BA9 "\u0BB0" \u0B90\u0BA4\u0BCD \u0BA4\u0BC7\u0BB0\u0BCD\u0BA8\u0BCD\u0BA4\u0BC6\u0B9F\u0BC1\u0B95\u0BCD\u0B95\u0BB5\u0BC1\u0BAE\u0BCD.' }
         ],
         stepByStepHint: "\u0BAE\u0BC7\u0BB2\u0BBF\u0BB0\u0BC1\u0BA8\u0BCD\u0BA4\u0BC1 \u0B95\u0BC0\u0BB4\u0BCD \u0BB5\u0BA8\u0BCD\u0BA4\u0BC1 \u0BB5\u0BB3\u0BC8\u0BAF\u0BC1\u0BAE\u0BCD \u0B8E\u0BB3\u0BBF\u0BAF \u0BB5\u0B9F\u0BBF\u0BB5\u0BAE\u0BCD: \u0BB0!"
+      };
+    }
+    if (isAlt) {
+      return {
+        id: `act_mirror_bd_alt_${Date.now()}`,
+        skillId: "skill_confused_letters_bd",
+        title: "Letter Mirror: b and d Detective \u{1F50D}",
+        instruction: 'Find the letter "d" (round belly points left like a Donut, tall bat on the right):',
+        difficulty: req.difficulty,
+        language: "English",
+        type: "letter_distinction",
+        prompt: 'Which letter is "d"?',
+        audioPrompt: "Touch the letter d",
+        targetPattern: "d_vs_b",
+        items: [
+          { id: "opt_d", text: "d", visual: "\u{1F369}", isCorrect: true, feedbackHint: "Awesome! The round donut comes first on the left, then the tall bat! \u{1F31F}" },
+          { id: "opt_b", text: "b", visual: "\u{1F3CF}", isCorrect: false, feedbackHint: 'That is "b" with the bat on the left. Find "d" with the round belly on the left!' }
+        ],
+        stepByStepHint: "Make a donut shape first on the left, then draw a straight line down on the right: d!"
       };
     }
     return {

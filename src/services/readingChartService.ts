@@ -54,19 +54,22 @@ export class ReadingChartService {
   ): Promise<ReadingChartSummary> {
     const allAttempts = await this.learningPathService.getChildAttempts(childId);
 
-    // 1. Filter by time range
-    const now = Date.now();
+    // 1. Filter by time range in child's local calendar boundaries
+    const nowDate = new Date();
+    let startThresholdMs = 0;
+    if (timeRange === 'week') {
+      const startOfLocalWeek = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 6);
+      startThresholdMs = startOfLocalWeek.getTime();
+    } else if (timeRange === 'month') {
+      const startOfLocalMonth = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 29);
+      startThresholdMs = startOfLocalMonth.getTime();
+    }
+
     const filteredAttempts = allAttempts.filter(attempt => {
       const attemptTime = new Date(attempt.completedAt).getTime();
       if (isNaN(attemptTime)) return false;
-
-      if (timeRange === 'week') {
-        return attemptTime >= now - 7 * 24 * 60 * 60 * 1000;
-      }
-      if (timeRange === 'month') {
-        return attemptTime >= now - 30 * 24 * 60 * 60 * 1000;
-      }
-      return true; // 'all'
+      if (timeRange === 'all') return true;
+      return attemptTime >= startThresholdMs && attemptTime <= nowDate.getTime();
     });
 
     const goalPercent = 80;
@@ -77,14 +80,14 @@ export class ReadingChartService {
       return {
         timeRange,
         dataPoints: [],
-        overallAccuracy: null, // Clearly null, never 0% as a fake score
+        overallAccuracy: null, // Explicitly null for empty state so UI can show 0% or empty badge, never a fabricated 100%
         totalSessions: 0,
         totalAttempts: 0,
         trend: 'none',
         goalPercent,
         isEmpty: true,
         emptyMessage: 'Complete your first activity to start your learning journey. 🌱',
-        svgPathD: 'M0 156 L600 156', // Flat baseline at the bottom
+        svgPathD: 'M0 156 L600 156', // Flat baseline at 0%
         svgFillD: 'M0 156 L600 156 L600 180 L0 180 Z',
         goalY,
         points: [],
@@ -102,31 +105,35 @@ export class ReadingChartService {
     const dataPoints: ChartDataPoint[] = [];
 
     // If small number of attempts (<= 12), show per attempt
-    // If more, group by calendar date (YYYY-MM-DD)
+    // If more, group by local calendar date (YYYY-MM-DD)
     if (sorted.length <= 12) {
       sorted.forEach((att, idx) => {
         const d = new Date(att.completedAt);
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const dayLabel = dayNames[d.getDay()] || `A${idx + 1}`;
         const displayDate = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const accuracyPercent = Math.max(0, Math.min(100, Math.round(att.accuracy * 100)));
+        
+        const totalQ = Math.max(1, att.totalQuestions || att.attemptsRequired || 1);
+        const correct = att.correctAnswers !== undefined ? att.correctAnswers : Math.round(att.accuracy * totalQ);
+        const accuracyPercent = Math.max(0, Math.min(100, Math.round((correct / totalQ) * 100)));
 
         dataPoints.push({
           date: att.completedAt,
           displayDate,
           dayLabel,
-          totalQuestions: att.totalQuestions || 1,
-          correctAnswers: att.correctAnswers !== undefined ? att.correctAnswers : (accuracyPercent >= 70 ? 1 : 0),
+          totalQuestions: totalQ,
+          correctAnswers: correct,
           accuracyPercent,
           sessionCount: 1,
           activityTitle: att.activityId.replace('act_', '').replace(/_/g, ' ') || 'Practice',
         });
       });
     } else {
-      // Group by calendar day
+      // Group by local calendar day (YYYY-MM-DD)
       const dayMap = new Map<string, LearningAttempt[]>();
       sorted.forEach(att => {
-        const dateKey = att.completedAt.split('T')[0] || 'today';
+        const d = new Date(att.completedAt);
+        const dateKey = !isNaN(d.getTime()) ? d.toLocaleDateString('en-CA') : 'today';
         if (!dayMap.has(dateKey)) {
           dayMap.set(dateKey, []);
         }
@@ -134,21 +141,21 @@ export class ReadingChartService {
       });
 
       dayMap.forEach((attempts, dateKey) => {
-        const d = new Date(dateKey);
+        const d = new Date(dateKey + 'T00:00:00');
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const dayLabel = dayNames[d.getDay()] || dateKey.slice(-5);
-        const displayDate = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const dayLabel = !isNaN(d.getDay()) ? dayNames[d.getDay()] : dateKey.slice(-5);
+        const displayDate = !isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : dateKey;
 
         let totalQ = 0;
         let totalC = 0;
         attempts.forEach(a => {
-          const q = a.totalQuestions || 1;
+          const q = Math.max(1, a.totalQuestions || a.attemptsRequired || 1);
           const c = a.correctAnswers !== undefined ? a.correctAnswers : Math.round(a.accuracy * q);
           totalQ += q;
           totalC += c;
         });
 
-        const accuracyPercent = totalQ > 0 ? Math.round((totalC / totalQ) * 100) : 0;
+        const accuracyPercent = totalQ > 0 ? Math.max(0, Math.min(100, Math.round((totalC / totalQ) * 100))) : 0;
         dataPoints.push({
           date: dateKey,
           displayDate,
@@ -162,7 +169,7 @@ export class ReadingChartService {
       });
     }
 
-    // 4. Calculate overall weighted accuracy: total correct / total attempted * 100
+    // 4. Calculate overall weighted accuracy: total correct / total answered attempts * 100
     let grandTotalQuestions = 0;
     let grandTotalCorrect = 0;
     dataPoints.forEach(p => {
@@ -171,8 +178,8 @@ export class ReadingChartService {
     });
 
     const overallAccuracy = grandTotalQuestions > 0
-      ? Math.round((grandTotalCorrect / grandTotalQuestions) * 100)
-      : Math.round(dataPoints.reduce((acc, p) => acc + p.accuracyPercent, 0) / dataPoints.length);
+      ? Math.max(0, Math.min(100, Math.round((grandTotalCorrect / grandTotalQuestions) * 100)))
+      : 0;
 
     // 5. Calculate honest trend
     let trend: 'flat' | 'improving' | 'declining' | 'none' = 'flat';

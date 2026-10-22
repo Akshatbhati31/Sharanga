@@ -2,6 +2,7 @@ import { AiActivityService } from '../services/aiActivityService';
 import { LearningPathService } from '../services/learningPathService';
 import { ProfileService } from '../services/profileService';
 import { SpeechService } from '../services/speechService';
+import { StorageService } from '../services/storageService';
 import { i18n } from '../i18n';
 import type { AdaptiveRecommendation, InteractiveActivityContent } from '../types/adaptive';
 import type { ChildProfile } from '../types/auth';
@@ -21,6 +22,7 @@ export class ActivityRunnerModal {
   private correctedAfterHint: number = 0;
   private missedItems: string[] = [];
   private onActivityCompletedCallback?: () => void;
+  private variantIndex: number = 0;
 
   private constructor() {
     this.aiService = AiActivityService.getInstance();
@@ -38,11 +40,17 @@ export class ActivityRunnerModal {
   public async startRecommendation(
     child: ChildProfile,
     rec: AdaptiveRecommendation,
-    onCompleted?: () => void
+    onCompleted?: () => void,
+    variant?: number
   ): Promise<void> {
     this.activeChild = child;
     this.currentRecommendation = rec;
     this.onActivityCompletedCallback = onCompleted;
+    if (variant !== undefined) {
+      this.variantIndex = variant;
+    } else {
+      this.variantIndex = (this.variantIndex + 1) % 4;
+    }
     this.startTime = Date.now();
     this.hintsRequested = 0;
     this.attemptsRequired = 1;
@@ -69,15 +77,25 @@ export class ActivityRunnerModal {
       </div>
     `;
 
-    // Fetch generated or deterministic activity
+    // Fetch generated or deterministic activity with variant to produce fresh content on replay
     this.currentActivity = await this.aiService.generateActivity({
       skillId: rec.targetSkillId,
       difficulty: rec.difficulty,
       language: child.preferredLanguage || 'English',
       childName: child.name,
+      variant: this.variantIndex,
     });
 
     this.renderActivityView();
+  }
+
+  private shuffleArray<T>(array: T[]): T[] {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
   private renderActivityView(): void {
@@ -136,9 +154,9 @@ export class ActivityRunnerModal {
             </button>
           </div>
 
-          <!-- Interactive Choices Grid with Individual Word Audio -->
+          <!-- Interactive Choices Grid with Shuffled Choices -->
           <div class="options" style="grid-template-columns: repeat(${act.items.length === 2 ? 2 : 3}, 1fr); gap: 12px; margin-bottom: 16px;">
-            ${act.items
+            ${this.shuffleArray(act.items)
               .map(
                 (item, idx) => `
               <div
@@ -401,7 +419,10 @@ export class ActivityRunnerModal {
     if (!this.currentActivity || !this.currentRecommendation || !this.activeChild) return;
 
     const durationSeconds = Math.max(15, Math.round((Date.now() - this.startTime) / 1000));
-    const accuracy = this.attemptsRequired === 1 ? 1.0 : this.attemptsRequired === 2 ? 0.75 : 0.55;
+    const totalAnswered = Math.max(1, this.attemptsRequired);
+    const correctAnswers = 1;
+    // Calculate honest accuracy: correct / answered attempts
+    const accuracy = Number((correctAnswers / totalAnswered).toFixed(2));
     const score = Math.round(accuracy * 100);
 
     // Record the learning attempt and adapt the path
@@ -413,10 +434,10 @@ export class ActivityRunnerModal {
       activityType: this.currentActivity.type,
       score,
       accuracy,
-      totalQuestions: 1,
+      totalQuestions: totalAnswered,
       correctAnswers: 1,
-      incorrectAnswers: this.attemptsRequired - 1,
-      attemptsRequired: this.attemptsRequired,
+      incorrectAnswers: totalAnswered - 1,
+      attemptsRequired: totalAnswered,
       hintsRequested: this.hintsRequested,
       correctedAfterHint: this.correctedAfterHint,
       durationSeconds,
@@ -424,19 +445,57 @@ export class ActivityRunnerModal {
       completedAt: new Date().toISOString(),
     });
 
-    // Award happy points and streak
+    // Record attempt for the daily challenge counter
+    StorageService.getInstance().incrementDailyAttempt(this.activeChild.id);
+
+    // Award happy points and update progress
     const progress = this.profileService.getChildProgress(this.activeChild.id);
     this.profileService.updateChildProgress(this.activeChild.id, {
-      happyPoints: progress.happyPoints + 15,
-      practiceMinutes: progress.practiceMinutes + Math.round(durationSeconds / 60),
+      happyPoints: progress.happyPoints + (totalAnswered === 1 ? 15 : totalAnswered === 2 ? 10 : 5),
+      practiceMinutes: progress.practiceMinutes + Math.max(1, Math.round(durationSeconds / 60)),
       wordsLearned: progress.wordsLearned + 1,
+      accuracyPercent: score,
     });
 
-    this.close();
+    // Render completion and replay screen allowing repeated replays without reload
+    const modalEl = this.ensureModalElement();
+    const childLangCode = i18n.supportedLanguageToCode(this.activeChild.preferredLanguage || 'English');
+    const winTitle = i18n.tForLang(childLangCode, 'activity.winTitle') || 'Wonderful job! 🌟';
+    const celebrationText = i18n.tForLang(childLangCode, 'activity.winSubtitle') || 'You completed this learning adventure!';
 
-    if (this.onActivityCompletedCallback) {
-      this.onActivityCompletedCallback();
-    }
+    modalEl.innerHTML = `
+      <div class="modal" style="max-width: 500px; text-align: center; padding: 36px 24px;" role="dialog" aria-modal="true">
+        <div style="font-size: 48px; margin-bottom: 12px;">🌟</div>
+        <h2 style="font: 900 22px Nunito; color: var(--ink); margin: 0 0 6px;">${winTitle}</h2>
+        <p style="color: var(--muted); font-size: 14px; margin: 0 0 24px;">${celebrationText}</p>
+        
+        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+          <button type="button" id="btnPlayAgainAct" class="hero-cta" style="min-height: 44px; padding: 10px 20px; font-size: 13px;">
+            🔄 Play another question
+          </button>
+          <button type="button" id="btnDoneAct" class="soft" style="min-height: 44px; padding: 10px 20px; font-size: 13px;">
+            ✓ Back to adventures
+          </button>
+        </div>
+      </div>
+    `;
+
+    modalEl.querySelector('#btnPlayAgainAct')?.addEventListener('click', () => {
+      this.variantIndex = (this.variantIndex + 1) % 4;
+      this.startRecommendation(
+        this.activeChild!,
+        this.currentRecommendation!,
+        this.onActivityCompletedCallback,
+        this.variantIndex
+      );
+    });
+
+    modalEl.querySelector('#btnDoneAct')?.addEventListener('click', () => {
+      this.close();
+      if (this.onActivityCompletedCallback) {
+        this.onActivityCompletedCallback();
+      }
+    });
   }
 
   public close(): void {

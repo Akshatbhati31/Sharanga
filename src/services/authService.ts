@@ -30,6 +30,7 @@ export interface IAuthService {
   onAuthStateChanged(listener: (user: ParentUser | null) => void): () => void;
   isLiveDatabaseConnected(): boolean;
   updateInterfaceLanguage(lang: AppLanguageCode): Promise<boolean>;
+  waitForAuthReady(): Promise<ParentUser | null>;
 }
 
 export class AuthService implements IAuthService {
@@ -37,6 +38,7 @@ export class AuthService implements IAuthService {
   private storage: StorageService;
   private currentUser: ParentUser | null = null;
   private authListeners: Array<(user: ParentUser | null) => void> = [];
+  private initPromise: Promise<void>;
 
   // In-memory lockout & attempt tracker (also syncs with storage/session)
   private failedPinAttempts = 0;
@@ -46,7 +48,7 @@ export class AuthService implements IAuthService {
 
   private constructor() {
     this.storage = StorageService.getInstance();
-    this.restoreSession();
+    this.initPromise = this.restoreSession();
     this.initSupabaseAuthListener();
   }
 
@@ -55,6 +57,18 @@ export class AuthService implements IAuthService {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
+  }
+
+  /**
+   * Waits for initial authentication and session restoration to resolve.
+   */
+  public async waitForAuthReady(): Promise<ParentUser | null> {
+    try {
+      await this.initPromise;
+    } catch (err) {
+      console.warn('waitForAuthReady encountered error during restoreSession:', err);
+    }
+    return this.currentUser;
   }
 
   /**
@@ -70,16 +84,27 @@ export class AuthService implements IAuthService {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.warn('Supabase getSession error:', error.message);
+          this.currentUser = null;
+          this.storage.clearSession();
+          return;
         } else if (session?.user) {
           await this.syncSupabaseUser(session.user);
+          return;
+        } else {
+          // No live session found in Supabase - clear any lingering session state
+          this.currentUser = null;
+          this.storage.clearSession();
           return;
         }
       } catch (err) {
         console.error('Error restoring Supabase session:', err);
+        this.currentUser = null;
+        this.storage.clearSession();
+        return;
       }
     }
 
-    // Fallback: local session
+    // Fallback: local session for demo / offline mode
     const session = this.storage.getSession();
     if (session.userId) {
       const users = this.storage.getRawUsers();
@@ -96,8 +121,8 @@ export class AuthService implements IAuthService {
 
     try {
       supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          // Sync profile only if not already loaded as current user
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session?.user) {
+          // Sync profile only if not already loaded or if user changed
           if (!this.currentUser || this.currentUser.id !== session.user.id) {
             await this.syncSupabaseUser(session.user);
           }
@@ -116,7 +141,7 @@ export class AuthService implements IAuthService {
     if (!supabase) return;
 
     try {
-      const { data: profile } = await supabase
+      const { data: profileData } = await supabase
         .from('parent_profiles')
         .select('*')
         .eq('id', user.id)
@@ -128,9 +153,30 @@ export class AuthService implements IAuthService {
         .eq('parent_id', user.id)
         .maybeSingle();
 
-      const savedLang = (pref?.interface_language || profile?.interface_language) as AppLanguageCode | undefined;
+      const savedLang = (pref?.interface_language || profileData?.interface_language) as AppLanguageCode | undefined;
       if (savedLang) {
         await i18n.setLanguage(savedLang);
+      }
+
+      let profile = profileData;
+      if (!profile) {
+        const initialFullName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'Parent');
+        const lang = savedLang || i18n.getCurrentLanguage();
+        const { data: createdProf, error: createErr } = await supabase
+          .from('parent_profiles')
+          .upsert({
+            id: user.id,
+            full_name: initialFullName,
+            interface_language: lang,
+          }, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+
+        if (!createErr && createdProf) {
+          profile = createdProf;
+        } else if (createErr) {
+          console.warn('Could not auto-initialize parent_profiles row in syncSupabaseUser:', createErr.message);
+        }
       }
 
       const fullName = profile?.full_name || user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'Parent');
@@ -263,7 +309,7 @@ export class AuthService implements IAuthService {
       }
 
       // Fetch or ensure parent profile row
-      const { data: profile } = await supabase
+      const { data: profileData } = await supabase
         .from('parent_profiles')
         .select('*')
         .eq('id', data.user.id)
@@ -275,12 +321,33 @@ export class AuthService implements IAuthService {
         .eq('parent_id', data.user.id)
         .maybeSingle();
 
-      const savedLang = (pref?.interface_language || profile?.interface_language) as AppLanguageCode | undefined;
+      const savedLang = (pref?.interface_language || profileData?.interface_language) as AppLanguageCode | undefined;
       if (savedLang) {
         await i18n.setLanguage(savedLang);
       } else {
         const currentLang = i18n.getCurrentLanguage();
         await this.updateInterfaceLanguage(currentLang);
+      }
+
+      let profile = profileData;
+      if (!profile) {
+        const initialFullName = data.user.user_metadata?.full_name || email.split('@')[0];
+        const lang = savedLang || i18n.getCurrentLanguage();
+        const { data: createdProf, error: createErr } = await supabase
+          .from('parent_profiles')
+          .upsert({
+            id: data.user.id,
+            full_name: initialFullName,
+            interface_language: lang,
+          }, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+
+        if (!createErr && createdProf) {
+          profile = createdProf;
+        } else if (createErr) {
+          console.warn('Could not auto-initialize parent_profiles row in login:', createErr.message);
+        }
       }
 
       const fullName = profile?.full_name || data.user.user_metadata?.full_name || email.split('@')[0];
