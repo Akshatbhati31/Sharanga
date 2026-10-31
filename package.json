@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build",
-    "deploy": "wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "npx -y tsx scripts/verify-flows.ts"
@@ -25,22 +24,20 @@
   "homepage": "https://github.com/yashmishra1201-arch/Sharanga#readme",
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "wrangler": "^4.151.3"
+    "vite": "^8.3.4"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "@types/node": "^26.6.5"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true,
-    "workerd@1.20261019.1": true
+    "esbuild@0.28.2": true
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild",
-      "workerd"
+      "esbuild"
     ]
   }
 }

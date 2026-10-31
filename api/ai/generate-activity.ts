@@ -30,13 +30,17 @@ export default async function handler(req: any, res?: any) {
           childName: body.childName,
           interest: body.interest,
           targetPattern: body.targetPattern,
+          variant: typeof body.variant === 'number' ? body.variant : undefined,
         };
       } catch {
         // Graceful fallback to default payload
       }
     }
 
-    const activity = await handleGenerateActivity(reqPayload, process.env.GEMINI_API_KEY);
+    const activity = await handleGenerateActivity(
+      reqPayload,
+      process.env.GEMINI_API_KEY || process.env.AI_API_KEY
+    );
     return new Response(JSON.stringify({ success: true, activity }), {
       status: 200,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -75,10 +79,14 @@ export default async function handler(req: any, res?: any) {
         childName: bodyObj.childName,
         interest: bodyObj.interest,
         targetPattern: bodyObj.targetPattern,
+        variant: typeof bodyObj.variant === 'number' ? bodyObj.variant : undefined,
       };
     }
   }
 
-  const activity = await handleGenerateActivity(reqPayload, process.env.GEMINI_API_KEY);
+  const activity = await handleGenerateActivity(
+    reqPayload,
+    process.env.GEMINI_API_KEY || process.env.AI_API_KEY
+  );
   return res.status(200).json({ success: true, activity });
 }

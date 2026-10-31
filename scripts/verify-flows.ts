@@ -10,7 +10,6 @@ import {
   handleTinyFishSearch,
   MEDICAL_ACCESSIBILITY_DISCLAIMER,
 } from '../src/worker/tinyfishHandler';
-import workerHandler from '../src/worker/index';
 import {
   SKILL_REGISTRY,
   getSkillDefinition,
@@ -405,9 +404,9 @@ async function runTests() {
   assert(auth.getCurrentUser() === null, 'Logout clears active session');
 
   // =========================================================================
-  // Test Group 7: TinyFish Educational Resource Finder & Cloudflare Worker
+  // Test Group 7: TinyFish Educational Resource Finder & Vercel Serverless
   // =========================================================================
-  console.log('\n--- Test Group 7: TinyFish Educational Resource Finder & Worker ---');
+  console.log('\n--- Test Group 7: TinyFish Educational Resource Finder & Vercel ---');
 
   // 1. Parameter Validation
   const validParam = validateSearchParams({
@@ -528,19 +527,26 @@ async function runTests() {
   const authFailRes = await handleTinyFishSearch({ topic: 'phonics' }, 'invalid-key', mockFetch401);
   assert(authFailRes.success === false && Boolean(authFailRes.error?.includes('authentication failed')), '401 returns auth failed message');
 
-  // 7. Cloudflare Worker Router Tests
+  // 7. Vercel Serverless Router Tests
   // A. OPTIONS /api/tinyfish/status (CORS preflight)
   const corsReq = new Request('http://localhost/api/tinyfish/status', { method: 'OPTIONS' });
-  const corsRes = await workerHandler.fetch(corsReq, {});
+  const corsRes = await vercelStatusHandler(corsReq);
   assert(corsRes.status === 204, 'OPTIONS preflight returns 204');
   assert(corsRes.headers.get('Access-Control-Allow-Origin') === '*', 'CORS origin header present');
 
   // B. GET /api/tinyfish/status
+  const prevTinyKey = process.env.TINYFISH_API_KEY;
+  process.env.TINYFISH_API_KEY = 'live-key';
   const statusReq = new Request('http://localhost/api/tinyfish/status', { method: 'GET' });
-  const statusRes = await workerHandler.fetch(statusReq, { TINYFISH_API_KEY: 'live-key' });
+  const statusRes = await vercelStatusHandler(statusReq);
   const statusJson = (await statusRes.json()) as { configured: boolean; service: string };
   assert(statusJson.service === 'TinyFish', 'Status endpoint returns service: TinyFish');
   assert(statusJson.configured === true, 'Status endpoint reports configured: true when key present');
+  if (prevTinyKey !== undefined) {
+    process.env.TINYFISH_API_KEY = prevTinyKey;
+  } else {
+    delete process.env.TINYFISH_API_KEY;
+  }
 
   // C. POST /api/tinyfish/search with invalid JSON
   const badJsonReq = new Request('http://localhost/api/tinyfish/search', {
@@ -548,7 +554,7 @@ async function runTests() {
     body: 'not-json',
     headers: { 'Content-Type': 'application/json' },
   });
-  const badJsonRes = await workerHandler.fetch(badJsonReq, {});
+  const badJsonRes = await vercelSearchHandler(badJsonReq);
   assert(badJsonRes.status === 400, 'Bad JSON body returns 400');
 
   // D. POST /api/tinyfish/search with invalid params
@@ -557,7 +563,7 @@ async function runTests() {
     body: JSON.stringify({ topic: '' }),
     headers: { 'Content-Type': 'application/json' },
   });
-  const badParamsRes = await workerHandler.fetch(badParamsReq, {});
+  const badParamsRes = await vercelSearchHandler(badParamsReq);
   assert(badParamsRes.status === 400, 'Empty topic parameter returns 400');
 
   // =========================================================================
@@ -849,17 +855,17 @@ async function runTests() {
     'Skill states are isolated between different children'
   );
 
-  // Scenario 12: Worker /api/ai/generate-activity endpoint
+  // Scenario 12: Vercel /api/ai/generate-activity endpoint
   const aiReq = new Request('http://localhost/api/ai/generate-activity', {
     method: 'POST',
     body: JSON.stringify({ skillId: 'skill_letter_sounds_basic', difficulty: 'beginner', language: 'English' }),
     headers: { 'Content-Type': 'application/json' },
   });
-  const aiRes = await workerHandler.fetch(aiReq, {});
-  assert(aiRes.status === 200, 'Worker endpoint /api/ai/generate-activity returns 200');
+  const aiRes = await vercelAiHandler(aiReq);
+  assert(aiRes.status === 200, 'Vercel endpoint /api/ai/generate-activity returns 200');
   const aiJson = (await aiRes.json()) as { success: boolean; activity: any };
-  assert(aiJson.success === true, 'Worker endpoint returns success: true');
-  assert(aiJson.activity.items.length >= 2, 'Worker endpoint returns valid activity items');
+  assert(aiJson.success === true, 'Vercel endpoint returns success: true');
+  assert(aiJson.activity.items.length >= 2, 'Vercel endpoint returns valid activity items');
 
   console.log(`\n--- Test Group 9: Dynamic Reading Confidence Chart, B/D Mirror, & 12 Activities ---`);
   const chartService = ReadingChartService.getInstance();
