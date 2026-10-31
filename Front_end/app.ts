@@ -11,6 +11,7 @@ import type { ChildProfile, SupportedLanguage } from '../src/types/auth';
 import type { EducationalResource, ResourceType } from '../src/types/tinyfish';
 import './styles.css';
 
+const logoUrl = new URL('./assets/dysleximate-logo.png', import.meta.url).href;
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Frontend root element #app was not found.');
 
@@ -105,7 +106,7 @@ function button(label: string, action: string, style = 'button button-quiet'): s
 }
 
 function brandMarkup(): string {
-  return `<span class="brand-mark"><img src="./assets/dysleximate-logo.png" alt="" /></span><span class="brand-word">Dyslexi<span>Mate</span></span>`;
+  return `<span class="brand-mark"><img src="${logoUrl}" alt="" /></span><span class="brand-word">Dyslexi<span>Mate</span></span>`;
 }
 
 function brandTextMarkup(): string {
@@ -130,7 +131,7 @@ function renderAuth(): void {
           <span class="eyebrow">A kinder way to learn</span>
           <h1>Little steps.<br />Big reading wins.</h1>
           <p>Personalized reading adventures that help every learner find their rhythm.</p>
-          <img class="auth-logo-card" src="./assets/dysleximate-logo.png" alt="DyslexiMate — little steps, big reading wins" />
+          <img class="auth-logo-card" src="${logoUrl}" alt="DyslexiMate — little steps, big reading wins" />
         </div>
         <p class="auth-footnote">Made for growing readers and the people cheering them on.</p>
       </section>
