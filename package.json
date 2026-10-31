@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build",
+    "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build Front_end",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "npx -y tsx scripts/verify-flows.ts"

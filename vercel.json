@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "outputDirectory": "Front_end/dist",
   "functions": {
     "api/**/*.ts": {
       "includeFiles": "src/worker/**"
