@@ -6,4 +6,4 @@ dist
 .env.*.local
 *.log
 
-.dev.vars
+.vercel
