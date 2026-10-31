@@ -25,7 +25,7 @@ export interface SkillDefinition {
   description: string;
   level: number; // 1 (introductory) to 5 (advanced)
   prerequisites: string[]; // skill IDs that should be attempted or mastered first
-  languages: ('English' | 'Hindi' | 'Punjabi' | 'Bengali')[];
+  languages: ('English' | 'Hindi' | 'Odia' | 'Punjabi' | 'Tamil' | 'Bengali')[];
   suggestedActivities: string[];
 }
 
@@ -98,6 +98,7 @@ export interface MilestoneProgress {
 export interface LearningPath {
   id: string;
   childId: string;
+  language?: string;
   version: number;
   createdAt: string;
   updatedAt: string;

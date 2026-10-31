@@ -18,7 +18,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Recognize single alphabet letters and identify their primary phonetic sounds.',
     level: 1,
     prerequisites: [],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_letter_sound_match', 'act_first_sound_safari'],
   },
   {
@@ -28,7 +28,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Differentiate short vowel sounds (a, e, i, o, u) with auditory discrimination.',
     level: 1,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_vowel_valley', 'act_vowel_sound_pop'],
   },
 
@@ -40,7 +40,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Distinguish visual orientation and directionality of mirror letters b and d.',
     level: 2,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_mirror_bd', 'act_baseball_bat_donut'],
   },
   {
@@ -50,7 +50,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Identify differences in tail direction and circle placement for p and q.',
     level: 2,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_mirror_pq', 'act_parachute_queen'],
   },
   {
@@ -60,7 +60,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Recognize word order and left-to-right tracking to prevent reading reversals.',
     level: 2,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_tracking_train', 'act_reversal_catcher'],
   },
 
@@ -72,7 +72,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Isolate the beginning and ending sounds in spoken words without reading text.',
     level: 1,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_sound_detective', 'act_ending_bell'],
   },
   {
@@ -82,7 +82,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Identify words that share ending sound patterns (e.g., cat, bat, hat).',
     level: 2,
     prerequisites: ['skill_phonemic_isolation'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_rhyme_rocket', 'act_rhyme_match'],
   },
 
@@ -94,7 +94,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Blend consonant-vowel-consonant sounds into simple whole words (e.g., s-u-n -> sun).',
     level: 2,
     prerequisites: ['skill_letter_sounds_basic', 'skill_letter_sounds_vowels'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_blend_bridge', 'act_sound_zipper'],
   },
   {
@@ -104,7 +104,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Blend digraphs and two-consonant blends at the beginning or end of words.',
     level: 3,
     prerequisites: ['skill_cvc_blending'],
-    languages: ['English'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_digraph_diver', 'act_blend_safari'],
   },
 
@@ -116,7 +116,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Break multi-syllabic words into bite-sized chunks using rhythm and vocal breaks.',
     level: 2,
     prerequisites: ['skill_phonemic_isolation'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_syllable_drums', 'act_chunk_builder'],
   },
 
@@ -128,7 +128,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Construct words letter by letter using voice and visual sound boxes.',
     level: 2,
     prerequisites: ['skill_cvc_blending'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_say_it_spell_it', 'act_letter_blocks'],
   },
 
@@ -140,7 +140,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Recognize essential non-phonetic sight words with instant visual familiarity.',
     level: 2,
     prerequisites: ['skill_letter_sounds_basic'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_sight_word_splash', 'act_word_lanterns'],
   },
 
@@ -152,7 +152,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Read short decodable sentences with steady pacing, highlighted words, and gentle rhythm.',
     level: 3,
     prerequisites: ['skill_cvc_blending', 'skill_sight_words_high_freq'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_karaoke_reader', 'act_river_pacing'],
   },
 
@@ -164,7 +164,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description: 'Answer friendly questions about main ideas, characters, and events from short stories.',
     level: 3,
     prerequisites: ['skill_sentence_fluency'],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_sunny_kite_story', 'act_mina_river_story'],
   },
 
@@ -175,8 +175,8 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     name: 'Audio-Assisted Pronunciation',
     description: 'Listen to clear acoustic pronunciations and practice voicing phonemes with immediate coaching.',
     level: 1,
-    prerequisites: [],
-    languages: ['English', 'Hindi', 'Punjabi', 'Bengali'],
+    prerequisites: ['skill_letter_sounds_basic'],
+    languages: ['English', 'Hindi', 'Odia', 'Punjabi', 'Tamil', 'Bengali'],
     suggestedActivities: ['act_voice_coach', 'act_echo_read'],
   },
 ];

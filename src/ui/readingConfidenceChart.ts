@@ -47,9 +47,11 @@ export class ReadingConfidenceChart {
       ? 'Honest practice builds real skill. We are here to help!'
       : 'Steady practice building solid foundation.';
 
-    const accuracyBadge = summary.overallAccuracy !== null
+    const accuracyBadge = summary.isEmpty
+      ? '0%'
+      : summary.overallAccuracy !== null
       ? `${summary.overallAccuracy}%`
-      : '—';
+      : '0%';
 
     this.container.innerHTML = `
       <div class="card reading-chart-card">

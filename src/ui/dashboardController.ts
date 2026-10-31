@@ -1,6 +1,9 @@
 import { ProfileService } from '../services/profileService';
 import { ActivityTrackerService } from '../services/activityTrackerService';
-import type { ChildProfile, SupportedLanguage } from '../types/auth';
+import { AuthService } from '../services/authService';
+import { SpeechService } from '../services/speechService';
+import { StorageService } from '../services/storageService';
+import type { ChildProfile, SupportedLanguage, AppLanguageCode } from '../types/auth';
 import type { ParentDashboardView } from './parentDashboardView';
 import { ResourceFinderView } from './resourceFinderView';
 import { LearningJourneyView } from './learningJourneyView';
@@ -9,12 +12,17 @@ import { LearningPathService } from '../services/learningPathService';
 import { ReadingConfidenceChart } from './readingConfidenceChart';
 import { LetterMirrorBDModal } from './letterMirrorBDModal';
 import { ACTIVITY_CATALOG } from '../services/activityCatalog';
+import { getLocalizedSkillTitle } from '../services/recommendationEngine';
 import { ReadingChartService } from '../services/readingChartService';
+import { StoryShelfService } from '../services/storyShelfService';
+import { i18n } from '../i18n';
 
 export class DashboardController {
   private container: HTMLElement;
   private profileService: ProfileService;
   private activityTracker: ActivityTrackerService;
+  private authService: AuthService;
+  private speechService: SpeechService;
   private parentDashboardView: ParentDashboardView;
   private onSwitchProfileRequested: () => void;
   private activeChild: ChildProfile | null = null;
@@ -24,7 +32,48 @@ export class DashboardController {
   private learningPathService: LearningPathService;
   private homeReadingChart: ReadingConfidenceChart | null = null;
   private progressReadingChart: ReadingConfidenceChart | null = null;
+  private storyShelfService: StoryShelfService = StoryShelfService.getInstance();
+  private currentStoryLanguage: SupportedLanguage = 'English';
+  private currentPage: 'home' | 'learn' | 'progress' | 'stories' | 'resources' = 'home';
+  private currentSpellingWord = 'ship';
+  private previousSpellingWord = '';
 
+  // Language-specific spelling word banks for "Say it, spell it!"
+  private readonly spellingWordBanks: Record<
+    SupportedLanguage,
+    { beginner: string[]; intermediate: string[]; advanced: string[] }
+  > = {
+    English: {
+      beginner: ['ship', 'bell', 'fish', 'frog', 'star', 'nest', 'duck', 'tree', 'moon', 'pink'],
+      intermediate: ['brush', 'cloud', 'train', 'plant', 'spoon', 'green', 'clock', 'smile'],
+      advanced: ['bridge', 'splash', 'bright', 'stream', 'shadow', 'flight'],
+    },
+    Hindi: {
+      beginner: ['घर', 'फल', 'जल', 'नाव', 'पेड़', 'तारा', 'फूल', 'किताब', 'सूरज', 'चाँद'],
+      intermediate: ['कमल', 'मटर', 'सड़क', 'पहाड़', 'नदी', 'जंगल', 'बगीचा', 'चिड़िया'],
+      advanced: ['मित्रता', 'प्रकाश', 'प्रकृति', 'आनंद', 'सुंदर', 'विश्वास'],
+    },
+    Odia: {
+      beginner: ['ଘର', 'ଫଳ', 'ଜଳ', 'ଡଙ୍ଗା', 'ଗଛ', 'ତାରା', 'ଫୁଲ', 'ବହି', 'ସୂର୍ଯ୍ୟ', 'ଜହ୍ନ'],
+      intermediate: ['କମଳ', 'ମଟର', 'ରାସ୍ତା', 'ପାହାଡ଼', 'ନଦୀ', 'ଜଙ୍ଗଲ', 'ବଗିଚା', 'ଚଢ଼େଇ'],
+      advanced: ['ମିତ୍ରତା', 'ପ୍ରକାଶ', 'ପ୍ରକୃତି', 'ଆନନ୍ଦ', 'ସୁନ୍ଦର', 'ବିଶ୍ୱାସ'],
+    },
+    Punjabi: {
+      beginner: ['ਘਰ', 'ਫਲ', 'ਜਲ', 'ਕਿਸ਼ਤੀ', 'ਰੁੱਖ', 'ਤਾਰਾ', 'ਫੁੱਲ', 'ਕਿਤਾਬ', 'ਸੂਰਜ', 'ਚੰਨ'],
+      intermediate: ['ਕਮਲ', 'ਮਟਰ', 'ਸੜਕ', 'ਪਹਾੜ', 'ਦਰਿਆ', 'ਜੰਗਲ', 'ਬਗੀਚਾ', 'ਚਿੜੀ'],
+      advanced: ['ਮਿੱਤਰਤਾ', 'ਰੌਸ਼ਨੀ', 'ਕੁਦਰਤ', 'ਆਨੰਦ', 'ਸੁੰਦਰ', 'ਵਿਸ਼ਵਾਸ'],
+    },
+    Tamil: {
+      beginner: ['வீடு', 'பழம்', 'நீர்', 'படகு', 'மரம்', 'விண்மீன்', 'மலர்', 'நூல்', 'சூரியன்', 'நிலா'],
+      intermediate: ['தாமரை', 'பச்சை', 'சாலை', 'மலை', 'ஆறு', 'காடு', 'தோட்டம்', 'பறவை'],
+      advanced: ['நட்பு', 'ஒளி', 'இயற்கை', 'மகிழ்ச்சி', 'அழகு', 'நம்பிக்கை'],
+    },
+    Bengali: {
+      beginner: ['ঘর', 'ফল', 'জল', 'নৌকা', 'গাছ', 'তারা', 'ফুল', 'বই', 'সূর্য', 'চাঁদ'],
+      intermediate: ['কমল', 'মটর', 'রাস্তা', 'পাহাড়', 'নদী', 'জঙ্গল', 'বাগান', 'পাখি'],
+      advanced: ['বন্ধুত্ব', 'আলো', 'প্রকৃতি', 'আনন্দ', 'সুন্দর', 'বিশ্বাস'],
+    },
+  };
 
   // Language word banks for Picture Word Match
   private readonly wordBanks: Record<
@@ -41,13 +90,23 @@ export class DashboardController {
       prompt: 'कौन-सी तस्वीर शब्द दिखाती है...',
       pictures: ['🚣', '🏠', '🍎'],
     },
+    Odia: {
+      words: ['ଡଙ୍ଗା', 'ଘର', 'ଫଳ'],
+      prompt: 'କେଉଁ ଚିତ୍ରଟି ଶବ୍ଦ ଦର୍ଶାଏ...',
+      pictures: ['🚣', '🏠', '🍎'],
+    },
     Punjabi: {
-      words: ['ਕਿਤਾਬ', 'ਫੁੱਲ', 'ਘਰ'],
+      words: ['ਕਿਸ਼ਤੀ', 'ਘਰ', 'ਫਲ'],
       prompt: 'ਕਿਹੜੀ ਤਸਵੀਰ ਇਹ ਸ਼ਬਦ ਦਿਖਾਉਂਦੀ ਹੈ...',
-      pictures: ['📖', '🌸', '🏠'],
+      pictures: ['🚣', '🏠', '🍎'],
+    },
+    Tamil: {
+      words: ['படகு', 'வீடு', 'பழம்'],
+      prompt: 'எந்த படம் இந்த சொல்லைக் காட்டுகிறது...',
+      pictures: ['🚣', '🏠', '🍎'],
     },
     Bengali: {
-      words: ['বই', 'ফুল', 'ঘর'],
+      words: ['বই', 'फूल', 'घर'],
       prompt: 'কোন ছবিতে এই শব্দটি আছে...',
       pictures: ['📖', '🌸', '🏠'],
     },
@@ -61,22 +120,37 @@ export class DashboardController {
     this.container = container;
     this.profileService = ProfileService.getInstance();
     this.activityTracker = ActivityTrackerService.getInstance();
+    this.authService = AuthService.getInstance();
+    this.speechService = SpeechService.getInstance();
     this.parentDashboardView = parentDashboardView;
     this.onSwitchProfileRequested = onSwitchProfileRequested;
     this.learningPathService = LearningPathService.getInstance();
   }
 
+  private formatCurrentDate(): string {
+    try {
+      const locale = i18n.getCurrentMeta().speechLocale || 'en-US';
+      return new Date().toLocaleDateString(locale, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+    } catch {
+      return new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+    }
+  }
+
   public render(child: ChildProfile): void {
     this.activeChild = child;
+    this.currentStoryLanguage = child.preferredLanguage || 'English';
     const progress = this.profileService.getChildProgress(child.id);
-
-    // Start tracking active learning session
-    this.activityTracker.startActivity(
-      child.parentId,
-      child.id,
-      'general_learning',
-      'Home Learning Dashboard'
-    );
+    const dailyAttempts = StorageService.getInstance().getDailyAttempts(child.id);
+    const dailyGoal = 10;
+    const dailyPct = Math.min(100, Math.round((dailyAttempts / dailyGoal) * 100));
 
     // Apply dyslexia font mode if preferred
     document.body.classList.toggle('dyslexia-font-mode', Boolean(child.preferences?.dyslexiaFont));
@@ -89,20 +163,20 @@ export class DashboardController {
             <div class="brand-mark" aria-hidden="true">✿</div>
             <div class="brand-name">Dyslexi<span>Mate</span></div>
           </div>
-          <div class="nav-label">LEARN & GROW</div>
+          <div class="nav-label">${i18n.t('nav.learnAndGrow')}</div>
           <nav class="nav" aria-label="Main navigation">
-            <button class="active" data-page="home"><span class="ico">⌂</span><span class="label">My home</span></button>
-            <button data-page="learn"><span class="ico">✦</span><span class="label">Practice</span></button>
-            <button data-page="progress"><span class="ico">▥</span><span class="label">My progress</span></button>
-            <button data-page="stories"><span class="ico">▤</span><span class="label">Story shelf</span></button>
-            <button data-page="resources"><span class="ico">🌐</span><span class="label">Resource Finder</span></button>
+            <button class="active" data-page="home"><span class="ico">⌂</span><span class="label">${i18n.t('nav.myHome')}</span></button>
+            <button data-page="learn"><span class="ico">✦</span><span class="label">${i18n.t('nav.practice')}</span></button>
+            <button data-page="progress"><span class="ico">▥</span><span class="label">${i18n.t('nav.myProgress')}</span></button>
+            <button data-page="stories"><span class="ico">▤</span><span class="label">${i18n.t('nav.storyShelf')}</span></button>
+            <button data-page="resources"><span class="ico">🌐</span><span class="label">${i18n.t('nav.resourceFinder')}</span></button>
           </nav>
           <div class="side-bottom">
             <div class="side-card">
-              <div class="tiny">A little every day 🌱</div>
-              <strong id="streakText">You're on a ${progress.streakDays}-day streak!</strong>
-              <p>Just 10 minutes a day can grow your reading skills.</p>
-              <button type="button" id="btnSideChallenge">See today's challenge</button>
+              <div class="tiny">${i18n.t('nav.littleEveryDay')} 🌱</div>
+              <strong id="streakText">${i18n.t('home.streak', { count: progress.streakDays })}</strong>
+              <p>${i18n.t('nav.tenMinGrow')}</p>
+              <button type="button" id="btnSideChallenge">${i18n.t('home.seeChallenge')}</button>
             </div>
 
             <!-- Active Child Profile Widget -->
@@ -115,7 +189,7 @@ export class DashboardController {
               <span class="dots" aria-hidden="true">⇄</span>
             </div>
             <button type="button" id="btnSidebarSwitchProfile" class="profile-switch-action">
-              ⇄ Switch Learner
+              ⇄ ${i18n.t('home.switchLearner')}
             </button>
           </div>
         </aside>
@@ -124,28 +198,29 @@ export class DashboardController {
         <main>
           <!-- Top Bar -->
           <div class="topbar">
-            <div class="crumb">DyslexiMate <span>›</span> <b id="crumb">My home</b></div>
+            <div class="crumb">DyslexiMate <span>›</span> <b id="crumb">${i18n.t('nav.myHome')}</b></div>
             <div class="top-actions">
+              ${i18n.renderLanguageSelect({ id: 'topLangSelect', className: 'lang-selector-dropdown top-lang-select' })}
               <button type="button" id="btnGrownupsTop" class="demo-action">
-                🔒 Grown-ups
+                🔒 ${i18n.t('home.grownUps')}
               </button>
               <button type="button" id="btnTopSwitchChild" class="switch-profile-btn" title="Switch child profile">
-                <span>${child.avatar}</span> Switch Learner
+                <span>${child.avatar}</span> ${i18n.t('home.switchLearner')}
               </button>
-              <div class="date-chip" id="topDateChip">Monday, 20 October</div>
-              <div class="streak" id="topStreak">🔥 ${progress.streakDays} day streak</div>
+              <div class="date-chip" id="topDateChip">${this.formatCurrentDate()}</div>
+              <div class="streak" id="topStreak">🔥 ${progress.streakDays} ${i18n.t('home.streakDays')}</div>
             </div>
           </div>
 
           <!-- Section: Home Page -->
           <section id="homePage">
             <div class="hero">
-              <div class="week-pill">WEEK 2 · LITTLE STEPS</div>
+              <div class="week-pill">${i18n.t('home.heroWeek')}</div>
               <div class="hero-copy">
-                <div class="eyebrow" id="heroGreeting">You're doing great, ${child.name}!</div>
-                <h1>Ready for today's<br>reading adventure?</h1>
-                <p>Small practice, big progress. Let's play and learn together.</p>
-                <button class="hero-cta" id="btnStartChallenge">Start today's 10 min challenge&nbsp; →</button>
+                <div class="eyebrow" id="heroGreeting">${i18n.t('home.welcomeBack', { name: child.name })}</div>
+                <h1>${i18n.t('home.heroTitle')}</h1>
+                <p>${i18n.t('home.heroSub')}</p>
+                <button class="hero-cta" id="btnStartChallenge">${i18n.t('home.startChallenge')} &nbsp; →</button>
               </div>
               <div class="hero-figure" aria-hidden="true">🦊</div>
             </div>
@@ -155,32 +230,32 @@ export class DashboardController {
 
             <div class="section-head">
               <div>
-                <h2>Your learning snapshot</h2>
-                <p>Look how far you've come this week.</p>
+                <h2>${i18n.t('home.snapshotTitle')}</h2>
+                <p>${i18n.t('home.snapshotSub')}</p>
               </div>
-              <button class="text-link" id="linkViewProgress">View full report →</button>
+              <button class="text-link" id="linkViewProgress">${i18n.t('home.viewFullReport')} →</button>
             </div>
 
             <div class="stats">
               <div class="stat">
-                <div class="stat-top">Practice time <span class="stat-icon">⏱️</span></div>
+                <div class="stat-top">${i18n.t('home.statPracticeTime')} <span class="stat-icon">⏱️</span></div>
                 <strong id="statPracticeTime">${progress.practiceMinutes} <small>min</small></strong>
-                <small><span class="positive">↑ 12 min</span> from last week</small>
+                <small id="statPracticeTimeSub"><span class="${progress.practiceMinutes > 0 ? 'positive' : ''}">${progress.practiceMinutes > 0 ? `↑ ${progress.practiceMinutes} min` : '0 min'}</span> ${i18n.t('home.statPracticeTimeFromLastWeek')}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Words learned <span class="stat-icon" style="background:#fff2d0">📚</span></div>
+                <div class="stat-top">${i18n.t('home.statWordsLearned')} <span class="stat-icon" style="background:#fff2d0">📚</span></div>
                 <strong id="statWordsLearned">${progress.wordsLearned}</strong>
-                <small><span class="positive">↑ 6 new</span> words this week</small>
+                <small id="statWordsLearnedSub"><span class="${progress.wordsLearned > 0 ? 'positive' : ''}">${progress.wordsLearned > 0 ? `↑ ${progress.wordsLearned} new` : '0 new'}</span> ${i18n.t('home.statWordsLearnedNew')}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Reading fluency <span class="stat-icon" style="background:#fce9e3">🌿</span></div>
+                <div class="stat-top">${i18n.t('home.statFluency')} <span class="stat-icon" style="background:#fce9e3">🌿</span></div>
                 <strong id="statFluency">${progress.fluencyWpm} <small>wpm</small></strong>
-                <small><span class="positive">↑ 4 wpm</span> growing steadily</small>
+                <small id="statFluencySub"><span class="${progress.fluencyWpm > 0 ? 'positive' : ''}">${progress.fluencyWpm > 0 ? `↑ ${progress.fluencyWpm} wpm` : 'Baseline'}</span> ${i18n.t('home.statFluencyGrowing')}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Happy points <span class="stat-icon" style="background:#f0edff">⭐</span></div>
+                <div class="stat-top">${i18n.t('home.statHappyPoints')} <span class="stat-icon" style="background:#f0edff">⭐</span></div>
                 <strong id="points">${progress.happyPoints}</strong>
-                <small>You're close to your next badge!</small>
+                <small>${i18n.t('home.statHappyPointsBadgeSoon')}</small>
               </div>
             </div>
 
@@ -190,10 +265,10 @@ export class DashboardController {
               <div class="card">
                 <div class="card-title">
                   <div>
-                    <h3>Words to practice</h3>
-                    <p>Let's give these another try.</p>
+                    <h3>${i18n.t('home.wordsToPractice')}</h3>
+                    <p>${i18n.t('home.wordsToPracticeSub')}</p>
                   </div>
-                  <button class="text-link" id="linkPracticeMistakes">Practice →</button>
+                  <button class="text-link" id="linkPracticeMistakes">${i18n.t('home.practiceMistakes')} →</button>
                 </div>
                 <div class="mistake-list" id="homeMistakeList">
                   ${progress.mistakes
@@ -218,33 +293,33 @@ export class DashboardController {
               <div class="card">
                 <div class="card-title">
                   <div>
-                    <h3>Today's recommended activities</h3>
-                    <p>Picked just for your learning journey.</p>
+                    <h3>${i18n.t('home.recommendedTitle')}</h3>
+                    <p>${i18n.t('home.recommendedSubtitle')}</p>
                   </div>
-                  <span class="tag">MADE FOR YOU</span>
+                  <span class="tag">${i18n.t('home.madeForYouTag')}</span>
                 </div>
                 <div class="activity-list">
                   <div class="activity" id="actMirror" role="button" tabindex="0">
                     <div class="act-icon" style="background:#fff1d2">🔤</div>
                     <div class="act-copy">
-                      <strong>Letter mirror: b and d</strong>
-                      <small>Spot the difference · 3 min</small>
+                      <strong>${i18n.t('home.actMirrorTitle')}</strong>
+                      <small>${i18n.t('home.actMirrorDesc')}</small>
                     </div>
                     <span class="tag">Easy</span>
                   </div>
                   <div class="activity" id="actStory" role="button" tabindex="0">
                     <div class="act-icon" style="background:#e8f3ff">🎧</div>
                     <div class="act-copy">
-                      <strong>Listen & read: Sunny's kite</strong>
-                      <small>Read-aloud story · 5 min</small>
+                      <strong>${i18n.t('home.actStoryTitle')}</strong>
+                      <small>${i18n.t('home.actStoryDesc')}</small>
                     </div>
                     <span class="tag">Story</span>
                   </div>
                   <div class="activity" id="actVoice" role="button" tabindex="0">
                     <div class="act-icon" style="background:#f3edff">🗣️</div>
                     <div class="act-copy">
-                      <strong>Say it, spell it!</strong>
-                      <small>Voice spelling · 2 min</small>
+                      <strong>${i18n.t('home.actVoiceTitle')}</strong>
+                      <small>${i18n.t('home.actVoiceDesc')}</small>
                     </div>
                     <span class="tag">Play</span>
                   </div>
@@ -254,10 +329,10 @@ export class DashboardController {
               <div class="resource-card">
                 <div class="resource-icon">📖</div>
                 <div>
-                  <strong>Stories from around India</strong>
-                  <p>Discover a new story for your reading level (${child.preferredLanguage}).</p>
+                  <strong>${i18n.t('home.storiesIndiaTitle')}</strong>
+                  <p>${i18n.t('home.storiesIndiaDesc')}</p>
                 </div>
-                <button type="button" id="btnExploreStories">Explore stories</button>
+                <button type="button" id="btnExploreStories">${i18n.t('home.exploreStoriesBtn')}</button>
               </div>
             </div>
           </section>
@@ -266,16 +341,17 @@ export class DashboardController {
           <section id="learnPage" class="hidden">
             <div class="learn-heading">
               <div>
-                <h1>Let's learn by playing! 🎈</h1>
-                <p>Every try helps your brain grow, ${child.name}. You're doing wonderfully.</p>
+                <h1>${i18n.t('practice.heading')}</h1>
+                <p>${i18n.t('practice.sub', { name: child.name })}</p>
               </div>
               <div class="lang-select">
-                <label for="practiceLanguage">Learning in</label>
+                <label for="practiceLanguage">${i18n.t('practice.learningIn')}</label>
                 <select id="practiceLanguage">
-                  <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>🇬🇧 English</option>
-                  <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>🇮🇳 हिन्दी · Hindi</option>
-                  <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>🇮🇳 ਪੰਜਾਬੀ · Punjabi</option>
-                  <option value="Bengali" ${child.preferredLanguage === 'Bengali' ? 'selected' : ''}>🇮🇳 বাংলা · Bengali</option>
+                  <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>EG English</option>
+                  <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
+                  <option value="Odia" ${child.preferredLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+                  <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+                  <option value="Tamil" ${child.preferredLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
                 </select>
               </div>
             </div>
@@ -283,46 +359,48 @@ export class DashboardController {
             <div class="daily">
               <div class="daily-icon">🌞</div>
               <div class="daily-copy">
-                <strong>Today's 10-minute challenge</strong>
-                <p>Three little games, one big high-five. You're 4 minutes in!</p>
+                <strong>${i18n.t('practice.dailyChallenge')}</strong>
+                <p>${i18n.t('practice.dailyChallengeSub')}</p>
               </div>
-              <div class="progress-small">
-                <div>4 / 10 min</div>
-                <div class="bar"><i></i></div>
+              <div class="progress-small" id="dailyChallengeContainer">
+                <div id="dailyChallengeAttemptLabel">Attempts: ${dailyAttempts} / ${dailyGoal}</div>
+                <div class="bar" id="dailyChallengeBar" role="progressbar" aria-valuenow="${dailyAttempts}" aria-valuemin="0" aria-valuemax="${dailyGoal}" aria-label="Daily challenge attempts">
+                  <i id="dailyChallengeProgressBar" style="width: ${dailyPct}%"></i>
+                </div>
               </div>
             </div>
 
             <!-- Picture Word Match Game -->
             <div class="game">
               <div class="game-top">
-                <div class="game-type"><span>GAME 2 OF 3</span> Picture word match</div>
+                <div class="game-type"><span>GAME 2 OF 3</span> ${i18n.t('practice.gameTitle')}</div>
                 <div class="game-progress">Your challenge <div class="bar"><i></i></div></div>
               </div>
               <div class="prompt">
-                <div class="instruction" id="instruction">Which picture shows the word...</div>
-                <h2 id="targetWord">ship</h2>
-                <p>Tap a picture, then check your answer.</p>
+                <div class="instruction" id="instruction">${this.wordBanks[child.preferredLanguage]?.prompt || this.wordBanks.English.prompt}</div>
+                <h2 id="targetWord">${this.wordBanks[child.preferredLanguage]?.words[0] || 'ship'}</h2>
+                <p>${i18n.t('practice.tapPicture')}</p>
               </div>
               <div class="options" id="options">
-                <button type="button" class="option" data-word="ship">
-                  <div class="picture">🚢</div>
-                  <strong>ship</strong>
-                  <small>tap to choose</small>
+                <button type="button" class="option" data-word="${this.wordBanks[child.preferredLanguage]?.words[0] || 'ship'}">
+                  <div class="picture">${this.wordBanks[child.preferredLanguage]?.pictures[0] || '🚢'}</div>
+                  <strong>${this.wordBanks[child.preferredLanguage]?.words[0] || 'ship'}</strong>
+                  <small>${i18n.t('practice.tapToChoose')}</small>
                 </button>
-                <button type="button" class="option" data-word="shop">
-                  <div class="picture">🛍️</div>
-                  <strong>shop</strong>
-                  <small>tap to choose</small>
+                <button type="button" class="option" data-word="${this.wordBanks[child.preferredLanguage]?.words[1] || 'shop'}">
+                  <div class="picture">${this.wordBanks[child.preferredLanguage]?.pictures[1] || '🛍️'}</div>
+                  <strong>${this.wordBanks[child.preferredLanguage]?.words[1] || 'shop'}</strong>
+                  <small>${i18n.t('practice.tapToChoose')}</small>
                 </button>
-                <button type="button" class="option" data-word="sheep">
-                  <div class="picture">🐑</div>
-                  <strong>sheep</strong>
-                  <small>tap to choose</small>
+                <button type="button" class="option" data-word="${this.wordBanks[child.preferredLanguage]?.words[2] || 'sheep'}">
+                  <div class="picture">${this.wordBanks[child.preferredLanguage]?.pictures[2] || '🐑'}</div>
+                  <strong>${this.wordBanks[child.preferredLanguage]?.words[2] || 'sheep'}</strong>
+                  <small>${i18n.t('practice.tapToChoose')}</small>
                 </button>
               </div>
               <div class="game-bottom">
-                <button type="button" class="secondary" id="btnHearWord">🔊&nbsp; Hear the word</button>
-                <button type="button" class="primary" id="btnCheckAnswer">Check my answer&nbsp; ✓</button>
+                <button type="button" class="secondary" id="btnHearWord">🔊&nbsp; ${i18n.t('practice.hearWord')}</button>
+                <button type="button" class="primary" id="btnCheckAnswer">${i18n.t('practice.checkAnswer')}&nbsp; ✓</button>
               </div>
               <div class="feedback" id="feedback" aria-live="polite"></div>
             </div>
@@ -331,16 +409,16 @@ export class DashboardController {
               <div class="mini-card">
                 <div class="mini-icon">🎙️</div>
                 <div>
-                  <strong>Voice spelling</strong>
-                  <p>Say a word and watch it appear.</p>
+                  <strong>${i18n.t('practice.voiceSpelling')}</strong>
+                  <p>${i18n.t('practice.voiceSpellingSub')}</p>
                 </div>
-                <button type="button" id="btnVoicePractice">Try it →</button>
+                <button type="button" id="btnVoicePractice">${i18n.t('practice.tryIt')} →</button>
               </div>
               <div class="mini-card" id="cardBadge" role="button" tabindex="0">
                 <div class="mini-icon" style="background:#fff2d0">🏅</div>
                 <div>
-                  <strong>You're earning your sound explorer badge!</strong>
-                  <p>2 more games to unlock it.</p>
+                  <strong>${i18n.t('practice.badgeNote')}</strong>
+                  <p>${i18n.t('practice.badgeSub')}</p>
                 </div>
               </div>
             </div>
@@ -384,37 +462,37 @@ export class DashboardController {
           <section id="progressPage" class="hidden">
             <div class="learn-heading">
               <div>
-                <h1>Your progress is growing 🌱</h1>
-                <p>Every practice session is a win for ${child.name}. Here's what you've achieved.</p>
+                <h1>${i18n.t('progress.heading')}</h1>
+                <p>${i18n.t('progress.subtitle', { name: child.name })}</p>
               </div>
               <div class="select-wrap">
-                <select aria-label="Report time period">
-                  <option>This week</option>
-                  <option>This month</option>
+                <select aria-label="${i18n.t('progress.heading')}">
+                  <option>${i18n.t('progress.periodWeek')}</option>
+                  <option>${i18n.t('progress.periodMonth')}</option>
                 </select>
               </div>
             </div>
 
             <div class="stats">
               <div class="stat">
-                <div class="stat-top">Practice time <span class="stat-icon">⏱️</span></div>
+                <div class="stat-top">${i18n.t('progress.statPracticeTime')} <span class="stat-icon">⏱️</span></div>
                 <strong>${progress.practiceMinutes} <small>min</small></strong>
-                <small>${progress.streakDays} happy learning days</small>
+                <small>${i18n.t('progress.statHappyDays', { count: progress.streakDays })}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Words learned <span class="stat-icon">📚</span></div>
+                <div class="stat-top">${i18n.t('progress.statWordsLearned')} <span class="stat-icon">📚</span></div>
                 <strong>${progress.wordsLearned}</strong>
-                <small>6 new this week</small>
+                <small>${i18n.t('progress.statNewThisWeek')}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Reading fluency <span class="stat-icon">🌿</span></div>
+                <div class="stat-top">${i18n.t('progress.statFluency')} <span class="stat-icon">🌿</span></div>
                 <strong>${progress.fluencyWpm} <small>wpm</small></strong>
-                <small>Up 4 words per minute</small>
+                <small>${i18n.t('progress.statWpmUp')}</small>
               </div>
               <div class="stat">
-                <div class="stat-top">Accuracy <span class="stat-icon">✨</span></div>
+                <div class="stat-top">${i18n.t('progress.statAccuracy')} <span class="stat-icon">✨</span></div>
                 <strong>${progress.accuracyPercent}<small>%</small></strong>
-                <small>Getting closer to your goal!</small>
+                <small>${i18n.t('progress.statCloserGoal')}</small>
               </div>
             </div>
 
@@ -424,23 +502,23 @@ export class DashboardController {
               <div class="card">
                 <div class="card-title">
                   <div>
-                    <h3>Practice next</h3>
-                    <p>Helpful ideas from your learning coach.</p>
+                    <h3>${i18n.t('progress.practiceNextTitle')}</h3>
+                    <p>${i18n.t('progress.practiceNextDesc')}</p>
                   </div>
                 </div>
                 <div class="activity-list">
                   <div class="activity">
                     <div class="act-icon" style="background:#fff1d2">🔤</div>
                     <div class="act-copy">
-                      <strong>Letter mirror: b and d</strong>
-                      <small>Build letter confidence</small>
+                      <strong>${i18n.t('progress.actLetterMirrorTitle')}</strong>
+                      <small>${i18n.t('progress.actLetterMirrorDesc')}</small>
                     </div>
                   </div>
                   <div class="activity">
                     <div class="act-icon" style="background:#e8f3ff">🎧</div>
                     <div class="act-copy">
-                      <strong>Words with “sh”</strong>
-                      <small>Listen and read aloud</small>
+                      <strong>${i18n.t('progress.actShTitle')}</strong>
+                      <small>${i18n.t('progress.actShDesc')}</small>
                     </div>
                   </div>
                 </div>
@@ -450,8 +528,8 @@ export class DashboardController {
             <div class="card" style="margin-top:16px">
               <div class="card-title">
                 <div>
-                  <h3>Words we're practicing together</h3>
-                  <p>We'll keep these in your game rotation.</p>
+                  <h3>${i18n.t('progress.practicingTogetherTitle')}</h3>
+                  <p>${i18n.t('progress.practicingTogetherDesc')}</p>
                 </div>
               </div>
               <div class="mistake-list" style="grid-template-columns:repeat(auto-fit, minmax(200px, 1fr))">
@@ -462,7 +540,7 @@ export class DashboardController {
                     <div class="word-bubble">${m.word}</div>
                     <div class="mistake-copy">
                       <strong>${m.note}</strong>
-                      <small>${m.count} tries this week</small>
+                      <small>${i18n.t('progress.triesThisWeek', { count: m.count })}</small>
                     </div>
                   </div>
                 `
@@ -474,61 +552,15 @@ export class DashboardController {
 
           <!-- Section: Story Shelf Page -->
           <section id="storiesPage" class="hidden">
-            <div class="learn-heading">
-              <div>
-                <h1>A story shelf just for you 📚</h1>
-                <p>Little adventures picked for ${child.name}'s reading level (${child.grade}).</p>
-              </div>
-              <div class="lang-select">
-                <select id="storyLanguageSelect">
-                  <option value="English" ${child.preferredLanguage === 'English' ? 'selected' : ''}>🇬🇧 English</option>
-                  <option value="Hindi" ${child.preferredLanguage === 'Hindi' ? 'selected' : ''}>🇮🇳 Hindi</option>
-                  <option value="Punjabi" ${child.preferredLanguage === 'Punjabi' ? 'selected' : ''}>🇮🇳 Punjabi</option>
-                  <option value="Bengali" ${child.preferredLanguage === 'Bengali' ? 'selected' : ''}>🇮🇳 Bengali</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="hero" style="background:#496a9a; min-height:150px">
-              <div class="hero-copy">
-                <div class="eyebrow" id="storyHeroGrade">YOUR STORY OF THE DAY · ${child.grade.toUpperCase()}</div>
-                <h1>Sunny and the little kite</h1>
-                <p>A joyful story about trying again when the wind says no.</p>
-                <button class="hero-cta" id="btnReadSunnyStory">Read this story →</button>
-              </div>
-              <div class="hero-figure" aria-hidden="true">🪁</div>
-            </div>
-
-            <div class="section-head">
-              <div>
-                <h2>More stories to explore</h2>
-                <p>Stories with clear words and friendly read-aloud.</p>
-              </div>
-              <span class="tag" id="storyTagLevel">${child.preferredLanguage.toUpperCase()} · ${child.grade.toUpperCase()}</span>
-            </div>
-
-            <div class="content-grid">
-              <div class="card">
-                <div style="font-size:34px">🐘</div>
-                <h3 style="font:900 16px Nunito; margin:9px 0 4px">Mina and the river</h3>
-                <p style="font-size:11px; color:#829094; margin:0">A kind elephant finds a way to help her friends.</p>
-                <button class="text-link" style="padding:12px 0 0" id="btnReadMina">Read story →</button>
-              </div>
-              <div class="card">
-                <div style="font-size:34px">🌻</div>
-                <h3 style="font:900 16px Nunito; margin:9px 0 4px">The sunflower's wish</h3>
-                <p style="font-size:11px; color:#829094; margin:0">A little seed discovers how tall it can grow.</p>
-                <button class="text-link" style="padding:12px 0 0" id="btnReadSunflower">Read story →</button>
-              </div>
-            </div>
+            <div id="storiesContainer"></div>
 
             <div class="resource-card" style="margin-top:16px">
               <div class="resource-icon">🌐</div>
               <div>
-                <strong>Educational Resource Finder · TinyFish Web Agent</strong>
-                <p>Find age-appropriate public worksheets, phonics activities, and games in ${child.preferredLanguage} across verified educational sites.</p>
+                <strong>${i18n.t('resources.heading')}</strong>
+                <p>${i18n.t('resources.subtitle')}</p>
               </div>
-              <button type="button" id="btnFindTinyFishStories">Find resources</button>
+              <button type="button" id="btnFindTinyFishStories">${i18n.t('resources.findBtn')}</button>
             </div>
           </section>
 
@@ -585,30 +617,28 @@ export class DashboardController {
   // Navigation & Page Switching
   // -------------------------------------------------------------
   private switchPage(name: 'home' | 'learn' | 'progress' | 'stories' | 'resources'): void {
+    this.currentPage = name;
     const titles: Record<string, string> = {
-      home: 'My home',
-      learn: 'Practice',
-      progress: 'My progress',
-      stories: 'Story shelf',
-      resources: 'Educational Resource Finder',
+      home: i18n.t('nav.myHome'),
+      learn: i18n.t('nav.practice'),
+      progress: i18n.t('nav.myProgress'),
+      stories: i18n.t('nav.storyShelf'),
+      resources: i18n.t('nav.resourceFinder'),
     };
 
     if (this.activeChild) {
       if (name === 'home') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Home Learning Dashboard');
         if (this.learningJourneyView && this.activeChild) {
           this.learningJourneyView.render(this.activeChild);
         }
         this.homeReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'learn') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'practice_game', 'Picture Word Match Game');
+        this.updateDailyChallengeUI();
       } else if (name === 'progress') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Progress View');
         this.progressReadingChart?.refresh(this.activeChild.id);
       } else if (name === 'stories') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'story_reading', 'Story Shelf Exploration');
+        this.renderStoryShelf(true);
       } else if (name === 'resources') {
-        this.activityTracker.startActivity(this.activeChild.parentId, this.activeChild.id, 'general_learning', 'Educational Resource Finder');
         const resourcesContainer = this.container.querySelector('#resourcesPage') as HTMLElement;
         if (resourcesContainer) {
           if (!this.resourceFinderView) {
@@ -643,6 +673,18 @@ export class DashboardController {
   // Event Bindings
   // -------------------------------------------------------------
   private bindEvents(): void {
+    // Scenario 2: Persistent Top Bar Language Dropdown
+    const topLangSelect = this.container.querySelector('#topLangSelect') as HTMLSelectElement;
+    topLangSelect?.addEventListener('change', async () => {
+      const newLang = topLangSelect.value as AppLanguageCode;
+      await i18n.setLanguage(newLang);
+      await this.authService.updateInterfaceLanguage(newLang);
+      if (this.activeChild) {
+        this.render(this.activeChild);
+        this.switchPage(this.currentPage);
+      }
+    });
+
     // Navigation buttons
     this.container.querySelectorAll('.nav button').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -702,26 +744,27 @@ export class DashboardController {
     const langSelect = this.container.querySelector('#practiceLanguage') as HTMLSelectElement;
     langSelect?.addEventListener('change', async () => {
       const newLang = langSelect.value as SupportedLanguage;
+      this.speechService.stop();
       this.updateLanguageGame(newLang);
       if (this.activeChild) {
+        this.activeChild.preferredLanguage = newLang;
         await this.profileService.updateChild(this.activeChild.id, {
           preferredLanguage: newLang,
         });
-        this.activeChild.preferredLanguage = newLang;
+        await this.learningPathService.getOrGeneratePath(this.activeChild);
+        if (this.learningJourneyView) {
+          await this.learningJourneyView.render(this.activeChild);
+        }
+      }
+      const tag = this.container.querySelector('#storyTagLevel');
+      if (tag && this.activeChild) {
+        tag.textContent = `${newLang.toUpperCase()} · ${this.activeChild.grade.toUpperCase()}`;
       }
       this.showToast(`Practice language set to ${newLang}! 🌈`);
     });
 
-    // Language Change on Stories page
-    const storyLangSelect = this.container.querySelector('#storyLanguageSelect') as HTMLSelectElement;
-    storyLangSelect?.addEventListener('change', () => {
-      const val = storyLangSelect.value;
-      const tag = this.container.querySelector('#storyTagLevel');
-      if (tag && this.activeChild) {
-        tag.textContent = `${val.toUpperCase()} · ${this.activeChild.grade.toUpperCase()}`;
-      }
-      this.showToast(`Story shelf updated for ${val} 📚`);
-    });
+    // Initialize Story Shelf
+    this.renderStoryShelf(false);
 
     // Picture word match option selection
     this.bindGameOptions();
@@ -732,15 +775,18 @@ export class DashboardController {
 
     // Activities
     this.container.querySelector('#actMirror')?.addEventListener('click', () => this.openLetterGame());
-    this.container.querySelector('#actStory')?.addEventListener('click', () => this.openStory('Sunny and the little kite'));
+    this.container.querySelector('#actStory')?.addEventListener('click', () => {
+      const { featured } = this.storyShelfService.getFeaturedAndShelfStories(
+        this.currentStoryLanguage,
+        this.activeChild?.grade
+      );
+      this.openStory(featured.id, this.currentStoryLanguage);
+    });
     this.container.querySelector('#actVoice')?.addEventListener('click', () => this.openVoicePractice());
     this.container.querySelector('#btnVoicePractice')?.addEventListener('click', () => this.openVoicePractice());
     this.container.querySelector('#cardBadge')?.addEventListener('click', () => this.openBadgeModal());
 
-    // Story buttons
-    this.container.querySelector('#btnReadSunnyStory')?.addEventListener('click', () => this.openStory('Sunny and the little kite'));
-    this.container.querySelector('#btnReadMina')?.addEventListener('click', () => this.openStory('Mina and the river'));
-    this.container.querySelector('#btnReadSunflower')?.addEventListener('click', () => this.openStory("The sunflower's wish"));
+    // Resource finder button
     this.container.querySelector('#btnFindTinyFishStories')?.addEventListener('click', () => this.openTinyFishFinder());
 
     // Modal close
@@ -761,15 +807,20 @@ export class DashboardController {
         }
 
         const item = ACTIVITY_CATALOG.find(a => a.id === actId);
+        const localizedTitle = getLocalizedSkillTitle(
+          skillId,
+          this.activeChild.preferredLanguage,
+          title || item?.title || 'Interactive Adventure'
+        );
         ActivityRunnerModal.getInstance().startRecommendation(
           this.activeChild,
           {
             id: `rec_${actId}_${Date.now()}`,
             activityId: actId,
             targetSkillId: skillId,
-            skillName: item?.title || 'Interactive Learning',
+            skillName: localizedTitle,
             category: 'syllable_decoding',
-            title: title || item?.title || 'Interactive Adventure',
+            title: localizedTitle,
             description: item?.description || 'Build your reading confidence.',
             difficulty: item?.difficulty || 'beginner',
             learningObjective: item?.description || 'Phonics and reading mastery.',
@@ -787,9 +838,7 @@ export class DashboardController {
         );
       });
     });
-  }
-
-  // -------------------------------------------------------------
+  }  // -------------------------------------------------------------
   // Game Logic (Picture Word Match)
   // -------------------------------------------------------------
   private bindGameOptions(): void {
@@ -808,17 +857,33 @@ export class DashboardController {
     const data = this.wordBanks[lang] || this.wordBanks.English;
     const targetWordEl = this.container.querySelector('#targetWord');
     const instructionEl = this.container.querySelector('#instruction');
-    if (targetWordEl) targetWordEl.textContent = data.words[0];
+    const targetWord = data.words[0];
+    if (targetWordEl) targetWordEl.textContent = targetWord;
     if (instructionEl) instructionEl.textContent = data.prompt;
+
+    const choices = data.words.map((w, idx) => ({
+      word: w,
+      picture: data.pictures[idx] || '🌟',
+      isCorrect: w === targetWord,
+    }));
+
+    // Fisher-Yates shuffle choices so correct option isn't always at index 0
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
 
     const optButtons = this.container.querySelectorAll('.options .option');
     optButtons.forEach((btn, index) => {
+      const choice = choices[index];
+      if (!choice) return;
       const strong = btn.querySelector('strong');
       const pic = btn.querySelector('.picture');
-      if (strong) strong.textContent = data.words[index] || '';
-      if (pic) pic.textContent = data.pictures[index] || '🌟';
-      (btn as HTMLElement).dataset.word = data.words[index];
-      (btn as HTMLElement).dataset.correct = index === 0 ? 'true' : 'false';
+      if (strong) strong.textContent = choice.word;
+      if (pic) pic.textContent = choice.picture;
+      (btn as HTMLElement).dataset.word = choice.word;
+      (btn as HTMLElement).dataset.correct = choice.isCorrect ? 'true' : 'false';
+      (btn as HTMLElement).dataset.rewarded = '';
       btn.classList.remove('selected', 'correct', 'wrong');
     });
 
@@ -829,18 +894,26 @@ export class DashboardController {
   private checkGameAnswer(): void {
     const selected = this.container.querySelector('.option.selected') as HTMLElement | null;
     const feedback = this.container.querySelector('#feedback') as HTMLElement | null;
+    const childLangCode = i18n.supportedLanguageToCode(this.activeChild?.preferredLanguage || 'English');
+
     if (!selected || !feedback) {
       if (feedback) {
         feedback.style.color = '#b37b30';
-        feedback.textContent = "Choose a picture first — you've got this!";
+        feedback.textContent = i18n.tForLang(childLangCode, 'practice.tapToChoose') || "Choose a picture first — you've got this!";
       }
       return;
+    }
+
+    // Increment daily challenge attempt only when answer is actually submitted
+    if (this.activeChild) {
+      StorageService.getInstance().incrementDailyAttempt(this.activeChild.id);
+      this.updateDailyChallengeUI();
     }
 
     if (selected.dataset.correct === 'true') {
       selected.classList.add('correct');
       feedback.style.color = '#3b9b75';
-      feedback.textContent = 'Wonderful! You found it! +10 happy points ⭐';
+      feedback.textContent = `${i18n.tForLang(childLangCode, 'practice.correctFeedback')} (+10 ${i18n.tForLang(childLangCode, 'profileSelect.pointsUnit')})`;
 
       if (this.activeChild && selected.dataset.rewarded !== 'yes') {
         selected.dataset.rewarded = 'yes';
@@ -884,7 +957,7 @@ export class DashboardController {
           const nextBtn = document.createElement('button');
           nextBtn.id = 'btnNextGame';
           nextBtn.className = 'primary';
-          nextBtn.textContent = 'Next little game →';
+          nextBtn.textContent = `${i18n.t('activity.nextAdventureBtn')}`;
           nextBtn.onclick = () => {
             this.loadNextRandomGame();
             nextBtn.remove();
@@ -895,7 +968,7 @@ export class DashboardController {
     } else {
       selected.classList.add('wrong');
       feedback.style.color = '#cc745d';
-      feedback.textContent = 'Nice try! Listen to the first sound and try again.';
+      feedback.textContent = i18n.tForLang(childLangCode, 'practice.incorrectFeedback');
 
       if (this.activeChild) {
         const targetWord = (this.container.querySelector('#targetWord')?.textContent || '').trim();
@@ -906,7 +979,7 @@ export class DashboardController {
           skillId: 'skill_letter_sounds_basic',
           activityType: 'word_match',
           score: 50,
-          accuracy: 0.5,
+          accuracy: 0.0,
           totalQuestions: 1,
           correctAnswers: 0,
           incorrectAnswers: 1,
@@ -924,25 +997,73 @@ export class DashboardController {
   }
 
   private loadNextRandomGame(): void {
-    const bank = [
-      ['fish', 'dish', 'wish', '🐟', '🍽️', '⭐'],
-      ['tree', 'three', 'free', '🌳', '3️⃣', '🎉'],
-      ['ship', 'shop', 'sheep', '🚢', '🛍️', '🐑'],
-      ['star', 'car', 'jar', '⭐', '🚗', '🫙'],
-    ];
-    const rand = bank[Math.floor(Math.random() * bank.length)];
+    const currentLang = this.activeChild?.preferredLanguage || 'English';
+    const langBanks: Record<SupportedLanguage, string[][]> = {
+      English: [
+        ['fish', 'dish', 'wish', '🐟', '🍽️', '⭐'],
+        ['tree', 'three', 'free', '🌳', '3️⃣', '🎉'],
+        ['ship', 'shop', 'sheep', '🚢', '🛍️', '🐑'],
+        ['star', 'car', 'jar', '⭐', '🚗', '🫙'],
+      ],
+      Hindi: [
+        ['नाव', 'घर', 'फल', '🚣', '🏠', '🍎'],
+        ['किताब', 'फूल', 'पेड़', '📖', '🌸', '🌳'],
+        ['सूरज', 'तारा', 'चाँद', '☀️', '⭐', '🌙'],
+      ],
+      Odia: [
+        ['ଡଙ୍ଗା', 'ଘର', 'ଫଳ', '🚣', '🏠', '🍎'],
+        ['ବହି', 'ଫୁଲ', 'ଗଛ', '📖', '🌸', '🌳'],
+        ['ସୂର୍ଯ୍ୟ', 'ତାରା', 'ଜହ୍ନ', '☀️', '⭐', '🌙'],
+      ],
+      Punjabi: [
+        ['ਕਿਸ਼ਤੀ', 'ਘਰ', 'ਫਲ', '🚣', '🏠', '🍎'],
+        ['ਕਿਤਾਬ', 'ਫੁੱਲ', 'ਰੁੱਖ', '📖', '🌸', '🌳'],
+        ['ਸੂਰਜ', 'ਤਾਰਾ', 'ਚੰਨ', '☀️', '⭐', '🌙'],
+      ],
+      Tamil: [
+        ['படகு', 'வீடு', 'பழம்', '🚣', '🏠', '🍎'],
+        ['புத்தகம்', 'மலர்', 'மரம்', '📖', '🌸', '🌳'],
+        ['சூரியன்', 'நட்சத்திரம்', 'நிலா', '☀️', '⭐', '🌙'],
+      ],
+      Bengali: [
+        ['নৌকা', 'ঘর', 'ফল', '🚣', '🏠', '🍎'],
+        ['বই', 'फूल', 'গাছ', '📖', '🌸', '🌳'],
+      ],
+    };
+
+    const bank = langBanks[currentLang] || langBanks.English;
+    const currentWord = (this.container.querySelector('#targetWord')?.textContent || '').trim();
+    const available = bank.filter(g => g[0] !== currentWord);
+    const chosenList = available.length > 0 ? available : bank;
+    const rand = chosenList[Math.floor(Math.random() * chosenList.length)];
+    const targetWord = rand[0];
+
     const targetEl = this.container.querySelector('#targetWord');
-    if (targetEl) targetEl.textContent = rand[0];
+    if (targetEl) targetEl.textContent = targetWord;
+
+    const choices = [
+      { word: rand[0], picture: rand[3], isCorrect: true },
+      { word: rand[1], picture: rand[4], isCorrect: false },
+      { word: rand[2], picture: rand[5], isCorrect: false },
+    ];
+
+    // Fisher-Yates shuffle choices so correct option isn't always at index 0
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
 
     const optButtons = this.container.querySelectorAll('.options .option');
     optButtons.forEach((btn, i) => {
-      (btn as HTMLElement).dataset.word = rand[i];
-      (btn as HTMLElement).dataset.correct = i === 0 ? 'true' : 'false';
+      const choice = choices[i];
+      if (!choice) return;
+      (btn as HTMLElement).dataset.word = choice.word;
+      (btn as HTMLElement).dataset.correct = choice.isCorrect ? 'true' : 'false';
       (btn as HTMLElement).dataset.rewarded = '';
       const strong = btn.querySelector('strong');
       const pic = btn.querySelector('.picture');
-      if (strong) strong.textContent = rand[i];
-      if (pic) pic.textContent = rand[i + 3];
+      if (strong) strong.textContent = choice.word;
+      if (pic) pic.textContent = choice.picture;
       btn.classList.remove('selected', 'correct', 'wrong');
     });
 
@@ -952,83 +1073,180 @@ export class DashboardController {
 
   private speakCurrentWord(): void {
     const word = this.container.querySelector('#targetWord')?.textContent || 'ship';
-    if ('speechSynthesis' in window) {
-      const u = new SpeechSynthesisUtterance(word);
-      u.rate = 0.78;
-      const lang = this.activeChild?.preferredLanguage || 'English';
-      const langCodeMap: Record<string, string> = {
-        English: 'en-IN',
-        Hindi: 'hi-IN',
-        Punjabi: 'pa-IN',
-        Bengali: 'bn-IN',
-      };
-      u.lang = langCodeMap[lang] || 'en-IN';
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    } else {
-      this.showToast('Word: ' + word);
+    const childLangCode = i18n.supportedLanguageToCode(this.activeChild?.preferredLanguage || 'English');
+    const res = this.speechService.speak(word, { langCode: childLangCode });
+    if (!res.spoken && res.message) {
+      this.showToast(res.message);
     }
   }
 
   // -------------------------------------------------------------
-  // Modals & Stories
+  // Story Shelf & Reading
   // -------------------------------------------------------------
-  private openStory(title: string): void {
+  private renderStoryShelf(advance: boolean = false): void {
+    const storiesContainer = this.container.querySelector('#storiesContainer');
+    if (!storiesContainer) return;
+
+    const childGrade = this.activeChild?.grade || 'Class 1';
+    const { featured, shelf } = this.storyShelfService.getFeaturedAndShelfStories(
+      this.currentStoryLanguage,
+      childGrade,
+      advance
+    );
+
+    storiesContainer.innerHTML = `
+      <div class="learn-heading">
+        <div>
+          <h1>${i18n.t('stories.heading')}</h1>
+          <p>${i18n.t('stories.sub', { name: this.activeChild?.name || 'Reader', grade: childGrade })}</p>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="button" class="soft" id="btnShuffleStories" title="Shuffle stories">🔄 Shuffle</button>
+          <div class="lang-select">
+            <select id="storyLanguageSelect">
+              <option value="English" ${this.currentStoryLanguage === 'English' ? 'selected' : ''}>EG English</option>
+              <option value="Hindi" ${this.currentStoryLanguage === 'Hindi' ? 'selected' : ''}>HN हिन्दी</option>
+              <option value="Odia" ${this.currentStoryLanguage === 'Odia' ? 'selected' : ''}>OD ଓଡ଼ିଆ</option>
+              <option value="Punjabi" ${this.currentStoryLanguage === 'Punjabi' ? 'selected' : ''}>PB ਪੰਜਾਬੀ</option>
+              <option value="Tamil" ${this.currentStoryLanguage === 'Tamil' ? 'selected' : ''}>TM தமிழ்</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero" style="background:#496a9a; min-height:150px">
+        <div class="hero-copy">
+          <div class="eyebrow" id="storyHeroGrade">
+            ${i18n.t('stories.storyOfDayTag')} · ${featured.readingLevel.toUpperCase()} · ⏱️ ${featured.estimatedMinutes} min
+          </div>
+          <h1>${featured.title}</h1>
+          <p>${featured.synopsis}</p>
+          <button class="hero-cta" id="btnReadHeroStory" data-story-id="${featured.id}">${i18n.t('stories.readStoryBtn')}</button>
+        </div>
+        <div class="hero-figure" aria-hidden="true">${featured.emoji}</div>
+      </div>
+
+      <div class="section-head">
+        <div>
+          <h2>${i18n.t('stories.moreStories')}</h2>
+          <p>${i18n.t('stories.moreStoriesSub')}</p>
+        </div>
+        <span class="tag" id="storyTagLevel">${this.currentStoryLanguage.toUpperCase()} · ${childGrade.toUpperCase()}</span>
+      </div>
+
+      <div class="content-grid">
+        ${shelf.map(story => `
+          <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+              <div style="font-size:34px">${story.emoji}</div>
+              <div style="display:flex; gap:6px; margin:6px 0 4px; align-items:center;">
+                <span class="tag" style="font-size:10px; padding:2px 6px;">${story.readingLevel}</span>
+                <span style="font-size:11px; color:#829094;">⏱️ ${story.estimatedMinutes}m</span>
+              </div>
+              <h3 style="font:900 16px Nunito; margin:4px 0 4px">${story.title}</h3>
+              <p style="font-size:11px; color:#829094; margin:0">${story.synopsis}</p>
+            </div>
+            <button class="text-link btn-read-shelf-story" style="padding:12px 0 0; text-align:left;" data-story-id="${story.id}">${i18n.t('stories.readStory')} →</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    // Bind events for newly rendered shelf elements
+    storiesContainer.querySelector('#btnShuffleStories')?.addEventListener('click', () => {
+      this.renderStoryShelf(true);
+      this.showToast('Story shelf rotated 🔄');
+    });
+
+    const langSelect = storiesContainer.querySelector('#storyLanguageSelect') as HTMLSelectElement;
+    langSelect?.addEventListener('change', () => {
+      this.currentStoryLanguage = langSelect.value as SupportedLanguage;
+      this.renderStoryShelf(false);
+      this.showToast(`Story shelf updated for ${this.currentStoryLanguage} 📚`);
+    });
+
+    storiesContainer.querySelector('#btnReadHeroStory')?.addEventListener('click', (e) => {
+      const storyId = (e.currentTarget as HTMLElement).dataset.storyId || featured.id;
+      this.openStory(storyId, this.currentStoryLanguage);
+    });
+
+    storiesContainer.querySelectorAll('.btn-read-shelf-story').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const storyId = (e.currentTarget as HTMLElement).dataset.storyId;
+        if (storyId) this.openStory(storyId, this.currentStoryLanguage);
+      });
+    });
+  }
+
+  private openStory(storyIdOrTitle: string, lang?: SupportedLanguage): void {
+    const storyLang = lang || this.currentStoryLanguage || this.activeChild?.preferredLanguage || 'English';
+    const story = this.storyShelfService.getStoryById(storyIdOrTitle, storyLang);
+    if (!story) return;
+
     if (this.activeChild) {
       this.activityTracker.startActivity(
         this.activeChild.parentId,
         this.activeChild.id,
         'story_reading',
-        `Story: ${title}`
+        `Story: ${story.title}`
       );
     }
 
-    const storiesContent: Record<string, string[]> = {
-      'Sunny and the little kite': [
-        'One breezy afternoon, Sunny took her bright red kite to the hill. The kite tugged at its string, but it would not fly.',
-        'Sunny took a breath. She ran a little faster, and the wind lifted the kite into the blue sky. “I kept trying!” she laughed. Her friends cheered below.',
-      ],
-      'Mina and the river': [
-        'Mina the elephant heard a soft cry near the river. A little bird had dropped its nest beside the water.',
-        'Mina used her strong trunk to lift a branch. Together, the friends made a safe new home. “Helping is better together,” said Mina.',
-      ],
-      "The sunflower's wish": [
-        'A tiny seed dreamed of seeing the sun. Rain tapped the soil, and warm sunlight reached down. Slowly, the seed began to grow.',
-        'One morning, a yellow flower opened its petals. The little sunflower smiled at the sky. Growing takes time, and every day matters.',
-      ],
-    };
-
-    const paragraphs = storiesContent[title] || storiesContent['Sunny and the little kite'];
+    const childLangCode = i18n.supportedLanguageToCode(storyLang);
+    let comprehensionAnswered = 0;
+    const totalQuestions = story.comprehensionQuestions.length;
 
     this.openDashModal(
-      title,
-      'Read at your own pace · listen along',
+      `${story.emoji} ${story.title}`,
+      `${story.readingLevel.toUpperCase()} · ⏱️ ${story.estimatedMinutes} min read`,
       `
       <div id="readerText" class="reader-text">
-        ${paragraphs.map(p => `<p>${p}</p>`).join('')}
+        ${story.paragraphs.map(p => `<p>${p}</p>`).join('')}
       </div>
       <div class="modal-controls">
-        <button type="button" id="btnModalReadAloud">🔊 Listen</button>
+        <button type="button" id="btnModalReadAloud">🔊 ${i18n.t('voice.listenAloud')}</button>
         <button type="button" class="soft" id="btnResizeSmaller">A−</button>
         <button type="button" class="soft" id="btnResizeLarger">A+</button>
-        <button type="button" class="soft" id="btnFinishStory">Finished reading ✓</button>
+        <button type="button" class="soft" id="btnFinishStory">${i18n.t('stories.finishReading')} ✓</button>
       </div>
-      <p class="prototype-note">
-        Accessible Story Reader: Supports high-contrast, speech read-aloud, and dyslexia-adapted font size.
+
+      ${totalQuestions > 0 ? `
+        <div class="story-comprehension-section" style="margin-top:20px; padding-top:16px; border-top:2px dashed #cbd5e1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font:900 16px Nunito; margin:0; color:#1e293b;">🧠 Comprehension Check</h3>
+            <span id="compScoreTag" class="tag" style="background:#e0f2fe; color:#0369a1;">0 / ${totalQuestions} Answered</span>
+          </div>
+          <div class="questions-list" style="display:flex; flex-direction:column; gap:14px;">
+            ${story.comprehensionQuestions.map((q, qIdx) => `
+              <div class="question-card" data-qid="${q.id}" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                <p style="font-weight:700; margin:0 0 10px; color:#1e293b;">${qIdx + 1}. ${q.question}</p>
+                <div class="question-options" style="display:flex; flex-direction:column; gap:6px;">
+                  ${q.options.map((opt, oIdx) => `
+                    <button type="button" class="btn-comp-option" data-qid="${q.id}" data-opt-idx="${oIdx}" style="text-align:left; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1; background:white; font-size:13px; cursor:pointer; transition:all 0.15s ease;">
+                      ${opt}
+                    </button>
+                  `).join('')}
+                </div>
+                <div class="comp-feedback" id="feedback_${q.id}" style="margin-top:8px; font-size:12px; font-weight:600; display:none;"></div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <p class="prototype-note" style="margin-top:16px;">
+        Accessible Story Reader: Supports high-contrast, speech read-aloud in ${storyLang}, text resizing, and reading comprehension.
       </p>
     `
     );
 
     document.getElementById('btnModalReadAloud')?.addEventListener('click', () => {
       const el = document.getElementById('readerText');
-      if (!el || !('speechSynthesis' in window)) {
-        this.showToast('Speech read-aloud unavailable in this environment.');
-        return;
+      if (!el) return;
+      const res = this.speechService.speak(el.innerText, { langCode: childLangCode });
+      if (!res.spoken && res.message) {
+        this.showToast(res.message);
       }
-      const u = new SpeechSynthesisUtterance(el.innerText);
-      u.rate = 0.82;
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
     });
 
     document.getElementById('btnResizeSmaller')?.addEventListener('click', () => {
@@ -1047,6 +1265,98 @@ export class DashboardController {
       }
     });
 
+    // Wire comprehension question clicks
+    const answeredMap = new Set<string>();
+    const modalEl = this.container.querySelector('#dashModalContent');
+    if (modalEl) {
+      modalEl.querySelectorAll('.btn-comp-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLButtonElement;
+          const qid = target.dataset.qid;
+          const optIdx = parseInt(target.dataset.optIdx || '-1', 10);
+          if (!qid || optIdx < 0) return;
+
+          const question = story.comprehensionQuestions.find(q => q.id === qid);
+          if (!question) return;
+
+          const feedbackEl = modalEl.querySelector(`#feedback_${qid}`) as HTMLElement;
+          const parentCard = target.closest('.question-card') as HTMLElement;
+
+          if (optIdx === question.correctIndex) {
+            target.style.background = '#dcfce7';
+            target.style.borderColor = '#16a34a';
+            target.style.color = '#15803d';
+            target.style.fontWeight = '700';
+
+            // Disable siblings for this question
+            parentCard?.querySelectorAll('.btn-comp-option').forEach(b => {
+              (b as HTMLButtonElement).disabled = true;
+            });
+
+            if (feedbackEl) {
+              feedbackEl.style.display = 'block';
+              feedbackEl.style.color = '#15803d';
+              feedbackEl.textContent = `✓ Correct! ${question.explanation}`;
+            }
+
+            if (!answeredMap.has(qid)) {
+              answeredMap.add(qid);
+              comprehensionAnswered++;
+
+              const scoreTag = modalEl.querySelector('#compScoreTag');
+              if (scoreTag) {
+                scoreTag.textContent = `${comprehensionAnswered} / ${totalQuestions} Correct ⭐`;
+              }
+
+              if (this.activeChild) {
+                // Award happy points
+                const prog = this.profileService.getChildProgress(this.activeChild.id);
+                const updated = this.profileService.updateChildProgress(this.activeChild.id, {
+                  happyPoints: prog.happyPoints + 5,
+                });
+                const pointsEl = this.container.querySelector('#points');
+                if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+                // Record attempt in learning path service
+                this.learningPathService.recordAttempt({
+                  id: `att_comp_${Date.now()}`,
+                  childId: this.activeChild.id,
+                  activityId: `act_story_${story.id}`,
+                  skillId: 'skill_reading_comprehension',
+                  activityType: 'story_comprehension',
+                  score: 100,
+                  accuracy: 1.0,
+                  totalQuestions: 1,
+                  correctAnswers: 1,
+                  incorrectAnswers: 0,
+                  attemptsRequired: 1,
+                  hintsRequested: 0,
+                  correctedAfterHint: 0,
+                  durationSeconds: 15,
+                  missedItems: [],
+                  completedAt: new Date().toISOString(),
+                });
+
+                // Increment daily challenge attempt counter
+                const storage = StorageService.getInstance();
+                storage.incrementDailyAttempt(this.activeChild.id);
+                this.updateDailyChallengeUI();
+              }
+            }
+          } else {
+            target.style.background = '#fee2e2';
+            target.style.borderColor = '#dc2626';
+            target.style.color = '#991b1b';
+            if (feedbackEl) {
+              feedbackEl.style.display = 'block';
+              feedbackEl.style.color = '#dc2626';
+              feedbackEl.textContent = 'Not quite — take another look at the story!';
+            }
+          }
+        });
+      });
+    }
+
     document.getElementById('btnFinishStory')?.addEventListener('click', () => {
       if (this.activeChild) {
         const prog = this.profileService.getChildProgress(this.activeChild.id);
@@ -1056,28 +1366,45 @@ export class DashboardController {
         });
         const pointsEl = this.container.querySelector('#points');
         if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+        const storage = StorageService.getInstance();
+        storage.incrementDailyAttempt(this.activeChild.id);
+        this.updateDailyChallengeUI();
       }
       this.showToast('Story complete — +5 happy points ⭐');
       this.closeDashModal();
     });
   }
 
-  private openVoicePractice(): void {
-    if (this.activeChild) {
-      this.activityTracker.startActivity(
-        this.activeChild.parentId,
-        this.activeChild.id,
-        'voice_spelling',
-        'Say it, spell it! (Voice practice)'
-      );
+  private selectNextSpellingWord(lang: SupportedLanguage, grade?: string): string {
+    const bank = this.spellingWordBanks[lang] || this.spellingWordBanks.English;
+    let pool = bank.beginner;
+    const lowerGrade = (grade || '').toLowerCase();
+    if (lowerGrade.includes('3') || lowerGrade.includes('4') || lowerGrade.includes('intermediate')) {
+      pool = bank.intermediate;
+    } else if (lowerGrade.includes('5') || lowerGrade.includes('6') || lowerGrade.includes('advanced')) {
+      pool = bank.advanced;
     }
-    const target = this.container.querySelector('#targetWord')?.textContent || 'ship';
+
+    const available = pool.filter(w => w !== this.currentSpellingWord && w !== this.previousSpellingWord);
+    const chosenList = available.length > 0 ? available : pool;
+    const next = chosenList[Math.floor(Math.random() * chosenList.length)];
+    this.previousSpellingWord = this.currentSpellingWord;
+    this.currentSpellingWord = next;
+    return next;
+  }
+
+  private openVoicePractice(): void {
+    const lang = this.activeChild?.preferredLanguage || 'English';
+    const childLangCode = i18n.supportedLanguageToCode(lang);
+    const target = this.selectNextSpellingWord(lang, this.activeChild?.grade);
+
     this.openDashModal(
       'Say it, spell it! 🎙️',
       'Listen to the word, then say or type what you heard.',
       `
       <div class="modal-callout">
-        Word to spell: <strong>${target}</strong> &nbsp;
+        Word to spell: <strong id="spellingTargetWord">${target}</strong> &nbsp;
         <button type="button" class="demo-action" id="btnHearModalWord">🔊 Hear it</button>
       </div>
       <input
@@ -1089,61 +1416,147 @@ export class DashboardController {
       <div class="modal-controls">
         <button type="button" id="btnStartVoice">🎙️ Start voice input</button>
         <button type="button" class="soft" id="btnCheckVoice">Check spelling</button>
+        <button type="button" class="primary" id="btnNextSpellingWord">Next word ❯</button>
       </div>
       <p id="pitchVoiceFeedback" class="feedback" style="margin-top:10px;"></p>
-      <p class="prototype-note">Speech recognition uses browser Web Speech API with keyboard fallback.</p>
+      <p class="prototype-note">Speech recognition uses browser Web Speech API with native ${lang} voice synthesis & recognition.</p>
     `
     );
 
-    document.getElementById('btnHearModalWord')?.addEventListener('click', () => this.speakCurrentWord());
+    const playWordAudio = () => {
+      const res = this.speechService.speak(this.currentSpellingWord, { langCode: childLangCode });
+      if (!res.spoken && res.message) {
+        this.showToast(res.message);
+      }
+    };
+
+    document.getElementById('btnHearModalWord')?.addEventListener('click', playWordAudio);
+
+    const handleNextWord = () => {
+      const newWord = this.selectNextSpellingWord(lang, this.activeChild?.grade);
+      const targetEl = document.getElementById('spellingTargetWord');
+      if (targetEl) targetEl.textContent = newWord;
+      const inputEl = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
+      if (inputEl) {
+        inputEl.value = '';
+        inputEl.focus();
+      }
+      const fb = document.getElementById('pitchVoiceFeedback');
+      if (fb) fb.textContent = '';
+      submittedForWord = false;
+      playWordAudio();
+    };
+
+    document.getElementById('btnNextSpellingWord')?.addEventListener('click', handleNextWord);
+
+    let submittedForWord = false;
 
     document.getElementById('btnCheckVoice')?.addEventListener('click', () => {
       const input = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
       const fb = document.getElementById('pitchVoiceFeedback');
       if (!input || !fb) return;
 
-      if (input.value.trim().toLowerCase() === target.trim().toLowerCase()) {
+      const userVal = input.value.trim().toLowerCase();
+      if (!userVal) {
+        fb.style.color = '#b37b30';
+        fb.textContent = 'Please say or type the word first.';
+        return;
+      }
+
+      if (this.activeChild && !submittedForWord) {
+        submittedForWord = true;
+        StorageService.getInstance().incrementDailyAttempt(this.activeChild.id);
+        this.updateDailyChallengeUI();
+      }
+
+      const expected = this.currentSpellingWord.trim().toLowerCase();
+      const isCorrect = userVal === expected;
+
+      if (isCorrect) {
         fb.style.color = '#3b9b75';
         fb.textContent = 'That matches! Lovely spelling. +5 happy points ⭐';
         if (this.activeChild) {
           const prog = this.profileService.getChildProgress(this.activeChild.id);
           const updated = this.profileService.updateChildProgress(this.activeChild.id, {
             happyPoints: prog.happyPoints + 5,
+            wordsLearned: prog.wordsLearned + 1,
           });
           const pointsEl = this.container.querySelector('#points');
           if (pointsEl) pointsEl.textContent = String(updated.happyPoints);
+
+          this.learningPathService.recordAttempt({
+            id: `att_spelling_${Date.now()}`,
+            childId: this.activeChild.id,
+            activityId: 'act_voice_spelling',
+            skillId: 'skill_letter_sounds_basic',
+            activityType: 'word_match',
+            score: 100,
+            accuracy: 1.0,
+            totalQuestions: 1,
+            correctAnswers: 1,
+            incorrectAnswers: 0,
+            attemptsRequired: 1,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [],
+            completedAt: new Date().toISOString(),
+          }).then(() => {
+            this.refreshCharts();
+          });
         }
       } else {
         fb.style.color = '#c87961';
-        fb.textContent = 'Good try! Listen once more, then try again.';
+        fb.textContent = `Good try! Listen once more, then try again. (${this.currentSpellingWord})`;
+        if (this.activeChild) {
+          this.learningPathService.recordAttempt({
+            id: `att_spelling_${Date.now()}`,
+            childId: this.activeChild.id,
+            activityId: 'act_voice_spelling',
+            skillId: 'skill_letter_sounds_basic',
+            activityType: 'word_match',
+            score: 50,
+            accuracy: 0.0,
+            totalQuestions: 1,
+            correctAnswers: 0,
+            incorrectAnswers: 1,
+            attemptsRequired: 2,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [this.currentSpellingWord],
+            completedAt: new Date().toISOString(),
+          }).then(() => {
+            this.refreshCharts();
+          });
+        }
       }
     });
 
     document.getElementById('btnStartVoice')?.addEventListener('click', () => {
-      const SR = (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
-                 (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).webkitSpeechRecognition;
       const input = document.getElementById('pitchVoiceAnswer') as HTMLInputElement;
-      if (!SR) {
-        input?.focus();
-        this.showToast('Voice input is unavailable in this browser. Please type your spelling.');
-        return;
-      }
-      try {
-        const r = new SR();
-        r.lang = 'en-IN';
-        r.onresult = (e: any) => {
+      const rec = this.speechService.startSpeechRecognition(childLangCode, {
+        onStart: () => {
+          this.showToast('Listening… say the word now 🎙️');
+        },
+        onResult: (transcript) => {
           if (input) {
-            input.value = e.results[0][0].transcript;
+            input.value = transcript;
             document.getElementById('btnCheckVoice')?.click();
           }
-        };
-        r.onerror = () => this.showToast('Could not hear clearly. Try typing the word!');
-        r.start();
-        this.showToast('Listening… say the word now 🎙️');
-      } catch {
-        this.showToast('Voice recognition failed to start. Please type the word.');
+        },
+        onError: (errText) => {
+          this.showToast(errText || 'Voice recognition error. Please type the word.');
+        },
+      });
+
+      if (!rec) {
+        input?.focus();
+        this.showToast('Voice input is unavailable in this browser. Please type your spelling.');
       }
     });
+
+    playWordAudio();
   }
 
   private openLetterGame(): void {
@@ -1207,13 +1620,29 @@ export class DashboardController {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    if (this.activeChild) {
-      this.activityTracker.startActivity(
-        this.activeChild.parentId,
-        this.activeChild.id,
-        'general_learning',
-        'Dashboard Navigation'
-      );
+  }
+
+  public updateDailyChallengeUI(): void {
+    if (!this.activeChild) return;
+    const dailyAttempts = StorageService.getInstance().getDailyAttempts(this.activeChild.id);
+    const dailyGoal = 10;
+    const dailyPct = Math.min(100, Math.round((dailyAttempts / dailyGoal) * 100));
+
+    const label = this.container.querySelector('#dailyChallengeAttemptLabel');
+    if (label) {
+      label.textContent = `Attempts: ${dailyAttempts} / ${dailyGoal}`;
+    }
+
+    const barEl = this.container.querySelector('#dailyChallengeBar');
+    if (barEl) {
+      barEl.setAttribute('aria-valuenow', String(dailyAttempts));
+      barEl.setAttribute('aria-valuemax', String(dailyGoal));
+      barEl.setAttribute('aria-label', `Daily challenge: ${dailyAttempts} of ${dailyGoal} attempts completed`);
+    }
+
+    const fillEl = this.container.querySelector('#dailyChallengeProgressBar') as HTMLElement | null;
+    if (fillEl) {
+      fillEl.style.width = `${dailyPct}%`;
     }
   }
 
@@ -1231,8 +1660,9 @@ export class DashboardController {
     if (statWordsLearned) statWordsLearned.textContent = `${progress.wordsLearned}`;
     if (statFluency) statFluency.innerHTML = `${progress.fluencyWpm} <small>wpm</small>`;
     if (statHappyPoints) statHappyPoints.innerHTML = `${progress.happyPoints} <small>pts</small>`;
-    if (topStreak) topStreak.textContent = `🔥 ${progress.streakDays} day streak`;
-    if (streakText) streakText.textContent = `You're on a ${progress.streakDays}-day streak!`;
+    if (topStreak) topStreak.textContent = `🔥 ${progress.streakDays} ${i18n.t('home.streakDays')}`;
+    if (streakText) streakText.textContent = i18n.t('home.streak', { count: progress.streakDays });
+    this.updateDailyChallengeUI();
   }
 
   public async refreshCharts(): Promise<void> {

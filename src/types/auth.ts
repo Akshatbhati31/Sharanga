@@ -1,6 +1,7 @@
 // Types for DyslexiMate Authentication & Child Profile Management
 
-export type SupportedLanguage = 'English' | 'Hindi' | 'Punjabi' | 'Bengali';
+export type SupportedLanguage = 'English' | 'Hindi' | 'Odia' | 'Punjabi' | 'Tamil' | 'Bengali';
+export type AppLanguageCode = 'en' | 'hi' | 'or' | 'pa' | 'ta';
 
 export interface ReadingPreferences {
   readingSpeed: 'slow' | 'normal' | 'fast';
@@ -56,6 +57,7 @@ export interface ParentUser {
   email: string;
   hasPin: boolean; // Indicates if parent has set up a 4-digit PIN
   termsAccepted: boolean;
+  interfaceLanguage?: AppLanguageCode;
   createdAt: string;
 }
 
@@ -108,6 +110,7 @@ export interface RegisterData {
   password: string;
   confirmPassword: string;
   acceptTerms: boolean;
+  interfaceLanguage?: AppLanguageCode;
   initialChild?: {
     name: string;
     grade: string;

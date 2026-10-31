@@ -1,14 +1,15 @@
 import type {
   ChildProfile,
   ChildLearningData,
-  SupportedLanguage,
 } from '../types/auth';
 import { StorageService } from './storageService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { i18n } from '../i18n';
 
 export interface IProfileService {
   getChildren(parentId: string): Promise<ChildProfile[]>;
   getChild(id: string): Promise<ChildProfile | null>;
+  ensureParentProfile(parentId: string, force?: boolean): Promise<boolean>;
   createChild(
     parentId: string,
     data: Omit<ChildProfile, 'id' | 'parentId' | 'createdAt'>
@@ -17,6 +18,7 @@ export interface IProfileService {
   deleteChild(id: string): Promise<boolean>;
   getActiveChild(): ChildProfile | null;
   setActiveChild(child: ChildProfile | null): void;
+  restoreActiveChild(parentId?: string): Promise<ChildProfile | null>;
   getChildProgress(childId: string): ChildLearningData;
   updateChildProgress(childId: string, updates: Partial<ChildLearningData>): ChildLearningData;
   onProfileStateChanged(
@@ -44,15 +46,49 @@ export class ProfileService implements IProfileService {
     return ProfileService.instance;
   }
 
-  private restoreActiveChild(): void {
+  public async restoreActiveChild(parentId?: string): Promise<ChildProfile | null> {
     const session = this.storage.getSession();
-    if (session.activeChildId) {
-      const profiles = this.storage.getRawProfiles();
-      const found = profiles.find(p => p.id === session.activeChildId);
-      if (found) {
-        this.activeChild = found;
+    const effectiveParentId = parentId || session.userId;
+    const childId = session.activeChildId;
+
+    if (!childId) {
+      this.activeChild = null;
+      return null;
+    }
+
+    // 1. Check if active child is already loaded and matches parent
+    if (this.activeChild && this.activeChild.id === childId) {
+      if (!effectiveParentId || this.activeChild.parentId === effectiveParentId) {
+        return this.activeChild;
       }
     }
+
+    // 2. Check local raw profiles
+    const rawProfiles = this.storage.getRawProfiles();
+    const localFound = rawProfiles.find(p => p.id === childId);
+    if (localFound && (!effectiveParentId || localFound.parentId === effectiveParentId)) {
+      this.activeChild = localFound;
+      return this.activeChild;
+    }
+
+    // 3. In live Supabase mode, restore from DB
+    const sb = supabase;
+    if (isSupabaseConfigured() && sb && effectiveParentId && !effectiveParentId.startsWith('parent-demo-')) {
+      try {
+        const fetched = await this.getChild(childId);
+        if (fetched && fetched.parentId === effectiveParentId) {
+          this.activeChild = fetched;
+          return this.activeChild;
+        }
+      } catch (err) {
+        console.warn('Could not restore active child from Supabase:', err);
+      }
+    }
+
+    // If profile cannot be found or belongs to another parent, clear stale activeChildId
+    this.activeChild = null;
+    this.storage.saveSession(effectiveParentId || null, null);
+    return null;
   }
 
   public onProfileStateChanged(
@@ -121,7 +157,7 @@ export class ProfileService implements IProfileService {
             parentId: row.parent_id,
             name: row.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
-            preferredLanguage: (row.preferred_language as SupportedLanguage) || 'English',
+            preferredLanguage: i18n.codeToSupportedLanguage(row.preferred_language) || 'English',
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -170,7 +206,7 @@ export class ProfileService implements IProfileService {
             parentId: data.parent_id,
             name: data.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
-            preferredLanguage: (data.preferred_language as SupportedLanguage) || 'English',
+            preferredLanguage: i18n.codeToSupportedLanguage(data.preferred_language) || 'English',
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -191,6 +227,62 @@ export class ProfileService implements IProfileService {
     return all.find(p => p.id === id) || null;
   }
 
+  /**
+   * Ensures that a parent profile row exists in public.parent_profiles before child operations,
+   * satisfying the foreign key constraint: child_profiles.parent_id -> parent_profiles.id.
+   */
+  public async ensureParentProfile(parentId: string, force: boolean = false): Promise<boolean> {
+    const sb = supabase;
+    if (!isSupabaseConfigured() || !sb || parentId.startsWith('parent-demo-')) return true;
+
+    try {
+      if (!force) {
+        const { data: existing } = await sb
+          .from('parent_profiles')
+          .select('id')
+          .eq('id', parentId)
+          .maybeSingle();
+
+        if (existing) return true;
+      }
+
+      // Record missing or force retry: upsert to satisfy FK constraint
+      const rawUser = this.storage.getRawUsers().find(u => u.id === parentId);
+      const fullName = rawUser?.fullName || 'Parent';
+      const lang = i18n.getCurrentLanguage();
+
+      const { error: upsertErr } = await sb
+        .from('parent_profiles')
+        .upsert({
+          id: parentId,
+          full_name: fullName,
+          interface_language: lang,
+        }, { onConflict: 'id' });
+
+      if (upsertErr) {
+        console.warn('ensureParentProfile upsert encountered error:', upsertErr.message);
+        return false;
+      }
+
+      // Also ensure account_preferences is present
+      try {
+        await sb
+          .from('account_preferences')
+          .upsert({
+            parent_id: parentId,
+            interface_language: lang,
+          }, { onConflict: 'parent_id' });
+      } catch {
+        // Ignored
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('Exception in ensureParentProfile:', err);
+      return false;
+    }
+  }
+
   public async createChild(
     parentId: string,
     data: Omit<ChildProfile, 'id' | 'parentId' | 'createdAt'>
@@ -199,17 +291,28 @@ export class ProfileService implements IProfileService {
       throw new Error("Child's name is required.");
     }
 
+    const session = this.storage.getSession();
+    const effectiveParentId = parentId || session.userId;
+    if (!effectiveParentId) {
+      throw new Error('Authenticated parent account required to save child profile.');
+    }
+
     const sb = supabase;
-    const isDemoParent = parentId === 'parent-demo-1' || !isSupabaseConfigured() || !sb;
+    const isDemoParent = effectiveParentId === 'parent-demo-1' || !isSupabaseConfigured() || !sb;
+    const langCode = i18n.supportedLanguageToCode(data.preferredLanguage || 'en');
+    const supportedLang = i18n.codeToSupportedLanguage(langCode);
 
     if (!isDemoParent) {
       try {
-        const { data: newRow, error } = await sb
+        // Pre-flight check: ensure parent profile row exists in public.parent_profiles
+        await this.ensureParentProfile(effectiveParentId);
+
+        let insertRes = await sb
           .from('child_profiles')
           .insert({
-            parent_id: parentId,
+            parent_id: effectiveParentId,
             display_name: data.name.trim(),
-            preferred_language: data.preferredLanguage || 'English',
+            preferred_language: langCode,
             learning_preferences: {
               grade: data.grade || 'Class 3 · Growing reader',
               avatar: data.avatar || '👧🏽',
@@ -225,17 +328,46 @@ export class ProfileService implements IProfileService {
           .select()
           .single();
 
-        if (error) {
-          throw new Error(error.message);
+        // If FK violation occurs (e.g. race condition or missing trigger), force self-heal and retry once
+        if (insertRes.error && insertRes.error.message.includes('child_profiles_parent_id_fkey')) {
+          console.warn('child_profiles_parent_id_fkey detected, force self-healing parent_profiles...');
+          const healed = await this.ensureParentProfile(effectiveParentId, true);
+          if (healed) {
+            insertRes = await sb
+              .from('child_profiles')
+              .insert({
+                parent_id: effectiveParentId,
+                display_name: data.name.trim(),
+                preferred_language: langCode,
+                learning_preferences: {
+                  grade: data.grade || 'Class 3 · Growing reader',
+                  avatar: data.avatar || '👧🏽',
+                  preferences: data.preferences || {
+                    readingSpeed: 'normal',
+                    dyslexiaFont: false,
+                    highContrast: false,
+                    soundEffects: true,
+                    autoReadAloud: false,
+                  },
+                },
+              })
+              .select()
+              .single();
+          }
         }
 
+        if (insertRes.error) {
+          throw new Error(insertRes.error.message);
+        }
+
+        const newRow = insertRes.data;
         const lp = newRow.learning_preferences || {};
         const newChild: ChildProfile = {
           id: newRow.id,
           parentId: newRow.parent_id,
           name: newRow.display_name,
           grade: lp.grade || data.grade,
-          preferredLanguage: (newRow.preferred_language as SupportedLanguage) || data.preferredLanguage,
+          preferredLanguage: i18n.codeToSupportedLanguage(newRow.preferred_language) || supportedLang,
           avatar: lp.avatar || data.avatar,
           preferences: lp.preferences || data.preferences,
           createdAt: newRow.created_at,
@@ -262,29 +394,20 @@ export class ProfileService implements IProfileService {
         all.push(newChild);
         this.storage.saveRawProfiles(all);
 
-        // Initialize local progress record
+        // Initialize local progress record with honest zero baseline
         const progressMap = this.storage.getRawProgress();
         progressMap[newChild.id] = {
           childId: newChild.id,
-          practiceMinutes: 1,
-          wordsLearned: 5,
-          fluencyWpm: 25,
-          accuracyPercent: 75,
-          happyPoints: 100,
-          streakDays: 1,
-          practiceWins: 1,
-          mistakes: [{ word: 'b / d', note: 'Letter mirror challenge', count: 1 }],
-          recentActivities: [
-            {
-              id: 'welcome-act',
-              title: 'Welcome to DyslexiMate!',
-              subtitle: 'Profile created · Start your first game',
-              tag: 'New',
-              icon: '🌱',
-              bg: '#e8f5ef',
-            },
-          ],
-          weeklyAccuracy: [60, 65, 70, 72, 75, 75, 75],
+          practiceMinutes: 0,
+          wordsLearned: 0,
+          fluencyWpm: 0,
+          accuracyPercent: 0,
+          happyPoints: 0,
+          streakDays: 0,
+          practiceWins: 0,
+          mistakes: [],
+          recentActivities: [],
+          weeklyAccuracy: [],
         };
         this.storage.saveRawProgress(progressMap);
 
@@ -323,23 +446,14 @@ export class ProfileService implements IProfileService {
       childId: newChild.id,
       practiceMinutes: 0,
       wordsLearned: 0,
-      fluencyWpm: 20,
-      accuracyPercent: 70,
-      happyPoints: 100,
-      streakDays: 1,
+      fluencyWpm: 0,
+      accuracyPercent: 0,
+      happyPoints: 0,
+      streakDays: 0,
       practiceWins: 0,
-      mistakes: [{ word: 'b / d', note: 'Letter mirror challenge', count: 1 }],
-      recentActivities: [
-        {
-          id: 'welcome-act',
-          title: 'Welcome to DyslexiMate!',
-          subtitle: 'Profile created · Start your first game',
-          tag: 'New',
-          icon: '🌱',
-          bg: '#e8f5ef',
-        },
-      ],
-      weeklyAccuracy: [60, 62, 65, 70, 70, 72, 75],
+      mistakes: [],
+      recentActivities: [],
+      weeklyAccuracy: [],
     };
     this.storage.saveRawProgress(progressMap);
 
@@ -368,7 +482,9 @@ export class ProfileService implements IProfileService {
           learning_preferences: mergedPreferences,
         };
         if (updates.name) dbPayload.display_name = updates.name.trim();
-        if (updates.preferredLanguage) dbPayload.preferred_language = updates.preferredLanguage;
+        if (updates.preferredLanguage) {
+          dbPayload.preferred_language = i18n.supportedLanguageToCode(updates.preferredLanguage);
+        }
 
         const { data: updatedRow, error } = await sb
           .from('child_profiles')
@@ -387,7 +503,7 @@ export class ProfileService implements IProfileService {
           parentId: updatedRow.parent_id,
           name: updatedRow.display_name,
           grade: lp.grade || current.grade,
-          preferredLanguage: (updatedRow.preferred_language as SupportedLanguage) || current.preferredLanguage,
+          preferredLanguage: i18n.codeToSupportedLanguage(updatedRow.preferred_language) || current.preferredLanguage,
           avatar: lp.avatar || current.avatar,
           preferences: lp.preferences || current.preferences,
           createdAt: updatedRow.created_at,
@@ -419,9 +535,14 @@ export class ProfileService implements IProfileService {
       throw new Error('Child profile not found.');
     }
 
+    const updatedLang = updates.preferredLanguage
+      ? (i18n.codeToSupportedLanguage(updates.preferredLanguage) || updates.preferredLanguage)
+      : current.preferredLanguage;
+
     const updated: ChildProfile = {
       ...current,
       ...updates,
+      preferredLanguage: updatedLang,
       id: current.id,
       parentId: current.parentId,
     };
@@ -506,29 +627,48 @@ export class ProfileService implements IProfileService {
         .eq('child_id', childId)
         .order('completed_at', { ascending: false });
 
-      if (error || !data || data.length === 0) return;
+      if (error || !data || data.length === 0) {
+        return;
+      }
 
       let totalPoints = 0;
       let totalDurationSec = 0;
-      let totalAccuracy = 0;
+      let totalAttempts = 0;
+      let totalCorrect = 0;
+      const uniqueDays = new Set<string>();
+      const learnedWords = new Set<string>();
 
       data.forEach(row => {
         totalPoints += row.score || 0;
         totalDurationSec += row.duration_seconds || 0;
-        totalAccuracy += Number(row.accuracy || 70);
+        const attempts = row.attempts || 1;
+        totalAttempts += attempts;
+        const accRatio = Math.max(0, Math.min(1, (Number(row.accuracy) || 0) / 100));
+        totalCorrect += Math.round(accRatio * attempts);
+
+        if (row.completed_at) {
+          const dateStr = String(row.completed_at).split('T')[0];
+          if (dateStr) uniqueDays.add(dateStr);
+        }
+
+        if (row.activity_or_skill_id && row.completion_status === 'completed') {
+          learnedWords.add(row.activity_or_skill_id);
+        }
       });
 
-      const avgAccuracy = Math.round(totalAccuracy / data.length);
-      const practiceMins = Math.max(1, Math.round(totalDurationSec / 60));
+      const avgAccuracy = totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : 0;
+      const practiceMins = Math.round(totalDurationSec / 60);
 
       const progressMap = this.storage.getRawProgress();
       const current = progressMap[childId] || this.getDefaultProgress(childId);
 
       progressMap[childId] = {
         ...current,
-        happyPoints: Math.max(current.happyPoints, totalPoints),
-        practiceMinutes: Math.max(current.practiceMinutes, practiceMins),
-        accuracyPercent: avgAccuracy || current.accuracyPercent,
+        happyPoints: totalPoints,
+        practiceMinutes: practiceMins,
+        accuracyPercent: avgAccuracy,
+        wordsLearned: learnedWords.size,
+        streakDays: uniqueDays.size,
       };
       this.storage.saveRawProgress(progressMap);
     } catch (err) {
@@ -539,16 +679,16 @@ export class ProfileService implements IProfileService {
   private getDefaultProgress(childId: string): ChildLearningData {
     return {
       childId,
-      practiceMinutes: 10,
-      wordsLearned: 5,
-      fluencyWpm: 25,
-      accuracyPercent: 75,
-      happyPoints: 120,
-      streakDays: 1,
-      practiceWins: 1,
+      practiceMinutes: 0,
+      wordsLearned: 0,
+      fluencyWpm: 0,
+      accuracyPercent: 0,
+      happyPoints: 0,
+      streakDays: 0,
+      practiceWins: 0,
       mistakes: [],
       recentActivities: [],
-      weeklyAccuracy: [60, 65, 70, 72, 75, 75, 78],
+      weeklyAccuracy: [],
     };
   }
 

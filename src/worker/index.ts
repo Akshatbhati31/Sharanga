@@ -136,6 +136,7 @@ export default {
             childName: body.childName,
             interest: body.interest,
             targetPattern: body.targetPattern,
+            variant: typeof body.variant === 'number' ? body.variant : undefined,
           };
         } catch {
           // Graceful fallback on body parse
