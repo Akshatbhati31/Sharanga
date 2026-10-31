@@ -330,17 +330,17 @@ a { color: inherit; text-decoration: none; }
   color-scheme: light;
   font-family: 'Atkinson Hyperlegible', 'Noto Sans Devanagari', sans-serif;
   color: #1e2a44;
-  background: #f8f7f2;
+  background: #f6f8fd;
   --ink: #1e2a44;
   --muted: #55607a;
-  --teal: #2f8f83;
-  --teal-dark: #2f8f83;
-  --paper: #f8f7f2;
-  --surface: #fffdf6;
-  --line: #d7d9d2;
-  --mint: #e8f1eb;
-  --yellow: #f2b632;
-  --coral: #e4572e;
+  --teal: #759bd6;
+  --teal-dark: #5f84c0;
+  --paper: #f6f8fd;
+  --surface: #fcfdff;
+  --line: #dee6f4;
+  --mint: #eaf1fc;
+  --yellow: #f8dde1;
+  --coral: #d98a97;
   --coral-text: #c94420;
   --shadow: 0 16px 42px rgba(30, 42, 68, .09);
 }
@@ -1021,4 +1021,91 @@ html[lang="hi"] select, [lang="hi"], [lang="hi"] * {
 .practice-resource small {
   color: #55607a;
   font-size: 12px;
+}
+
+body, .auth-panel { background: var(--paper); }
+
+.auth-story {
+  background: linear-gradient(145deg, #eaf1fc, #dce7f8);
+  color: #1e2a44;
+}
+.auth-story-copy .eyebrow { color: #536d9b; }
+.auth-story-copy h1, .auth-story-copy p, .auth-footnote,
+.brand-light, .brand-light .brand-word { color: #1e2a44; }
+.brand-light .brand-word > span, .brand-word > span { color: #a94d5b; }
+.brand-light .brand-mark { background: #fcfdff; }
+.auth-logo-card { box-shadow: 0 18px 38px rgba(70, 100, 150, .14); }
+
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, .profile-select:focus-visible {
+  outline-color: #759bd6;
+}
+.button-primary {
+  border-color: #759bd6;
+  background: #c5d6f1;
+  color: #1e2a44;
+}
+.button-primary:hover:not(:disabled) { background: #b4c9eb; }
+.button-warm, .banner-label {
+  border-color: #e6b9c0;
+  background: #f8dde1;
+  color: #653943;
+}
+.text-button, .profile-card-cta, .activity-card-bottom button,
+.rights-footer a, .practice-resource a, .suggestion-chip:hover {
+  color: #a94d5b;
+}
+.mini-danger { border-color: #e6b9c0; background: #fff0f1; color: #a94d5b; }
+
+.side-nav button:hover, .side-nav button.active {
+  border-color: #759bd6;
+  background: #eaf1fc;
+  color: #1e2a44;
+}
+.side-nav button.active { box-shadow: inset 4px 0 #759bd6; }
+.sidebar-tip { border-color: #e6b9c0; background: #fff6f7; }
+.profile-avatar, .parent-avatar, .next-icon, .goal-icon,
+.activity-tone-0 .activity-emoji, .activity-tone-1 .activity-emoji,
+.activity-tone-2 .activity-emoji, .activity-tone-3 .activity-emoji,
+.activity-tone-4 .activity-emoji, .stat-icon {
+  background: #fff0f1;
+}
+
+.welcome-banner { background: #eaf1fc; color: #1e2a44; }
+.welcome-copy .eyebrow { color: #536d9b; }
+.welcome-copy h2, .welcome-copy p { color: #1e2a44; }
+.welcome-copy .button-primary { background: #c5d6f1; color: #1e2a44; }
+.banner-label { border-color: #e6b9c0; }
+.bar-track, .progress-bars .bar-track { background: #eaf1fc; }
+.bar-fill { background: linear-gradient(#9bb6e3, #6488c7); }
+.goal-check { color: #6488c7; }
+
+.activity-tag, .history-row b {
+  border-color: #759bd6;
+  background: #eaf1fc;
+}
+.history-icon, .accessibility-note, .practice-resource {
+  border-left-color: #759bd6;
+  background: #eaf1fc;
+}
+.status-dot { background: #f8dde1; }
+.status-ready .status-dot {
+  border-color: #1e2a44;
+  background: #759bd6;
+  box-shadow: 0 0 0 4px #eaf1fc;
+}
+.suggestion-chip:hover { border-color: #e6b9c0; }
+
+.answer-option:hover:not(:disabled) { border-color: #759bd6; background: #f4f7fd; }
+.answer-option.answer-missed { border-color: #d98a97; background: #fff0f1; }
+.answer-option.answer-missed strong, .feedback-neutral::before,
+.error-panel > span, .toast-error { color: var(--coral-text); }
+.feedback-good { border-left-color: #759bd6; background: #eaf1fc; }
+.feedback-neutral { border-left-color: #d98a97; background: #fff0f1; }
+.spinner { border-color: #eaf1fc; border-top-color: #759bd6; }
+.toast { border-color: #759bd6; background: #fcfdff; }
+.toast-error { border-color: #e6b9c0; }
+
+@media (max-width: 700px) {
+  .auth-story { background: linear-gradient(145deg, #eaf1fc, #dce7f8); }
 }

@@ -42,7 +42,7 @@ import { DashboardController } from '../src/ui/dashboardController';
 import type { SupportedLanguage, AppLanguageCode, ChildProfile } from '../src/types/auth';
 import { StoryShelfService } from '../src/services/storyShelfService';
 
-// Polyfill localStorage, document & SpeechSynthesis for Node test environment
+// Polyfill browser APIs missing from the Node test environment
 if (typeof globalThis.localStorage === 'undefined') {
   const store: Record<string, string> = {};
   globalThis.localStorage = {
