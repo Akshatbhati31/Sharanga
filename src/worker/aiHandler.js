@@ -1,3 +1,4 @@
+function validateActivityContent(content) {
 function validateActivityContent(content, targetLanguage) {
   if (!content || typeof content !== "object") {
     return { valid: false, error: "Activity content must be an object." };
