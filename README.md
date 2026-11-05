@@ -190,29 +190,43 @@ Persistent personalization depends on the database being correctly configured an
 
 ## ☁️ Deployment
 
-The project supports deployment through Cloudflare Workers using its Wrangler configuration, where configured.
+DyslexiMate is deployed using **Vercel**, with GitHub integration for continuous deployment.
 
-Authenticate with Cloudflare:
+### Production Deployment
 
-```bash
-npx wrangler login
-```
+The production application is hosted at:
 
-Build the application:
+https://sharanga.vercel.app
 
-```bash
-npm run build
-```
+### Deploy Your Own Instance
 
-Deploy using the project's existing configuration:
+1. Fork or clone the repository.
+2. Import the repository into your Vercel account.
+3. Configure the required environment variables in Vercel Project Settings.
+4. Verify the build configuration.
+5. Deploy the application.
 
-```bash
-npx wrangler deploy
-```
+Vercel automatically builds and deploys changes pushed to the configured production branch.
 
-Configure required server-side secrets in the appropriate Cloudflare environment before enabling integrations that depend on them. Never include actual secret values in this README or in source control.
+### Backend and API Functions
 
----
+The application uses Vercel serverless API routes for supported backend functionality.
+
+Configure all required API credentials as server-side environment variables. Never expose private API keys in frontend code or commit them to source control.
+
+## 🛠️ Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| TypeScript | Application logic and type safety |
+| Vite | Frontend development and build tooling |
+| Supabase | Authentication, database, and persistent learning data |
+| Vercel | Production hosting and serverless API routes |
+| TinyFish | Educational resource discovery integration |
+| AI Services | AI-assisted learning activities and personalization |
+| HTML5 & CSS3 | Application structure, styling, and responsive layouts |
+
+The availability of individual integrations depends on their configuration and required environment variables.
 
 ## 🔐 Privacy and Responsible AI
 
@@ -260,10 +274,12 @@ We welcome ideas, feedback, and contributions that improve the learning experien
 
 ## 📄 License
 
-A license has not been specified in this README. Add the project's chosen license before distributing it under an open-source license.
+DyslexiMate is a collaborative project developed by **Team PINAKA**.
 
----
+The project's original source code, designs, documentation, and educational materials are proprietary. All rights are reserved by their respective contributors.
 
-**DyslexiMate — Every child deserves a learning path that adapts to them.**
+Copying, modifying, redistributing, or commercially using these materials requires prior written permission from the respective copyright holders.
 
-**Built with care by Team PINAKA.**
+Third-party components remain subject to their respective licenses.
+
+**© 2026 Team PINAKA. All Rights Reserved.**
