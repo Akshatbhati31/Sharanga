@@ -9,6 +9,7 @@ export interface ReadingPreferences {
   highContrast: boolean;
   soundEffects: boolean;
   autoReadAloud: boolean;
+  languages?: SupportedLanguage[];
 }
 
 export interface ChildProfile {
@@ -17,6 +18,7 @@ export interface ChildProfile {
   name: string;
   grade: string;
   preferredLanguage: SupportedLanguage;
+  languages?: SupportedLanguage[];
   avatar: string;
   preferences: ReadingPreferences;
   createdAt: string;
