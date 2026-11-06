@@ -158,6 +158,7 @@ export class ProfileService implements IProfileService {
             name: row.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
             preferredLanguage: i18n.codeToSupportedLanguage(row.preferred_language) || 'English',
+            languages: lp.languages || lp.preferences?.languages || [i18n.codeToSupportedLanguage(row.preferred_language) || 'English'],
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -207,6 +208,7 @@ export class ProfileService implements IProfileService {
             name: data.display_name,
             grade: lp.grade || 'Class 3 · Growing reader',
             preferredLanguage: i18n.codeToSupportedLanguage(data.preferred_language) || 'English',
+            languages: lp.languages || lp.preferences?.languages || [i18n.codeToSupportedLanguage(data.preferred_language) || 'English'],
             avatar: lp.avatar || '👧🏽',
             preferences: lp.preferences || {
               readingSpeed: 'normal',
@@ -316,12 +318,16 @@ export class ProfileService implements IProfileService {
             learning_preferences: {
               grade: data.grade || 'Class 3 · Growing reader',
               avatar: data.avatar || '👧🏽',
-              preferences: data.preferences || {
-                readingSpeed: 'normal',
-                dyslexiaFont: false,
-                highContrast: false,
-                soundEffects: true,
-                autoReadAloud: false,
+              languages: data.languages || data.preferences?.languages || [supportedLang],
+              preferences: {
+                ...(data.preferences || {
+                  readingSpeed: 'normal',
+                  dyslexiaFont: false,
+                  highContrast: false,
+                  soundEffects: true,
+                  autoReadAloud: false,
+                }),
+                languages: data.languages || data.preferences?.languages || [supportedLang],
               },
             },
           })
@@ -342,12 +348,16 @@ export class ProfileService implements IProfileService {
                 learning_preferences: {
                   grade: data.grade || 'Class 3 · Growing reader',
                   avatar: data.avatar || '👧🏽',
-                  preferences: data.preferences || {
-                    readingSpeed: 'normal',
-                    dyslexiaFont: false,
-                    highContrast: false,
-                    soundEffects: true,
-                    autoReadAloud: false,
+                  languages: data.languages || data.preferences?.languages || [supportedLang],
+                  preferences: {
+                    ...(data.preferences || {
+                      readingSpeed: 'normal',
+                      dyslexiaFont: false,
+                      highContrast: false,
+                      soundEffects: true,
+                      autoReadAloud: false,
+                    }),
+                    languages: data.languages || data.preferences?.languages || [supportedLang],
                   },
                 },
               })
@@ -368,6 +378,7 @@ export class ProfileService implements IProfileService {
           name: newRow.display_name,
           grade: lp.grade || data.grade,
           preferredLanguage: i18n.codeToSupportedLanguage(newRow.preferred_language) || supportedLang,
+          languages: lp.languages || lp.preferences?.languages || data.languages || [supportedLang],
           avatar: lp.avatar || data.avatar,
           preferences: lp.preferences || data.preferences,
           createdAt: newRow.created_at,
@@ -420,19 +431,24 @@ export class ProfileService implements IProfileService {
     }
 
     // Local / Demo Mode profile creation
+    const configuredLanguages = data.languages || data.preferences?.languages || [data.preferredLanguage || 'English'];
     const newChild: ChildProfile = {
       id: 'child-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
       parentId,
       name: data.name.trim(),
       grade: data.grade || 'Class 3 · Growing reader',
       preferredLanguage: data.preferredLanguage || 'English',
+      languages: configuredLanguages,
       avatar: data.avatar || '👧🏽',
-      preferences: data.preferences || {
-        readingSpeed: 'normal',
-        dyslexiaFont: false,
-        highContrast: false,
-        soundEffects: true,
-        autoReadAloud: false,
+      preferences: {
+        ...(data.preferences || {
+          readingSpeed: 'normal',
+          dyslexiaFont: false,
+          highContrast: false,
+          soundEffects: true,
+          autoReadAloud: false,
+        }),
+        languages: configuredLanguages,
       },
       createdAt: new Date().toISOString(),
     };
@@ -476,6 +492,7 @@ export class ProfileService implements IProfileService {
           grade: updates.grade !== undefined ? updates.grade : current.grade,
           avatar: updates.avatar !== undefined ? updates.avatar : current.avatar,
           preferences: updates.preferences !== undefined ? updates.preferences : current.preferences,
+          languages: updates.languages !== undefined ? updates.languages : (updates.preferences?.languages || current.languages),
         };
 
         const dbPayload: any = {
@@ -504,6 +521,7 @@ export class ProfileService implements IProfileService {
           name: updatedRow.display_name,
           grade: lp.grade || current.grade,
           preferredLanguage: i18n.codeToSupportedLanguage(updatedRow.preferred_language) || current.preferredLanguage,
+          languages: lp.languages || lp.preferences?.languages || current.languages,
           avatar: lp.avatar || current.avatar,
           preferences: lp.preferences || current.preferences,
           createdAt: updatedRow.created_at,

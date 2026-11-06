@@ -81,6 +81,7 @@ export class StorageService {
           name: 'Aanya Sharma',
           grade: 'Class 4 · Little reader',
           preferredLanguage: 'English',
+          languages: ['English', 'Hindi'],
           avatar: '👧🏽',
           preferences: {
             readingSpeed: 'normal',
@@ -88,6 +89,7 @@ export class StorageService {
             highContrast: false,
             soundEffects: true,
             autoReadAloud: false,
+            languages: ['English', 'Hindi'],
           },
           createdAt: new Date().toISOString(),
         },
@@ -97,6 +99,7 @@ export class StorageService {
           name: 'Kabir Sharma',
           grade: 'Class 2 · Early reader',
           preferredLanguage: 'Hindi',
+          languages: ['Hindi', 'English', 'Punjabi'],
           avatar: '👦🏻',
           preferences: {
             readingSpeed: 'slow',
@@ -104,6 +107,7 @@ export class StorageService {
             highContrast: false,
             soundEffects: true,
             autoReadAloud: true,
+            languages: ['Hindi', 'English', 'Punjabi'],
           },
           createdAt: new Date().toISOString(),
         },
