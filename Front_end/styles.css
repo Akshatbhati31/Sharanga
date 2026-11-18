@@ -291,13 +291,12 @@ img {
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #087f78, #05615c);
+  background: #f8f7f2;
+  border: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  font-size: 20px;
-  box-shadow: 0 4px 12px rgba(8, 127, 120, 0.25);
+  box-shadow: 0 2px 8px rgba(19, 36, 46, 0.06);
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
@@ -335,6 +334,62 @@ img {
   color: var(--text-subtle);
   letter-spacing: 0.5px;
   text-transform: uppercase;
+}
+
+/* Logo container for dark or colored backgrounds (e.g. Parent Portal on teal) */
+.site-brand.brand-light,
+.auth-story .site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background-color: #ffffff;
+  padding: 8px 18px 8px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 24px -4px rgba(4, 40, 38, 0.22), 0 2px 6px rgba(0, 0, 0, 0.06);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+  width: fit-content;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.site-brand.brand-light .brand-icon-box,
+.auth-story .site-brand .brand-icon-box {
+  background: #f8f7f2;
+  border: 1px solid rgba(8, 127, 120, 0.12);
+  box-shadow: 0 2px 6px rgba(19, 36, 46, 0.06);
+}
+
+.site-brand.brand-light .brand-title,
+.auth-story .site-brand .brand-title {
+  color: var(--text-main);
+}
+
+.site-brand.brand-light .brand-title span,
+.auth-story .site-brand .brand-title span {
+  color: var(--primary);
+}
+
+.site-brand.brand-light .brand-team-tag,
+.auth-story .site-brand .brand-team-tag {
+  color: var(--text-muted);
+}
+
+a.brand-light,
+a.brand.brand-light {
+  display: inline-block;
+  text-decoration: none;
+  width: fit-content;
+  align-self: flex-start;
+}
+
+a.brand-light:hover .site-brand.brand-light,
+a:hover .site-brand.brand-light,
+.site-brand.brand-light:hover,
+.auth-story a:hover .site-brand {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px -4px rgba(4, 40, 38, 0.28), 0 4px 10px rgba(0, 0, 0, 0.08);
+  border-color: #ffffff;
 }
 
 .site-nav-links {
@@ -1362,9 +1417,13 @@ img {
 .auth-logo-card {
   width: 180px;
   height: auto;
+  background-color: #ffffff;
+  padding: 14px;
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.85);
   margin-top: 24px;
+  object-fit: contain;
 }
 
 .auth-panel {

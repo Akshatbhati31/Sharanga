@@ -275,7 +275,7 @@ function rightsFooter(): string {
 // ----------------------------------------------------
 function renderLandingPage(currentUser = auth.getCurrentUser()): void {
   const isDemoSignedIn = Boolean(currentUser);
-  
+
   root!.innerHTML = `
     <!-- Top Sticky Navigation -->
     <header class="site-header">
@@ -559,8 +559,8 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
               <div id="reading-ruler-bar" class="reading-ruler ${playgroundRulerActive ? 'active' : ''}"></div>
               <p id="playground-text" style="margin: 0;">
                 ${playgroundSyllablesActive
-                  ? `<span class="syllable-chunk">The</span> <span class="syllable-chunk">lit</span>·<span class="syllable-chunk">tle</span> <span class="syllable-chunk">fox</span> <span class="syllable-chunk">sat</span> <span class="syllable-chunk">on</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">warm</span> <span class="syllable-chunk">stone.</span> <span class="syllable-chunk">In</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">qui</span>·<span class="syllable-chunk">et</span> <span class="syllable-chunk">eve</span>·<span class="syllable-chunk">ning,</span> <span class="syllable-chunk">a</span> <span class="syllable-chunk">bright</span> <span class="syllable-chunk">sil</span>·<span class="syllable-chunk">ver</span> <span class="syllable-chunk">star</span> <span class="syllable-chunk">twin</span>·<span class="syllable-chunk">kled</span> <span class="syllable-chunk">a</span>·<span class="syllable-chunk">bove</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">tall</span> <span class="syllable-chunk">pine</span> <span class="syllable-chunk">trees.</span> <span class="syllable-chunk">"Ev</span>·<span class="syllable-chunk">ery</span> <span class="syllable-chunk">jour</span>·<span class="syllable-chunk">ney</span> <span class="syllable-chunk">be</span>·<span class="syllable-chunk">gins</span> <span class="syllable-chunk">with</span> <span class="syllable-chunk">a</span> <span class="syllable-chunk">sin</span>·<span class="syllable-chunk">gle</span> <span class="syllable-chunk">step,"</span> <span class="syllable-chunk">whis</span>·<span class="syllable-chunk">pered</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">friend</span>·<span class="syllable-chunk">ly</span> <span class="syllable-chunk">owl</span> <span class="syllable-chunk">from</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">branch.</span>`
-                  : `The little fox sat on the warm stone. In the quiet evening, a bright silver star twinkled above the tall pine trees. "Every journey begins with a single step," whispered the friendly owl from the branch.`}
+      ? `<span class="syllable-chunk">The</span> <span class="syllable-chunk">lit</span>·<span class="syllable-chunk">tle</span> <span class="syllable-chunk">fox</span> <span class="syllable-chunk">sat</span> <span class="syllable-chunk">on</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">warm</span> <span class="syllable-chunk">stone.</span> <span class="syllable-chunk">In</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">qui</span>·<span class="syllable-chunk">et</span> <span class="syllable-chunk">eve</span>·<span class="syllable-chunk">ning,</span> <span class="syllable-chunk">a</span> <span class="syllable-chunk">bright</span> <span class="syllable-chunk">sil</span>·<span class="syllable-chunk">ver</span> <span class="syllable-chunk">star</span> <span class="syllable-chunk">twin</span>·<span class="syllable-chunk">kled</span> <span class="syllable-chunk">a</span>·<span class="syllable-chunk">bove</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">tall</span> <span class="syllable-chunk">pine</span> <span class="syllable-chunk">trees.</span> <span class="syllable-chunk">"Ev</span>·<span class="syllable-chunk">ery</span> <span class="syllable-chunk">jour</span>·<span class="syllable-chunk">ney</span> <span class="syllable-chunk">be</span>·<span class="syllable-chunk">gins</span> <span class="syllable-chunk">with</span> <span class="syllable-chunk">a</span> <span class="syllable-chunk">sin</span>·<span class="syllable-chunk">gle</span> <span class="syllable-chunk">step,"</span> <span class="syllable-chunk">whis</span>·<span class="syllable-chunk">pered</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">friend</span>·<span class="syllable-chunk">ly</span> <span class="syllable-chunk">owl</span> <span class="syllable-chunk">from</span> <span class="syllable-chunk">the</span> <span class="syllable-chunk">branch.</span>`
+      : `The little fox sat on the warm stone. In the quiet evening, a bright silver star twinkled above the tall pine trees. "Every journey begins with a single step," whispered the friendly owl from the branch.`}
               </p>
             </div>
 
@@ -734,7 +734,7 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
           <div class="footer-col">
             <h4>Team PINAKA</h4>
             <ul>
-              <li><a href="https://github.com/yashmishra1201-arch/Sharanga" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+              <li><a href="https://github.com/Akshatbhati31/Sharanga" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
               <li><a href="mailto:team.nexus.dtu.26.30@gmail.com">Contact Team PINAKA</a></li>
               <li><a data-action="open-auth" data-mode="login">Parent Sign In</a></li>
               <li><a data-action="launch-demo">Demo Sandbox</a></li>
@@ -980,8 +980,8 @@ function renderShell(userName: string): string {
               <div class="custom-lang-menu" role="listbox" aria-label="Learner languages">
                 <div class="custom-lang-menu-header">My Languages (${learnerLanguages.length})</div>
                 ${learnerLanguages.map(lang => {
-                  const isSelected = lang === child.preferredLanguage;
-                  return `
+    const isSelected = lang === child.preferredLanguage;
+    return `
                     <button
                       type="button"
                       role="option"
@@ -997,7 +997,7 @@ function renderShell(userName: string): string {
                       ${isSelected ? '<span class="custom-lang-checkmark" aria-hidden="true">✓</span>' : ''}
                     </button>
                   `;
-                }).join('')}
+  }).join('')}
               </div>
             </div>
 
@@ -1051,7 +1051,7 @@ async function homePage(): Promise<string> {
   const rec = path.recommendations[0];
   const actualAccuracy = chart.overallAccuracy;
   const bars = chart.dataPoints.slice(-7);
-  
+
   const chartMarkup = chart.isEmpty
     ? `<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="margin-top: 8px; color: var(--text-muted); font-size: 13px;">${escapeHtml(chart.emptyMessage)}</p></div>`
     : `<div class="accuracy-bars" role="img" aria-label="Recent recorded accuracy: ${bars.map(point => `${point.dayLabel} ${point.accuracyPercent}%`).join(', ')}">
@@ -1127,8 +1127,8 @@ function practicePage(): string {
 
     <div class="curriculum-grid">
       ${ACTIVITY_CATALOG.map((item, index) => {
-        const rec = recs.get(item.skillId);
-        return `
+    const rec = recs.get(item.skillId);
+    return `
           <article class="curriculum-card tone-${index % 6}">
             <div class="card-top-row">
               <span class="curriculum-emoji">${escapeHtml(item.icon)}</span>
@@ -1143,7 +1143,7 @@ function practicePage(): string {
               </button>
             </div>
           </article>`;
-      }).join('')}
+  }).join('')}
     </div>`;
 }
 
@@ -1180,9 +1180,9 @@ async function progressPage(): Promise<string> {
         </div>
       </div>
       
-      ${chart.isEmpty 
-        ? '<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="color: var(--text-muted); margin-top: 8px;">Complete a practice adventure to start your chart.</p></div>' 
-        : `<div class="accuracy-bars" style="height: 180px;">
+      ${chart.isEmpty
+      ? '<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="color: var(--text-muted); margin-top: 8px;">Complete a practice adventure to start your chart.</p></div>'
+      : `<div class="accuracy-bars" style="height: 180px;">
             ${chart.dataPoints.slice(-14).map(point => `
               <div class="bar-item">
                 <div class="bar-track" style="height: 150px;">
@@ -1301,12 +1301,12 @@ function renderResources(resources: EducationalResource[]): string {
       <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 16px;">${resources.length} learning ${resources.length === 1 ? 'idea' : 'ideas'} found</h3>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
         ${resources.map(resource => {
-          let safeUrl = '';
-          try {
-            const parsed = new URL(resource.url);
-            if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
-          } catch { safeUrl = ''; }
-          return `
+    let safeUrl = '';
+    try {
+      const parsed = new URL(resource.url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
+    } catch { safeUrl = ''; }
+    return `
             <article class="surface" style="display: flex; flex-direction: column; justify-content: space-between;">
               <div>
                 <span class="badge badge-primary" style="margin-bottom: 8px;">${escapeHtml(resource.resourceType.replace(/_/g, ' '))}</span>
@@ -1318,7 +1318,7 @@ function renderResources(resources: EducationalResource[]): string {
                 ${safeUrl ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">Open resource ↗</a>` : ''}
               </div>
             </article>`;
-        }).join('')}
+  }).join('')}
       </div>
       ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 14px;">${escapeHtml(resourceDisclaimer)}</p>` : ''}
     </section>`;
@@ -1437,8 +1437,8 @@ function showProfileForm(child?: ChildProfile): void {
             </span>
             <div class="lang-checkbox-grid">
               ${allSupportedLangs.map(lang => {
-                const isChecked = currentConfiguredLangs.includes(lang);
-                return `
+    const isChecked = currentConfiguredLangs.includes(lang);
+    return `
                   <label class="lang-checkbox-pill ${isChecked ? 'checked' : ''}">
                     <input
                       type="checkbox"
@@ -1449,7 +1449,7 @@ function showProfileForm(child?: ChildProfile): void {
                     <span>${languageFlags[lang] || '🌐'} ${escapeHtml(lang)}</span>
                   </label>
                 `;
-              }).join('')}
+  }).join('')}
             </div>
           </div>
           <label>Active starting language
@@ -1613,15 +1613,15 @@ function renderActivityModal(feedback = '', answered = false, feedbackIsPositive
             </button>
           ` : ''}
           ${answered ? (
-            activitySaveFailed
-              ? `<button type="button" class="btn btn-outline btn-sm" data-action="close-activity">Close activity</button>`
-              : activityQuestionNumber < activityQuestionLimit
-                ? `<button type="button" class="btn btn-outline btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>Finish now</button>
+      activitySaveFailed
+        ? `<button type="button" class="btn btn-outline btn-sm" data-action="close-activity">Close activity</button>`
+        : activityQuestionNumber < activityQuestionLimit
+          ? `<button type="button" class="btn btn-outline btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>Finish now</button>
                    <button type="button" class="btn btn-primary btn-sm" data-action="next-question" ${activitySaving ? 'disabled' : ''}>Next question →</button>`
-                : `<button type="button" class="btn btn-primary btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>
+          : `<button type="button" class="btn btn-primary btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>
                     ${activitySaving ? 'Saving progress…' : 'Finish &amp; celebrate 🎉'}
                    </button>`
-          ) : ''}
+    ) : ''}
         </div>
       </section>
     </div>`;
@@ -1771,7 +1771,7 @@ async function finishActivity(): Promise<void> {
   practiceResourceRequestId++;
   document.body.style.overflow = '';
   toast(`Adventure complete! +${5 * attempts.length} happy points 🎉`);
-  
+
   // If user was on the landing page, return to landing page, else render dashboard
   await renderAppPage();
 }
@@ -1889,7 +1889,7 @@ root!.addEventListener('click', async event => {
       mobileMenuOpen = false;
       const drawer = root!.querySelector<HTMLElement>('#mobile-nav-drawer');
       if (drawer) drawer.classList.remove('open');
-      
+
       if (activePage !== 'landing') {
         navigateTo('landing', { scrollToTop: false });
         setTimeout(() => {
@@ -1902,7 +1902,7 @@ root!.addEventListener('click', async event => {
         }, 60);
         return;
       }
-      
+
       if (targetId === 'top') {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else if (targetId) {
@@ -2120,12 +2120,12 @@ root!.addEventListener('submit', async event => {
       const password = String(data.get('password') || '');
       const result = authMode === 'register'
         ? await auth.register({
-            fullName: String(data.get('fullName') || ''),
-            email,
-            password,
-            confirmPassword: String(data.get('confirmPassword') || ''),
-            acceptTerms: data.get('acceptTerms') === 'on',
-          })
+          fullName: String(data.get('fullName') || ''),
+          email,
+          password,
+          confirmPassword: String(data.get('confirmPassword') || ''),
+          acceptTerms: data.get('acceptTerms') === 'on',
+        })
         : await auth.login({ email, password });
 
       const message = root!.querySelector<HTMLElement>('#auth-message');
