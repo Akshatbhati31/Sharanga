@@ -255,7 +255,7 @@ export class AuthService implements IAuthService {
     }
 
     // Preserve seeded demo parent login under all conditions
-    const isDemoAccount = email === 'parent@dysleximate.demo';
+    const isDemoAccount = email === 'parent@dysleximate.demo' || email === 'suresh_44@gmail.com';
     if (isDemoAccount || !isSupabaseConfigured() || !supabase) {
       await new Promise(res => setTimeout(res, 200));
       const users = this.storage.getRawUsers();
@@ -653,7 +653,7 @@ export class AuthService implements IAuthService {
 
     const hashed = await hashPin(pin);
 
-    if (isSupabaseConfigured() && supabase && !this.currentUser.id.startsWith('parent-demo-')) {
+    if (isSupabaseConfigured() && supabase && !this.currentUser.id.startsWith('parent-demo') && !this.currentUser.id.startsWith('parent-suresh')) {
       try {
         const { error } = await supabase
           .from('parent_profiles')
@@ -703,7 +703,7 @@ export class AuthService implements IAuthService {
 
     let targetHash: string | undefined;
 
-    if (isSupabaseConfigured() && supabase && !this.currentUser.id.startsWith('parent-demo-')) {
+    if (isSupabaseConfigured() && supabase && !this.currentUser.id.startsWith('parent-demo') && !this.currentUser.id.startsWith('parent-suresh')) {
       try {
         const { data, error } = await supabase
           .from('parent_profiles')

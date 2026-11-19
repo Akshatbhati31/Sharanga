@@ -4,6 +4,7 @@ import type {
   ChildLearningData,
   ActivityLogRecord,
 } from '../types/auth';
+import { seedSiyaHistoricalData } from './historicalDemoData';
 
 const STORAGE_KEYS = {
   USERS: 'dysleximate_demo_parents_v2',
@@ -248,6 +249,9 @@ export class StorageService {
       ];
       this.saveRawActivities(sampleActivities);
     }
+
+    // Ensure Siya 15-day demo progress is initialized
+    void seedSiyaHistoricalData();
   }
 
   // --- Users ---
