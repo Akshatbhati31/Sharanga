@@ -40,6 +40,13 @@ import { ChildModalView } from '../src/ui/childModalView';
 import { DashboardController } from '../src/ui/dashboardController';
 import type { SupportedLanguage, AppLanguageCode, ChildProfile } from '../src/types/auth';
 import { StoryShelfService } from '../src/services/storyShelfService';
+import {
+  seedSiyaHistoricalData,
+  SIYA_PARENT_ID,
+  SIYA_CHILD_ID,
+  SIYA_PARENT_EMAIL,
+  SIYA_15_DAY_ATTEMPTS,
+} from '../src/services/historicalDemoData';
 
 // Polyfill browser APIs missing from the Node test environment
 if (typeof globalThis.localStorage === 'undefined') {
@@ -3206,6 +3213,119 @@ async function runTests() {
     password: 'Password123!',
   });
   assert(relogin.success, 'Account password remains intact and independent of PIN verification');
+
+  // =========================================================================
+  // Test Group 21: 15-Day Historical Learning Demo for Siya (Suresh Sharma)
+  // =========================================================================
+  console.log(`\n--- Test Group 21: 15-Day Historical Learning Demo for Siya ---`);
+
+  // Ensure demo seed is executed
+  await seedSiyaHistoricalData();
+
+  // 21.1 Authenticate Suresh Sharma (suresh_44@gmail.com)
+  await authInstance.logout();
+  const sureshLogin = await authInstance.login({
+    email: 'suresh_44@gmail.com',
+    password: 'Password123!',
+  });
+  assert(sureshLogin.success && sureshLogin.user !== null, 'Suresh Sharma successfully logs in with registered credentials');
+  assert(sureshLogin.user!.email === 'suresh_44@gmail.com', 'Authenticated session matches Suresh Sharma email');
+  assert(sureshLogin.user!.id === SIYA_PARENT_ID, 'Authenticated session has correct Suresh Sharma parent ID');
+
+  // 21.2 Verify Parent PIN for Suresh
+  assert(authInstance.hasParentPin(), 'Suresh Sharma has configured parent PIN');
+  const sureshWrongPin = await authInstance.verifyParentPin('9999');
+  assert(!sureshWrongPin.success, 'Invalid PIN 9999 is rejected for Suresh Sharma');
+  const sureshCorrectPin = await authInstance.verifyParentPin('1234');
+  assert(sureshCorrectPin.success, 'Correct PIN 1234 unlocks Parent Portal for Suresh Sharma');
+
+  // 21.3 Retrieve Siya's Child Profile
+  const sureshChildren = await ps.getChildren(sureshLogin.user!.id);
+  assert(sureshChildren.length === 1, 'Suresh has exactly one registered child profile');
+  const siya = sureshChildren[0];
+  assert(siya.id === SIYA_CHILD_ID, 'Child profile ID matches SIYA_CHILD_ID');
+  assert(siya.name === 'Siya', 'Child name is Siya');
+  assert(siya.grade.includes('7') || (siya as any).age === 7, 'Siya age is 7 years (Class 2 · 7 years old)');
+  assert(siya.preferredLanguage === 'English', 'Siya learning language is English');
+
+  // 21.4 Verify Siya's 15-Day Historical Learning Attempts (Nov 5 - Nov 19, 2026)
+  const siyaAttempts = await learningPathService.getChildAttempts(siya.id);
+  console.log(`siyaAttempts count: ${siyaAttempts.length}, SIYA_15_DAY_ATTEMPTS count: ${SIYA_15_DAY_ATTEMPTS.length}`);
+  assert(siyaAttempts.length === SIYA_15_DAY_ATTEMPTS.length, `Siya has all ${SIYA_15_DAY_ATTEMPTS.length} recorded learning attempts across 15 days`);
+
+  // Group attempts by date (YYYY-MM-DD)
+  const dailyAttemptsMap = new Map<string, { totalQ: number; correct: number; points: number }>();
+  siyaAttempts.forEach(att => {
+    const d = att.completedAt.slice(0, 10);
+    if (!dailyAttemptsMap.has(d)) {
+      dailyAttemptsMap.set(d, { totalQ: 0, correct: 0, points: 0 });
+    }
+    const entry = dailyAttemptsMap.get(d)!;
+    entry.totalQ += att.totalQuestions;
+    entry.correct += att.correctAnswers;
+    entry.points += att.score;
+  });
+
+  assert(dailyAttemptsMap.size === 15, 'Exactly 15 distinct historical calendar days present in learning records');
+
+  // Expected 15-day target values from user specification
+  const expectedDailyTargets = [
+    { date: '2026-11-05', accuracy: 48, points: 12 },
+    { date: '2026-11-06', accuracy: 54, points: 18 },
+    { date: '2026-11-07', accuracy: 51, points: 10 },
+    { date: '2026-11-08', accuracy: 59, points: 22 },
+    { date: '2026-11-09', accuracy: 64, points: 25 },
+    { date: '2026-11-10', accuracy: 57, points: 14 },
+    { date: '2026-11-11', accuracy: 67, points: 28 },
+    { date: '2026-11-12', accuracy: 71, points: 32 },
+    { date: '2026-11-13', accuracy: 65, points: 19 },
+    { date: '2026-11-14', accuracy: 74, points: 35 },
+    { date: '2026-11-15', accuracy: 78, points: 40 },
+    { date: '2026-11-16', accuracy: 72, points: 24 },
+    { date: '2026-11-17', accuracy: 82, points: 42 },
+    { date: '2026-11-18', accuracy: 79, points: 36 },
+    { date: '2026-11-19', accuracy: 88, points: 48 },
+  ];
+
+  let cumulativePoints = 0;
+  for (const target of expectedDailyTargets) {
+    const dayData = dailyAttemptsMap.get(target.date);
+    assert(dayData !== undefined, `Day record exists for date ${target.date}`);
+    const dayAccuracy = Math.round((dayData!.correct / dayData!.totalQ) * 100);
+    assert(
+      dayAccuracy === target.accuracy,
+      `Date ${target.date}: actual accuracy ${dayAccuracy}% matches target ${target.accuracy}% (correct: ${dayData!.correct}/${dayData!.totalQ})`
+    );
+    assert(
+      dayData!.points === target.points,
+      `Date ${target.date}: daily Happy Points ${dayData!.points} matches target ${target.points}`
+    );
+    cumulativePoints += dayData!.points;
+  }
+
+  // 21.5 Verify Cumulative Happy Points reach exactly 405
+  assert(cumulativePoints === 405, `Cumulative Happy Points across 15 days is exactly 405 (got ${cumulativePoints})`);
+  const siyaProgress = ps.getChildProgress(siya.id);
+  assert(siyaProgress.happyPoints === 405, `Child progress happyPoints reflects cumulative 405 total (got ${siyaProgress.happyPoints})`);
+
+  // 21.6 Verify Reading Confidence Chart Summary for Siya
+  const siyaChartSummary = await chartService.getChartSummary(siya.id, 'all');
+  assert(!siyaChartSummary.isEmpty, 'Reading chart is not empty for Siya');
+  assert(siyaChartSummary.dataPoints.length === 15, `Reading chart contains 15 daily data points (got ${siyaChartSummary.dataPoints.length})`);
+  assert(siyaChartSummary.trend === 'improving', 'Reading chart trend is correctly identified as improving');
+  assert(siyaChartSummary.overallAccuracy !== null && siyaChartSummary.overallAccuracy > 65, 'Overall weighted accuracy is calculated');
+  assert(siyaChartSummary.svgPathD.length > 0, 'SVG trajectory path d string generated for visualization');
+
+  // 21.7 Verify Data Isolation: Siya records do not bleed into demo parent (Aanya / Kabir)
+  await authInstance.logout();
+  const demoParentLogin = await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  const demoChildren = await ps.getChildren(demoParentLogin.user!.id);
+  assert(!demoChildren.some(c => c.id === SIYA_CHILD_ID), 'Demo parent does not have access to Siya profile');
+  const aanyaAttempts = await learningPathService.getChildAttempts(demoChildren[0].id);
+  assert(!aanyaAttempts.some(a => a.childId === SIYA_CHILD_ID), 'Siya attempts are completely isolated from Aanya');
 
 
   console.log(`\n==========================================`);

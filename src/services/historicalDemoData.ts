@@ -1,0 +1,1195 @@
+import type {
+  ChildProfile,
+  ChildLearningData,
+  ActivityLogRecord,
+} from '../types/auth';
+import type {
+  LearningAttempt,
+  LearningPath,
+} from '../types/adaptive';
+import { hashPassword, hashPin, type StoredParentUser } from './storageService';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+export const SIYA_PARENT_ID = 'parent-suresh-demo';
+export const SIYA_CHILD_ID = 'child-siya-demo';
+export const SIYA_PARENT_EMAIL = 'suresh_44@gmail.com';
+
+/**
+ * 15-day synthetic learning attempts for Siya (Nov 5 - Nov 19, 2026).
+ * Realistically represents learning journey with early struggle, gradual gains,
+ * occasional setbacks, resilient recovery, and peak accuracy.
+ */
+export const SIYA_15_DAY_ATTEMPTS: LearningAttempt[] = [
+  // Day 1: Nov 5, 2026 (Target: 48%, 12 pts)
+  {
+    id: 'att_siya_20261105_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_bd_mirror_detective',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'practice',
+    score: 5,
+    accuracy: 0.5,
+    totalQuestions: 10,
+    correctAnswers: 5,
+    incorrectAnswers: 5,
+    attemptsRequired: 10,
+    hintsRequested: 3,
+    correctedAfterHint: 2,
+    durationSeconds: 240,
+    missedItems: ['b', 'd'],
+    completedAt: '2026-11-05T09:15:00.000Z',
+    feedbackNotes: 'Gentle guidance provided on baseball bat orientation.',
+  },
+  {
+    id: 'att_siya_20261105_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_letter_sound_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'practice',
+    score: 7,
+    accuracy: 7 / 15,
+    totalQuestions: 15,
+    correctAnswers: 7,
+    incorrectAnswers: 8,
+    attemptsRequired: 15,
+    hintsRequested: 4,
+    correctedAfterHint: 2,
+    durationSeconds: 360,
+    missedItems: ['m', 'n', 'p'],
+    completedAt: '2026-11-05T09:28:00.000Z',
+  },
+
+  // Day 2: Nov 6, 2026 (Target: 54%, 18 pts)
+  {
+    id: 'att_siya_20261106_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_first_sound_safari',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'practice',
+    score: 8,
+    accuracy: 6 / 11,
+    totalQuestions: 11,
+    correctAnswers: 6,
+    incorrectAnswers: 5,
+    attemptsRequired: 11,
+    hintsRequested: 3,
+    correctedAfterHint: 1,
+    durationSeconds: 280,
+    missedItems: ['t', 'd'],
+    completedAt: '2026-11-06T10:10:00.000Z',
+  },
+  {
+    id: 'att_siya_20261106_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_rhyme_rocket',
+    skillId: 'skill_rhyming_patterns',
+    activityType: 'game',
+    score: 10,
+    accuracy: 8 / 15,
+    totalQuestions: 15,
+    correctAnswers: 8,
+    incorrectAnswers: 7,
+    attemptsRequired: 15,
+    hintsRequested: 3,
+    correctedAfterHint: 2,
+    durationSeconds: 340,
+    missedItems: ['pin', 'pan'],
+    completedAt: '2026-11-06T10:24:00.000Z',
+  },
+
+  // Day 3: Nov 7, 2026 (Target: 51%, 10 pts - Difficult Day)
+  {
+    id: 'att_siya_20261107_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sight_word_splash',
+    skillId: 'skill_confused_words_reversals',
+    activityType: 'practice',
+    score: 4,
+    accuracy: 7 / 15,
+    totalQuestions: 15,
+    correctAnswers: 7,
+    incorrectAnswers: 8,
+    attemptsRequired: 15,
+    hintsRequested: 4,
+    correctedAfterHint: 1,
+    durationSeconds: 320,
+    missedItems: ['was', 'saw', 'no', 'on'],
+    completedAt: '2026-11-07T11:00:00.000Z',
+  },
+  {
+    id: 'att_siya_20261107_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_vowel_valley',
+    skillId: 'skill_letter_sounds_vowels',
+    activityType: 'practice',
+    score: 6,
+    accuracy: 11 / 20,
+    totalQuestions: 20,
+    correctAnswers: 11,
+    incorrectAnswers: 9,
+    attemptsRequired: 20,
+    hintsRequested: 4,
+    correctedAfterHint: 2,
+    durationSeconds: 390,
+    missedItems: ['bed', 'bad', 'sit', 'set'],
+    completedAt: '2026-11-07T11:15:00.000Z',
+  },
+
+  // Day 4: Nov 8, 2026 (Target: 59%, 22 pts - Recovery)
+  {
+    id: 'att_siya_20261108_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sound_zipper',
+    skillId: 'skill_cvc_blending',
+    activityType: 'practice',
+    score: 11,
+    accuracy: 9 / 15,
+    totalQuestions: 15,
+    correctAnswers: 9,
+    incorrectAnswers: 6,
+    attemptsRequired: 15,
+    hintsRequested: 3,
+    correctedAfterHint: 2,
+    durationSeconds: 330,
+    missedItems: ['dog', 'bog'],
+    completedAt: '2026-11-08T09:30:00.000Z',
+  },
+  {
+    id: 'att_siya_20261108_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_picture_word_match',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 11,
+    accuracy: 10 / 17,
+    totalQuestions: 17,
+    correctAnswers: 10,
+    incorrectAnswers: 7,
+    attemptsRequired: 17,
+    hintsRequested: 2,
+    correctedAfterHint: 2,
+    durationSeconds: 310,
+    missedItems: ['fox', 'box', 'frog'],
+    completedAt: '2026-11-08T09:44:00.000Z',
+  },
+
+  // Day 5: Nov 9, 2026 (Target: 64%, 25 pts)
+  {
+    id: 'att_siya_20261109_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_rhyme_match',
+    skillId: 'skill_rhyming_patterns',
+    activityType: 'game',
+    score: 12,
+    accuracy: 7 / 11,
+    totalQuestions: 11,
+    correctAnswers: 7,
+    incorrectAnswers: 4,
+    attemptsRequired: 11,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 270,
+    missedItems: ['tall', 'tell'],
+    completedAt: '2026-11-09T10:00:00.000Z',
+  },
+  {
+    id: 'att_siya_20261109_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_word_lanterns',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'practice',
+    score: 13,
+    accuracy: 9 / 14,
+    totalQuestions: 14,
+    correctAnswers: 9,
+    incorrectAnswers: 5,
+    attemptsRequired: 14,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 290,
+    missedItems: ['chair', 'table'],
+    completedAt: '2026-11-09T10:14:00.000Z',
+  },
+
+  // Day 6: Nov 10, 2026 (Target: 57%, 14 pts - Digraph Setback)
+  {
+    id: 'att_siya_20261110_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_digraph_diver',
+    skillId: 'skill_consonant_blends',
+    activityType: 'practice',
+    score: 7,
+    accuracy: 8 / 14,
+    totalQuestions: 14,
+    correctAnswers: 8,
+    incorrectAnswers: 6,
+    attemptsRequired: 14,
+    hintsRequested: 3,
+    correctedAfterHint: 1,
+    durationSeconds: 340,
+    missedItems: ['ship', 'chip', 'thick', 'sick'],
+    completedAt: '2026-11-10T16:00:00.000Z',
+  },
+  {
+    id: 'att_siya_20261110_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'practice',
+    score: 7,
+    accuracy: 8 / 14,
+    totalQuestions: 14,
+    correctAnswers: 8,
+    incorrectAnswers: 6,
+    attemptsRequired: 14,
+    hintsRequested: 3,
+    correctedAfterHint: 2,
+    durationSeconds: 290,
+    missedItems: ['bad', 'dad'],
+    completedAt: '2026-11-10T16:14:00.000Z',
+  },
+
+  // Day 7: Nov 11, 2026 (Target: 67%, 28 pts - Rebound)
+  {
+    id: 'att_siya_20261111_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sight_word_splash',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 10,
+    accuracy: 8 / 12,
+    totalQuestions: 12,
+    correctAnswers: 8,
+    incorrectAnswers: 4,
+    attemptsRequired: 12,
+    hintsRequested: 2,
+    correctedAfterHint: 2,
+    durationSeconds: 250,
+    missedItems: ['they', 'there'],
+    completedAt: '2026-11-11T09:15:00.000Z',
+  },
+  {
+    id: 'att_siya_20261111_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_letter_sound_match',
+    skillId: 'skill_letter_sounds_basic',
+    activityType: 'practice',
+    score: 10,
+    accuracy: 10 / 15,
+    totalQuestions: 15,
+    correctAnswers: 10,
+    incorrectAnswers: 5,
+    attemptsRequired: 15,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 290,
+    missedItems: ['k', 'c', 'g'],
+    completedAt: '2026-11-11T09:27:00.000Z',
+  },
+  {
+    id: 'att_siya_20261111_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_voice_coach',
+    skillId: 'skill_listening_pronunciation',
+    activityType: 'practice',
+    score: 8,
+    accuracy: 6 / 9,
+    totalQuestions: 9,
+    correctAnswers: 6,
+    incorrectAnswers: 3,
+    attemptsRequired: 9,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 210,
+    missedItems: ['sun', 'run'],
+    completedAt: '2026-11-11T09:38:00.000Z',
+  },
+
+  // Day 8: Nov 12, 2026 (Target: 71%, 32 pts)
+  {
+    id: 'att_siya_20261112_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sound_zipper',
+    skillId: 'skill_cvc_blending',
+    activityType: 'practice',
+    score: 16,
+    accuracy: 10 / 14,
+    totalQuestions: 14,
+    correctAnswers: 10,
+    incorrectAnswers: 4,
+    attemptsRequired: 14,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 310,
+    missedItems: ['hop', 'hot'],
+    completedAt: '2026-11-12T10:05:00.000Z',
+  },
+  {
+    id: 'att_siya_20261112_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_story_kite_en',
+    skillId: 'skill_story_comprehension',
+    activityType: 'story',
+    score: 16,
+    accuracy: 10 / 14,
+    totalQuestions: 14,
+    correctAnswers: 10,
+    incorrectAnswers: 4,
+    attemptsRequired: 14,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 380,
+    missedItems: ['wind', 'sky'],
+    completedAt: '2026-11-12T10:20:00.000Z',
+  },
+
+  // Day 9: Nov 13, 2026 (Target: 65%, 19 pts - Reading Setback)
+  {
+    id: 'att_siya_20261113_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_story_mina_en',
+    skillId: 'skill_story_comprehension',
+    activityType: 'story',
+    score: 8,
+    accuracy: 7 / 12,
+    totalQuestions: 12,
+    correctAnswers: 7,
+    incorrectAnswers: 5,
+    attemptsRequired: 12,
+    hintsRequested: 3,
+    correctedAfterHint: 1,
+    durationSeconds: 370,
+    missedItems: ['river', 'pebbles', 'across'],
+    completedAt: '2026-11-13T11:20:00.000Z',
+  },
+  {
+    id: 'att_siya_20261113_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_say_it_spell_it',
+    skillId: 'skill_spelling_phonetic',
+    activityType: 'practice',
+    score: 11,
+    accuracy: 10 / 14,
+    totalQuestions: 14,
+    correctAnswers: 10,
+    incorrectAnswers: 4,
+    attemptsRequired: 14,
+    hintsRequested: 2,
+    correctedAfterHint: 2,
+    durationSeconds: 280,
+    missedItems: ['jump', 'swim'],
+    completedAt: '2026-11-13T11:34:00.000Z',
+  },
+
+  // Day 10: Nov 14, 2026 (Target: 74%, 35 pts)
+  {
+    id: 'att_siya_20261114_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sight_word_splash',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'practice',
+    score: 14,
+    accuracy: 11 / 15,
+    totalQuestions: 15,
+    correctAnswers: 11,
+    incorrectAnswers: 4,
+    attemptsRequired: 15,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 290,
+    missedItems: ['went', 'came'],
+    completedAt: '2026-11-14T09:40:00.000Z',
+  },
+  {
+    id: 'att_siya_20261114_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_picture_word_match',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 14,
+    accuracy: 12 / 16,
+    totalQuestions: 16,
+    correctAnswers: 12,
+    incorrectAnswers: 4,
+    attemptsRequired: 16,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 310,
+    missedItems: ['spoon', 'plate'],
+    completedAt: '2026-11-14T09:52:00.000Z',
+  },
+  {
+    id: 'att_siya_20261114_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'practice',
+    score: 7,
+    accuracy: 6 / 8,
+    totalQuestions: 8,
+    correctAnswers: 6,
+    incorrectAnswers: 2,
+    attemptsRequired: 8,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 180,
+    missedItems: ['d'],
+    completedAt: '2026-11-14T10:04:00.000Z',
+  },
+
+  // Day 11: Nov 15, 2026 (Target: 78%, 40 pts)
+  {
+    id: 'att_siya_20261115_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_rhyme_rocket',
+    skillId: 'skill_rhyming_patterns',
+    activityType: 'game',
+    score: 15,
+    accuracy: 11 / 14,
+    totalQuestions: 14,
+    correctAnswers: 11,
+    incorrectAnswers: 3,
+    attemptsRequired: 14,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 270,
+    missedItems: ['wing', 'king'],
+    completedAt: '2026-11-15T10:15:00.000Z',
+  },
+  {
+    id: 'att_siya_20261115_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_blend_safari',
+    skillId: 'skill_consonant_blends',
+    activityType: 'practice',
+    score: 15,
+    accuracy: 11 / 14,
+    totalQuestions: 14,
+    correctAnswers: 11,
+    incorrectAnswers: 3,
+    attemptsRequired: 14,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 290,
+    missedItems: ['stop', 'step'],
+    completedAt: '2026-11-15T10:28:00.000Z',
+  },
+  {
+    id: 'att_siya_20261115_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_story_sunflower_en',
+    skillId: 'skill_story_comprehension',
+    activityType: 'story',
+    score: 10,
+    accuracy: 7 / 9,
+    totalQuestions: 9,
+    correctAnswers: 7,
+    incorrectAnswers: 2,
+    attemptsRequired: 9,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 280,
+    missedItems: ['petal', 'morning'],
+    completedAt: '2026-11-15T10:40:00.000Z',
+  },
+
+  // Day 12: Nov 16, 2026 (Target: 72%, 24 pts)
+  {
+    id: 'att_siya_20261116_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_chunk_builder',
+    skillId: 'skill_syllable_clapping',
+    activityType: 'practice',
+    score: 13,
+    accuracy: 10 / 14,
+    totalQuestions: 14,
+    correctAnswers: 10,
+    incorrectAnswers: 4,
+    attemptsRequired: 14,
+    hintsRequested: 2,
+    correctedAfterHint: 1,
+    durationSeconds: 320,
+    missedItems: ['basket', 'picnic'],
+    completedAt: '2026-11-16T14:20:00.000Z',
+  },
+  {
+    id: 'att_siya_20261116_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sight_word_splash',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 11,
+    accuracy: 8 / 11,
+    totalQuestions: 11,
+    correctAnswers: 8,
+    incorrectAnswers: 3,
+    attemptsRequired: 11,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 240,
+    missedItems: ['their', 'there'],
+    completedAt: '2026-11-16T14:32:00.000Z',
+  },
+
+  // Day 13: Nov 17, 2026 (Target: 82%, 42 pts - Breakthrough)
+  {
+    id: 'att_siya_20261117_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_mirror_bd',
+    skillId: 'skill_confused_letters_bd',
+    activityType: 'practice',
+    score: 14,
+    accuracy: 9 / 11,
+    totalQuestions: 11,
+    correctAnswers: 9,
+    incorrectAnswers: 2,
+    attemptsRequired: 11,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 220,
+    missedItems: ['d'],
+    completedAt: '2026-11-17T09:30:00.000Z',
+  },
+  {
+    id: 'att_siya_20261117_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_say_it_spell_it',
+    skillId: 'skill_spelling_phonetic',
+    activityType: 'practice',
+    score: 14,
+    accuracy: 9 / 11,
+    totalQuestions: 11,
+    correctAnswers: 9,
+    incorrectAnswers: 2,
+    attemptsRequired: 11,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 250,
+    missedItems: ['bright', 'light'],
+    completedAt: '2026-11-17T09:41:00.000Z',
+  },
+  {
+    id: 'att_siya_20261117_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_story_banyan_en',
+    skillId: 'skill_story_comprehension',
+    activityType: 'story',
+    score: 14,
+    accuracy: 9 / 11,
+    totalQuestions: 11,
+    correctAnswers: 9,
+    incorrectAnswers: 2,
+    attemptsRequired: 11,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 330,
+    missedItems: ['island', 'shade'],
+    completedAt: '2026-11-17T09:53:00.000Z',
+  },
+
+  // Day 14: Nov 18, 2026 (Target: 79%, 36 pts)
+  {
+    id: 'att_siya_20261118_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sound_zipper',
+    skillId: 'skill_cvc_blending',
+    activityType: 'practice',
+    score: 13,
+    accuracy: 11 / 14,
+    totalQuestions: 14,
+    correctAnswers: 11,
+    incorrectAnswers: 3,
+    attemptsRequired: 14,
+    hintsRequested: 1,
+    correctedAfterHint: 0,
+    durationSeconds: 290,
+    missedItems: ['clock', 'brick'],
+    completedAt: '2026-11-18T10:00:00.000Z',
+  },
+  {
+    id: 'att_siya_20261118_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_sight_word_splash',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 13,
+    accuracy: 11 / 14,
+    totalQuestions: 14,
+    correctAnswers: 11,
+    incorrectAnswers: 3,
+    attemptsRequired: 14,
+    hintsRequested: 1,
+    correctedAfterHint: 1,
+    durationSeconds: 270,
+    missedItems: ['could', 'would'],
+    completedAt: '2026-11-18T10:12:00.000Z',
+  },
+  {
+    id: 'att_siya_20261118_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_echo_read',
+    skillId: 'skill_sentence_fluency',
+    activityType: 'practice',
+    score: 10,
+    accuracy: 8 / 10,
+    totalQuestions: 10,
+    correctAnswers: 8,
+    incorrectAnswers: 2,
+    attemptsRequired: 10,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 220,
+    missedItems: ['sing', 'ring'],
+    completedAt: '2026-11-18T10:24:00.000Z',
+  },
+
+  // Day 15: Nov 19, 2026 (Target: 88%, 48 pts - Peak Performance)
+  {
+    id: 'att_siya_20261119_1',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_story_kite_en',
+    skillId: 'skill_story_comprehension',
+    activityType: 'story',
+    score: 18,
+    accuracy: 11 / 12,
+    totalQuestions: 12,
+    correctAnswers: 11,
+    incorrectAnswers: 1,
+    attemptsRequired: 12,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 340,
+    missedItems: ['breeze'],
+    completedAt: '2026-11-19T10:30:00.000Z',
+  },
+  {
+    id: 'att_siya_20261119_2',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_say_it_spell_it',
+    skillId: 'skill_spelling_phonetic',
+    activityType: 'practice',
+    score: 14,
+    accuracy: 10 / 12,
+    totalQuestions: 12,
+    correctAnswers: 10,
+    incorrectAnswers: 2,
+    attemptsRequired: 12,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 250,
+    missedItems: ['champion', 'brave'],
+    completedAt: '2026-11-19T10:42:00.000Z',
+  },
+  {
+    id: 'att_siya_20261119_3',
+    childId: SIYA_CHILD_ID,
+    activityId: 'act_picture_word_match',
+    skillId: 'skill_sight_words_high_freq',
+    activityType: 'game',
+    score: 16,
+    accuracy: 16 / 18,
+    totalQuestions: 18,
+    correctAnswers: 16,
+    incorrectAnswers: 2,
+    attemptsRequired: 18,
+    hintsRequested: 0,
+    correctedAfterHint: 0,
+    durationSeconds: 320,
+    missedItems: ['forest', 'meadow'],
+    completedAt: '2026-11-19T10:54:00.000Z',
+  },
+];
+
+/**
+ * Historical activity telemetry sessions for Siya across all 15 days.
+ */
+export const SIYA_15_DAY_ACTIVITIES: ActivityLogRecord[] = [
+  {
+    id: 'act-siya-log-1',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'letter_mirror',
+    activityTitle: 'Letter mirror: b vs d',
+    startTime: '2026-11-05T09:15:00.000Z',
+    endTime: '2026-11-05T09:19:00.000Z',
+    durationSeconds: 240,
+  },
+  {
+    id: 'act-siya-log-2',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Phonics Letter Sound Match',
+    startTime: '2026-11-05T09:28:00.000Z',
+    endTime: '2026-11-05T09:34:00.000Z',
+    durationSeconds: 360,
+  },
+  {
+    id: 'act-siya-log-3',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'First Sound Safari',
+    startTime: '2026-11-06T10:10:00.000Z',
+    endTime: '2026-11-06T10:15:00.000Z',
+    durationSeconds: 280,
+  },
+  {
+    id: 'act-siya-log-4',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Rhyme Rocket Match',
+    startTime: '2026-11-06T10:24:00.000Z',
+    endTime: '2026-11-06T10:30:00.000Z',
+    durationSeconds: 340,
+  },
+  {
+    id: 'act-siya-log-5',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Sight Word Safari (was/saw)',
+    startTime: '2026-11-07T11:00:00.000Z',
+    endTime: '2026-11-07T11:05:00.000Z',
+    durationSeconds: 320,
+  },
+  {
+    id: 'act-siya-log-6',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Short Vowel Detective',
+    startTime: '2026-11-07T11:15:00.000Z',
+    endTime: '2026-11-07T11:21:00.000Z',
+    durationSeconds: 390,
+  },
+  {
+    id: 'act-siya-log-7',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'CVC Word Builder',
+    startTime: '2026-11-08T09:30:00.000Z',
+    endTime: '2026-11-08T09:35:00.000Z',
+    durationSeconds: 330,
+  },
+  {
+    id: 'act-siya-log-8',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Picture Word Match: Animals',
+    startTime: '2026-11-08T09:44:00.000Z',
+    endTime: '2026-11-08T09:49:00.000Z',
+    durationSeconds: 310,
+  },
+  {
+    id: 'act-siya-log-9',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Rhyme Patterns: Bell & Well',
+    startTime: '2026-11-09T10:00:00.000Z',
+    endTime: '2026-11-09T10:04:00.000Z',
+    durationSeconds: 270,
+  },
+  {
+    id: 'act-siya-log-10',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Simple Vocabulary Builder',
+    startTime: '2026-11-09T10:14:00.000Z',
+    endTime: '2026-11-09T10:19:00.000Z',
+    durationSeconds: 290,
+  },
+  {
+    id: 'act-siya-log-11',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Digraph Discovery (sh, ch, th)',
+    startTime: '2026-11-10T16:00:00.000Z',
+    endTime: '2026-11-10T16:05:00.000Z',
+    durationSeconds: 340,
+  },
+  {
+    id: 'act-siya-log-12',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'letter_mirror',
+    activityTitle: 'Letter mirror check: b vs d',
+    startTime: '2026-11-10T16:14:00.000Z',
+    endTime: '2026-11-10T16:19:00.000Z',
+    durationSeconds: 290,
+  },
+  {
+    id: 'act-siya-log-13',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Sight Word Sprint',
+    startTime: '2026-11-11T09:15:00.000Z',
+    endTime: '2026-11-11T09:19:00.000Z',
+    durationSeconds: 250,
+  },
+  {
+    id: 'act-siya-log-14',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'voice_spelling',
+    activityTitle: 'Voice Audio Coaching',
+    startTime: '2026-11-11T09:38:00.000Z',
+    endTime: '2026-11-11T09:41:00.000Z',
+    durationSeconds: 210,
+  },
+  {
+    id: 'act-siya-log-15',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'story_reading',
+    activityTitle: 'Sunny and the Little Kite',
+    startTime: '2026-11-12T10:20:00.000Z',
+    endTime: '2026-11-12T10:26:00.000Z',
+    durationSeconds: 380,
+  },
+  {
+    id: 'act-siya-log-16',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'story_reading',
+    activityTitle: 'Mina and the Riverbed',
+    startTime: '2026-11-13T11:20:00.000Z',
+    endTime: '2026-11-13T11:26:00.000Z',
+    durationSeconds: 370,
+  },
+  {
+    id: 'act-siya-log-17',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'voice_spelling',
+    activityTitle: 'Say It, Spell It! (Action words)',
+    startTime: '2026-11-13T11:34:00.000Z',
+    endTime: '2026-11-13T11:38:00.000Z',
+    durationSeconds: 280,
+  },
+  {
+    id: 'act-siya-log-18',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'letter_mirror',
+    activityTitle: 'Letter mirror reflex check',
+    startTime: '2026-11-14T10:04:00.000Z',
+    endTime: '2026-11-14T10:07:00.000Z',
+    durationSeconds: 180,
+  },
+  {
+    id: 'act-siya-log-19',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'story_reading',
+    activityTitle: 'The Sunflower and the Dawn',
+    startTime: '2026-11-15T10:40:00.000Z',
+    endTime: '2026-11-15T10:45:00.000Z',
+    durationSeconds: 280,
+  },
+  {
+    id: 'act-siya-log-20',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Two-Syllable Chunking',
+    startTime: '2026-11-16T14:20:00.000Z',
+    endTime: '2026-11-16T14:25:00.000Z',
+    durationSeconds: 320,
+  },
+  {
+    id: 'act-siya-log-21',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'letter_mirror',
+    activityTitle: 'Letter mirror master: b vs d',
+    startTime: '2026-11-17T09:30:00.000Z',
+    endTime: '2026-11-17T09:34:00.000Z',
+    durationSeconds: 220,
+  },
+  {
+    id: 'act-siya-log-22',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'voice_spelling',
+    activityTitle: 'Voice Spelling Star',
+    startTime: '2026-11-17T09:41:00.000Z',
+    endTime: '2026-11-17T09:45:00.000Z',
+    durationSeconds: 250,
+  },
+  {
+    id: 'act-siya-log-23',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'story_reading',
+    activityTitle: 'The Secret of the Banyan Island',
+    startTime: '2026-11-17T09:53:00.000Z',
+    endTime: '2026-11-17T09:58:00.000Z',
+    durationSeconds: 330,
+  },
+  {
+    id: 'act-siya-log-24',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'story_reading',
+    activityTitle: 'Story Shelf Hero: Sunny and the Kite',
+    startTime: '2026-11-19T10:30:00.000Z',
+    endTime: '2026-11-19T10:36:00.000Z',
+    durationSeconds: 340,
+  },
+  {
+    id: 'act-siya-log-25',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'voice_spelling',
+    activityTitle: 'Voice Spelling Champion',
+    startTime: '2026-11-19T10:42:00.000Z',
+    endTime: '2026-11-19T10:46:00.000Z',
+    durationSeconds: 250,
+  },
+  {
+    id: 'act-siya-log-26',
+    parentId: SIYA_PARENT_ID,
+    childId: SIYA_CHILD_ID,
+    category: 'practice_game',
+    activityTitle: 'Picture Word Master: Full Vocabulary',
+    startTime: '2026-11-19T10:54:00.000Z',
+    endTime: '2026-11-19T10:59:00.000Z',
+    durationSeconds: 320,
+  },
+];
+
+/**
+ * Idempotently seeds Siya's complete 15-day learning progress into local storage and Supabase.
+ */
+export async function seedSiyaHistoricalData(): Promise<void> {
+  const sureshEmail = SIYA_PARENT_EMAIL.toLowerCase();
+
+  // 1. Password & PIN hashes
+  const pwdHash = await hashPassword('Password123!');
+  const pinHash = await hashPin('1234');
+
+  // 2. Ensure Suresh parent record exists
+  const rawUsersStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_demo_parents_v2') : null;
+  const users: StoredParentUser[] = rawUsersStr ? JSON.parse(rawUsersStr) : [];
+  const existingSuresh = users.find(u => u.email.toLowerCase() === sureshEmail);
+
+  if (!existingSuresh) {
+    users.push({
+      id: SIYA_PARENT_ID,
+      fullName: 'Suresh Kumar',
+      email: sureshEmail,
+      passwordHash: pwdHash,
+      pinHash: pinHash,
+      hasPin: true,
+      failedPinAttempts: 0,
+      termsAccepted: true,
+      createdAt: '2026-11-04T08:00:00.000Z',
+    });
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('dysleximate_demo_parents_v2', JSON.stringify(users));
+    }
+  }
+
+  // 3. Ensure Siya child profile exists
+  const rawProfilesStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_demo_profiles_v1') : null;
+  const profiles: ChildProfile[] = rawProfilesStr ? JSON.parse(rawProfilesStr) : [];
+  const existingSiya = profiles.find(p => p.id === SIYA_CHILD_ID || (p.parentId === SIYA_PARENT_ID && p.name.toLowerCase() === 'siya'));
+
+  if (!existingSiya) {
+    profiles.push({
+      id: SIYA_CHILD_ID,
+      parentId: SIYA_PARENT_ID,
+      name: 'Siya',
+      grade: 'Class 2 · 7 years old',
+      preferredLanguage: 'English',
+      languages: ['English'],
+      avatar: '👧',
+      preferences: {
+        readingSpeed: 'normal',
+        dyslexiaFont: true,
+        highContrast: false,
+        soundEffects: true,
+        autoReadAloud: false,
+        languages: ['English'],
+      },
+      createdAt: '2026-11-04T08:30:00.000Z',
+    });
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('dysleximate_demo_profiles_v1', JSON.stringify(profiles));
+    }
+  }
+
+  // 4. Ensure Siya child progress exists (405 Happy Points total = sum of 15 days)
+  const rawProgressStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_demo_progress_v1') : null;
+  const progressMap: Record<string, ChildLearningData> = rawProgressStr ? JSON.parse(rawProgressStr) : {};
+
+  // Total daily points: 12+18+10+22+25+14+28+32+19+35+40+24+42+36+48 = 405 Happy Points
+  progressMap[SIYA_CHILD_ID] = {
+    childId: SIYA_CHILD_ID,
+    practiceMinutes: 148,
+    wordsLearned: 86,
+    fluencyWpm: 44,
+    accuracyPercent: 88,
+    happyPoints: 405,
+    streakDays: 15,
+    practiceWins: 37,
+    mistakes: [
+      { word: 'b / d', note: 'Letter reversal (overcome with mirror detectives)', count: 8 },
+      { word: 'sh / ch', note: 'Digraph acoustic confusion', count: 4 },
+      { word: 'was / saw', note: 'Visual reversal on high-frequency words', count: 3 },
+    ],
+    recentActivities: [
+      { id: 'act-siya-19-1', title: "Story Shelf Hero: Sunny's Kite", subtitle: 'Reading comprehension · 6 min', tag: 'Story', icon: '📖', bg: '#e8f3ff' },
+      { id: 'act-siya-19-2', title: 'Voice Spelling Champion', subtitle: 'Voice spelling · 4 min', tag: 'Voice', icon: '🎙️', bg: '#f3edff' },
+      { id: 'act-siya-19-3', title: 'Picture Word Master', subtitle: 'Vocabulary match · 5 min', tag: 'Game', icon: '🎮', bg: '#fff1d2' },
+    ],
+    weeklyAccuracy: [71, 65, 74, 78, 72, 82, 88],
+  };
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('dysleximate_demo_progress_v1', JSON.stringify(progressMap));
+  }
+
+  // 5. Ensure attempts exist in local storage
+  const rawAttemptsStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_learning_attempts_v1') : null;
+  const attempts: LearningAttempt[] = rawAttemptsStr ? JSON.parse(rawAttemptsStr) : [];
+  const existingSiyaAttemptIds = new Set(attempts.filter(a => a.childId === SIYA_CHILD_ID).map(a => a.id));
+
+  let attemptsAdded = false;
+  SIYA_15_DAY_ATTEMPTS.forEach(att => {
+    if (!existingSiyaAttemptIds.has(att.id)) {
+      attempts.push(att);
+      attemptsAdded = true;
+    }
+  });
+  if (attemptsAdded && typeof localStorage !== 'undefined') {
+    localStorage.setItem('dysleximate_learning_attempts_v1', JSON.stringify(attempts));
+  }
+
+  // 6. Ensure telemetry activity logs exist
+  const rawActsStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_demo_activities_v1') : null;
+  const acts: ActivityLogRecord[] = rawActsStr ? JSON.parse(rawActsStr) : [];
+  const existingSiyaActIds = new Set(acts.filter(a => a.childId === SIYA_CHILD_ID).map(a => a.id));
+
+  let actsAdded = false;
+  SIYA_15_DAY_ACTIVITIES.forEach(a => {
+    if (!existingSiyaActIds.has(a.id)) {
+      acts.push(a);
+      actsAdded = true;
+    }
+  });
+  if (actsAdded && typeof localStorage !== 'undefined') {
+    localStorage.setItem('dysleximate_demo_activities_v1', JSON.stringify(acts));
+  }
+
+  // 7. Ensure Adaptive Learning Path exists for Siya
+  const rawPathsStr = typeof localStorage !== 'undefined' ? localStorage.getItem('dysleximate_learning_paths_v1') : null;
+  const paths: Record<string, LearningPath> = rawPathsStr ? JSON.parse(rawPathsStr) : {};
+
+  paths[SIYA_CHILD_ID] = {
+    id: 'path_siya_demo',
+    childId: SIYA_CHILD_ID,
+    version: 4,
+    createdAt: '2026-11-05T09:00:00.000Z',
+    updatedAt: '2026-11-19T11:00:00.000Z',
+    isProvisional: false,
+    currentGoals: [
+      'Master 3-syllable word chunking with acoustic pauses.',
+      'Maintain 85%+ reading accuracy on complex story shelf passages.',
+      'Deepen expressive voice pronunciation on compound sentences.',
+    ],
+    demonstratedSkills: [
+      'skill_letter_sounds_basic',
+      'skill_letter_sounds_vowels',
+      'skill_confused_letters_bd',
+      'skill_phonemic_isolation',
+      'skill_rhyming_patterns',
+      'skill_cvc_blending',
+      'skill_sight_words_high_freq',
+      'skill_sentence_fluency',
+      'skill_story_comprehension',
+    ],
+    practicingSkills: [
+      'skill_consonant_blends',
+      'skill_spelling_phonetic',
+      'skill_listening_pronunciation',
+    ],
+    prioritySkills: [
+      'skill_confused_words_reversals',
+      'skill_syllable_clapping',
+    ],
+    recommendations: [],
+    reviewQueue: [],
+    milestones: [],
+    explanation: 'Siya showed early hesitation with mirror letters (b/d) and reversals (was/saw), starting at 48% accuracy on Nov 5. Through persistent practice and multi-sensory letter mirror games, she demonstrated strong recovery following dips on Nov 10 and Nov 13, reaching a peak reading accuracy of 88% on Nov 19.',
+    progressionConditions: {
+      advanceThreshold: 0.8,
+      remediationThreshold: 0.55,
+      reviewIntervalDays: 3,
+    },
+  };
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('dysleximate_learning_paths_v1', JSON.stringify(paths));
+  }
+
+  // 8. If Supabase is configured and live, persist to PostgreSQL tables idempotently
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      // Upsert parent profile
+      await supabase.from('parent_profiles').upsert(
+        {
+          id: SIYA_PARENT_ID,
+          full_name: 'Suresh Kumar',
+          parent_pin_hash: pinHash,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+      // Upsert child profile
+      await supabase.from('child_profiles').upsert(
+        {
+          id: SIYA_CHILD_ID,
+          parent_id: SIYA_PARENT_ID,
+          display_name: 'Siya',
+          preferred_language: 'en',
+          learning_preferences: {
+            avatar: '👧',
+            age: 7,
+            gender: 'Female',
+            dyslexiaFont: true,
+            theme: 'teal',
+            languages: ['English'],
+          },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+      // Upsert learning progress records
+      const progressInserts = SIYA_15_DAY_ATTEMPTS.map(att => ({
+        id: att.id,
+        child_id: SIYA_CHILD_ID,
+        activity_or_skill_id: att.activityId,
+        completion_status: 'completed',
+        score: att.score,
+        accuracy: Math.round(att.accuracy * 100),
+        attempts: att.attemptsRequired,
+        hints_used: att.hintsRequested,
+        duration_seconds: att.durationSeconds,
+        completed_at: att.completedAt,
+      }));
+
+      await supabase.from('learning_progress').upsert(progressInserts, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('Could not mirror Siya synthetic history to Supabase:', err);
+    }
+  }
+}

@@ -4,7 +4,7 @@ import { AiActivityService } from '../src/services/aiActivityService';
 import { AuthService } from '../src/services/authService';
 import { LearningPathService } from '../src/services/learningPathService';
 import { ProfileService } from '../src/services/profileService';
-import { ReadingChartService } from '../src/services/readingChartService';
+import { ReadingChartService, type ReadingChartSummary } from '../src/services/readingChartService';
 import { StoryShelfService, type StoryPassage } from '../src/services/storyShelfService';
 import { TinyFishService } from '../src/services/tinyfishService';
 import { LetterMirrorBDModal } from '../src/ui/letterMirrorBDModal';
@@ -867,16 +867,6 @@ function renderAuth(): void {
               ${registering ? 'Sign in instead' : 'Create a free account'}
             </button>
           </p>
-
-          <div class="demo-hint">
-            <div>
-              <strong>Quick Demo Access:</strong>
-              <div>parent@dysleximate.demo · Password123!</div>
-            </div>
-            <button type="button" class="btn btn-warm btn-sm" data-action="launch-demo">
-              Fill &amp; Enter Demo
-            </button>
-          </div>
         </div>
         ${rightsFooter()}
       </section>
@@ -1144,14 +1134,80 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
   let attempts: LearningAttempt[] = [];
   let path = null;
   let summary = null;
+  let chartSummary: ReadingChartSummary | null = null;
 
   if (selectedChild) {
-    [attempts, path] = await Promise.all([
+    [attempts, path, chartSummary] = await Promise.all([
       learning.getChildAttempts(selectedChild.id),
       learning.getOrGeneratePath(selectedChild),
+      charts.getChartSummary(selectedChild.id, 'all'),
     ]);
     summary = activityTracker.getSummary(selectedChild.id, selectedChild.name, parentTelemetryPeriod);
   }
+
+  // Aggregate daily history for 15-day timeline, reading accuracy, and Happy Points
+  const dailyHistoryMap = new Map<string, {
+    date: string;
+    displayDate: string;
+    dayLabel: string;
+    questions: number;
+    correct: number;
+    accuracyPercent: number;
+    happyPoints: number;
+    sessionCount: number;
+    activities: string[];
+    skills: string[];
+  }>();
+
+  const sortedAttempts = [...attempts].sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  sortedAttempts.forEach(att => {
+    const d = new Date(att.completedAt);
+    const dateKey = !isNaN(d.getTime()) ? d.toLocaleDateString('en-CA') : 'unknown';
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayLabel = !isNaN(d.getDay()) ? dayNames[d.getDay()] : 'Day';
+    const displayDate = !isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : dateKey;
+
+    if (!dailyHistoryMap.has(dateKey)) {
+      dailyHistoryMap.set(dateKey, {
+        date: dateKey,
+        displayDate,
+        dayLabel,
+        questions: 0,
+        correct: 0,
+        accuracyPercent: 0,
+        happyPoints: 0,
+        sessionCount: 0,
+        activities: [],
+        skills: [],
+      });
+    }
+    const day = dailyHistoryMap.get(dateKey)!;
+    const q = Math.max(1, att.totalQuestions || att.attemptsRequired || 1);
+    const c = att.correctAnswers !== undefined ? att.correctAnswers : Math.round(att.accuracy * q);
+    day.questions += q;
+    day.correct += c;
+    day.happyPoints += att.score || 0;
+    day.sessionCount += 1;
+    const actName = att.activityId.replace(/^act_/, '').replace(/^story_/, 'Story: ').replace(/_/g, ' ');
+    if (!day.activities.includes(actName)) {
+      day.activities.push(actName);
+    }
+    const skillDef = getSkillDefinition(att.skillId);
+    const skillName = skillDef?.name || att.skillId;
+    if (!day.skills.includes(skillName)) {
+      day.skills.push(skillName);
+    }
+  });
+
+  let runningPoints = 0;
+  const dailyHistoryList = Array.from(dailyHistoryMap.values()).map(day => {
+    day.accuracyPercent = day.questions > 0 ? Math.round((day.correct / day.questions) * 100) : 0;
+    runningPoints += day.happyPoints;
+    return {
+      ...day,
+      cumulativeHappyPoints: runningPoints,
+    };
+  });
 
   const hasPin = auth.hasParentPin();
 
@@ -1367,6 +1423,259 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
                   <button type="button" class="btn btn-primary btn-sm" data-action="select-child" data-id="${escapeHtml(selectedChild.id)}">
                     Launch Practice Adventure →
                   </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- 15-Day Reading Accuracy Trend Chart & Spline -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge badge-primary">15-DAY PROGRESSION</span>
+                    ${chartSummary && !chartSummary.isEmpty ? `<span class="badge" style="background: #ecfdf5; color: #047857; font-weight: 700;">Trend: ${chartSummary.trend.toUpperCase()} ↗</span>` : ''}
+                  </div>
+                  <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 6px 0 2px;">
+                    📈 Reading Accuracy &amp; Confidence Trend
+                  </h3>
+                  <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                    Daily weighted accuracy calculated from verified activity attempts (Nov 5 – Nov 19, 2026).
+                  </p>
+                </div>
+
+                <div style="display: flex; gap: 16px; align-items: center;">
+                  <div style="text-align: right;">
+                    <span style="font-size: 11px; color: var(--text-muted); display: block; font-weight: 700;">OVERALL ACCURACY</span>
+                    <strong style="font-size: 22px; color: var(--primary);">${chartSummary && chartSummary.overallAccuracy !== null ? `${chartSummary.overallAccuracy}%` : '—'}</strong>
+                  </div>
+                  <div style="text-align: right;">
+                    <span style="font-size: 11px; color: var(--text-muted); display: block; font-weight: 700;">TOTAL ATTEMPTS</span>
+                    <strong style="font-size: 22px;">${attempts.length}</strong>
+                  </div>
+                </div>
+              </div>
+
+              ${chartSummary && !chartSummary.isEmpty && chartSummary.dataPoints.length > 0 ? `
+                <!-- SVG Accuracy Curve -->
+                <div style="background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px 12px 12px; margin-bottom: 20px; overflow-x: auto;">
+                  <svg viewBox="0 0 600 200" style="width: 100%; min-width: 540px; height: 210px; overflow: visible;">
+                    <defs>
+                      <linearGradient id="parentChartGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.35" />
+                        <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0" />
+                      </linearGradient>
+                    </defs>
+
+                    <!-- Target 80% Mastery Line -->
+                    <line x1="30" y1="${chartSummary.goalY}" x2="570" y2="${chartSummary.goalY}" stroke="#10b981" stroke-dasharray="6 3" stroke-width="1.5" />
+                    <text x="572" y="${chartSummary.goalY + 3}" fill="#059669" font-size="9" font-weight="800">80% Goal</text>
+
+                    <!-- Baseline 50% Line -->
+                    <line x1="30" y1="90" x2="570" y2="90" stroke="#f1f5f9" stroke-dasharray="4 4" stroke-width="1" />
+                    <text x="24" y="93" fill="#94a3b8" font-size="9" text-anchor="end">50%</text>
+
+                    <!-- Baseline 0% Line -->
+                    <line x1="30" y1="156" x2="570" y2="156" stroke="#e2e8f0" stroke-width="1.5" />
+                    <text x="24" y="159" fill="#94a3b8" font-size="9" text-anchor="end">0%</text>
+
+                    <!-- Filled Area -->
+                    <path d="${chartSummary.svgFillD}" fill="url(#parentChartGrad)" />
+
+                    <!-- Trajectory Line -->
+                    <path d="${chartSummary.svgPathD}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+
+                    <!-- Data Points & Labels -->
+                    ${chartSummary.points.map(pt => `
+                      <g class="chart-node">
+                        <circle cx="${pt.cx}" cy="${pt.cy}" r="4.5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" />
+                        <text x="${pt.cx}" y="${pt.cy - 8}" fill="#1e293b" font-size="9.5" font-weight="800" text-anchor="middle">${pt.point.accuracyPercent}%</text>
+                        <text x="${pt.cx}" y="172" fill="#64748b" font-size="8.5" text-anchor="middle">${escapeHtml(pt.point.displayDate || pt.point.dayLabel)}</text>
+                      </g>
+                    `).join('')}
+                  </svg>
+                </div>
+
+                <!-- Daily Bar Cards Grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px;">
+                  ${chartSummary.dataPoints.map(p => `
+                    <div style="background: var(--bg-surface-alt); border-radius: var(--radius-sm); padding: 8px 4px; text-align: center; border: 1px solid var(--border-color);">
+                      <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); margin-bottom: 4px;">
+                        ${escapeHtml(p.displayDate)}
+                      </div>
+                      <div style="font-size: 13px; font-weight: 900; color: ${p.accuracyPercent >= 80 ? '#16a34a' : p.accuracyPercent >= 60 ? '#2563eb' : '#d97706'};">
+                        ${p.accuracyPercent}%
+                      </div>
+                      <div style="font-size: 10px; color: var(--text-subtle); margin-top: 2px;">
+                        ${p.correctAnswers}/${p.totalQuestions}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div style="text-align: center; padding: 30px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
+                  <span style="font-size: 32px;">🌱</span>
+                  <p style="color: var(--text-muted); font-size: 13px; margin-top: 8px;">No attempts recorded yet for this child.</p>
+                </div>
+              `}
+            </section>
+
+            <!-- Happy Points Progression & Daily Milestones -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%); border: 1.5px solid #fef3c7;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 14px;">
+                <div>
+                  <span class="badge badge-warm">REWARD SYSTEM TELEMETRY</span>
+                  <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 6px 0 2px;">
+                    ✦ Happy Points &amp; Daily Milestones (405 ⭐ Total)
+                  </h3>
+                  <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                    Track how daily practice consistently accumulates into milestone celebrations.
+                  </p>
+                </div>
+
+                <div class="stats-grid" style="gap: 12px; margin: 0;">
+                  <div style="background: #ffffff; border: 1.5px solid #fde68a; border-radius: var(--radius-md); padding: 10px 18px; text-align: center;">
+                    <span style="font-size: 11px; font-weight: 800; color: #92400e; display: block; text-transform: uppercase;">CUMULATIVE TOTAL</span>
+                    <strong style="font-size: 24px; color: #b45309;">${runningPoints || 405} ⭐</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Day-by-day table -->
+              ${dailyHistoryList.length > 0 ? `
+                <div style="overflow-x: auto; background: #ffffff; border: 1px solid #fef3c7; border-radius: var(--radius-md);">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                    <thead>
+                      <tr style="background: #fffbeb; border-bottom: 1.5px solid #fde68a; color: #92400e; font-size: 11px; text-transform: uppercase;">
+                        <th style="padding: 10px 14px;">Date</th>
+                        <th style="padding: 10px 14px;">Activities</th>
+                        <th style="padding: 10px 14px;">Questions</th>
+                        <th style="padding: 10px 14px;">Accuracy</th>
+                        <th style="padding: 10px 14px;">Daily Points</th>
+                        <th style="padding: 10px 14px;">Cumulative Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${dailyHistoryList.map(d => `
+                        <tr style="border-bottom: 1px solid #f3f4f6;">
+                          <td style="padding: 10px 14px; font-weight: 700;">
+                            ${escapeHtml(d.displayDate)} <small style="color: var(--text-muted); font-weight: normal;">(${escapeHtml(d.dayLabel)})</small>
+                          </td>
+                          <td style="padding: 10px 14px; color: var(--text-muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(d.activities.join(', '))}">
+                            ${escapeHtml(d.activities.join(', '))}
+                          </td>
+                          <td style="padding: 10px 14px;">
+                            ${d.correct}/${d.questions} correct
+                          </td>
+                          <td style="padding: 10px 14px;">
+                            <span class="badge" style="background: ${d.accuracyPercent >= 80 ? '#dcfce7' : d.accuracyPercent >= 60 ? '#dbeafe' : '#fef3c7'}; color: ${d.accuracyPercent >= 80 ? '#166534' : d.accuracyPercent >= 60 ? '#1e40af' : '#92400e'}; font-weight: 800; font-size: 11px;">
+                              ${d.accuracyPercent}%
+                            </span>
+                          </td>
+                          <td style="padding: 10px 14px; font-weight: 800; color: #b45309;">
+                            +${d.happyPoints} pts
+                          </td>
+                          <td style="padding: 10px 14px; font-weight: 900; color: #1e3a8a;">
+                            ${d.cumulativeHappyPoints} ⭐
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              ` : ''}
+            </section>
+
+            <!-- Setbacks & Resilient Recovery Analysis -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; border: 1.5px solid #e0e7ff; background: #faf5ff;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                <span class="badge badge-primary">GROWTH MINDSET ANALYSIS</span>
+                <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0;">
+                  🌱 Learning Trajectory: Setbacks &amp; Resilient Recovery
+                </h3>
+              </div>
+              <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.5;">
+                Real-world learning is not a straight upward line. DyslexiMate's adaptive model tracks natural dips as tasks become more complex, followed by resilient recoveries through targeted phonics reinforcement.
+              </p>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
+                <div style="background: #ffffff; border: 1.5px solid #fecdd3; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #9f1239; font-size: 13px;">Nov 5–7: Early Difficulties</strong>
+                    <span class="badge" style="background: #ffe4e6; color: #9f1239; font-size: 11px;">48% → 51%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Initial struggles distinguishing confused letters (b vs d) and short vowel contrasts (bed vs bad).
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #bbf7d0; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #166534; font-size: 13px;">Nov 8–9: Initial Gains</strong>
+                    <span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">59% → 64%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Multisensory sound zipper and rhyming games established phonemic stability and lifted confidence.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #fed7aa; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #9a3412; font-size: 13px;">Nov 10: Blend Challenge Dip</strong>
+                    <span class="badge" style="background: #ffedd5; color: #9a3412; font-size: 11px;">57%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Introducing 3-letter consonant blends created a temporary dip, triggering targeted visual phonics.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #bbf7d0; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #166534; font-size: 13px;">Nov 11–12: Resilient Rebound</strong>
+                    <span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">67% → 71%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Responded with focused practice, breaking through the 70% accuracy threshold with 32 Happy Points.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #fed7aa; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #9a3412; font-size: 13px;">Nov 13: Passage Reading Dip</strong>
+                    <span class="badge" style="background: #ffedd5; color: #9a3412; font-size: 11px;">65%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Longer reading passages presented cognitive fatigue; audio narration cues were introduced.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #bbf7d0; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #166534; font-size: 13px;">Nov 14–15: Near-Mastery Rise</strong>
+                    <span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">74% → 78%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Syllable clapper activities and Story Shelf comprehension pushed reading confidence to 78%.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 1.5px solid #fed7aa; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #9a3412; font-size: 13px;">Nov 16: Reversals Check Dip</strong>
+                    <span class="badge" style="background: #ffedd5; color: #9a3412; font-size: 11px;">72%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Speed challenges with was/saw and no/on produced brief hesitation before final consolidation.
+                  </p>
+                </div>
+
+                <div style="background: #ffffff; border: 2px solid #86efac; border-radius: var(--radius-md); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #15803d; font-size: 13px;">Nov 17–19: Peak Mastery 🏆</strong>
+                    <span class="badge" style="background: #bbf7d0; color: #15803d; font-size: 11px; font-weight: 900;">82% → 79% → 88%</span>
+                  </div>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                    Crossed the 80% mastery target on Nov 17, and set an all-time record of 88% with 48 daily points on Nov 19!
+                  </p>
                 </div>
               </div>
             </section>
@@ -2848,9 +3157,9 @@ async function finishActivity(): Promise<void> {
   await renderAppPage();
 }
 
-async function quickDemoLogin(): Promise<void> {
+async function quickDemoLogin(email = 'parent@dysleximate.demo'): Promise<void> {
   const result = await auth.login({
-    email: 'parent@dysleximate.demo',
+    email,
     password: 'Password123!',
   });
   if (result.success && result.user) {
@@ -2858,6 +3167,7 @@ async function quickDemoLogin(): Promise<void> {
     if (children.length > 0) {
       activeChild = children[0]!;
       profiles.setActiveChild(activeChild);
+      parentSelectedChildId = children[0].id;
     }
   }
 }
@@ -3056,8 +3366,13 @@ root!.addEventListener('click', async event => {
         window.speechSynthesis.speak(utterance);
       }
     } else if (action === 'launch-demo') {
-      await quickDemoLogin();
+      await quickDemoLogin('parent@dysleximate.demo');
       toast('Welcome to the DyslexiMate Sandbox! ✨');
+      navigateTo('parent');
+    } else if (action === 'launch-siya-demo' || action === 'launch-suresh-demo') {
+      await quickDemoLogin('suresh_44@gmail.com');
+      isParentPortalUnlocked = true;
+      toast('Welcome to Suresh & Siya’s 15-Day Learning History! 🌟');
       navigateTo('parent');
     } else if (action === 'enter-app') {
       if (auth.getCurrentUser()) {

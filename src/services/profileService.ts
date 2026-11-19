@@ -129,7 +129,7 @@ export class ProfileService implements IProfileService {
 
   public async getChildren(parentId: string): Promise<ChildProfile[]> {
     const sb = supabase;
-    const isDemoParent = parentId === 'parent-demo-1' || !isSupabaseConfigured() || !sb;
+    const isDemoParent = parentId === 'parent-demo-1' || parentId.startsWith('parent-demo') || parentId.startsWith('parent-suresh') || !isSupabaseConfigured() || !sb;
     if (isDemoParent) {
       const all = this.storage.getRawProfiles();
       return all.filter(p => p.parentId === parentId);
