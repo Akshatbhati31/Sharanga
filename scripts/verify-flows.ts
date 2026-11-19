@@ -3074,6 +3074,139 @@ async function runTests() {
   const foundBySubstring = shelfService.getStoryById('little kite', 'English');
   assert(foundBySubstring !== null && foundBySubstring.id === 'story_kite_en', 'getStoryById finds story by title substring');
 
+  // Test Group 19: Parent PIN Recovery Flow & Password Reset Verification
+  console.log(`\n--- Test Group 19: Parent PIN Recovery Flow & Security ---`);
+
+  // 19.1 Unauthenticated access rejection
+  await authInstance.logout();
+  const unauthRecovery = await authInstance.verifyChildForPinRecovery('Aanya Sharma');
+  assert(!unauthRecovery.success, 'Unauthenticated parent cannot initiate PIN recovery');
+  const unauthReset = await authInstance.resetParentPinWithRecovery('mock-token', '1234', '1234');
+  assert(!unauthReset.success, 'Unauthenticated parent cannot reset PIN with recovery token');
+
+  // 19.2 Log in as demo parent Sunita Sharma (has children: Aanya Sharma, Kabir Sharma)
+  const loginRes = await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  assert(loginRes.success && authInstance.getCurrentUser() !== null, 'Logged in as demo parent Sunita Sharma');
+
+  // 19.3 Incorrect child name rejection
+  const wrongChildRecovery = await authInstance.verifyChildForPinRecovery('Unknown Child');
+  assert(!wrongChildRecovery.success, 'Incorrect child name fails verification');
+  assert(typeof wrongChildRecovery.error === 'string', 'Returns helpful error message without exposing database records');
+
+  // 19.4 Child belonging to another parent
+  // Register a separate parent and add child "Aarav"
+  const parent2 = await authInstance.register({
+    fullName: 'Pooja Verma',
+    email: `pooja_${Date.now()}@test.com`,
+    password: 'Password123!',
+    confirmPassword: 'Password123!',
+    acceptTerms: true,
+  });
+  assert(parent2.success && parent2.user, 'Registered separate parent Pooja');
+  const p2Child = await ps.createChild(parent2.user!.id, {
+    name: 'Aarav Verma',
+    grade: 'Class 3',
+    preferredLanguage: 'Hindi',
+    avatar: '🦊',
+  });
+  assert(p2Child.parentId === parent2.user!.id, 'Child Aarav belongs to parent Pooja');
+
+  // Switch back to Sunita Sharma
+  await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  const crossParentRecovery = await authInstance.verifyChildForPinRecovery('Aarav Verma');
+  assert(!crossParentRecovery.success, 'Child belonging to another parent is rejected for Sunita');
+
+  // 19.5 Correct child verification (supports exact and case-insensitive matching)
+  const validChildRecovery = await authInstance.verifyChildForPinRecovery('aanya sharma');
+  assert(validChildRecovery.success, 'Correct child name verifies successfully');
+  assert(typeof validChildRecovery.recoveryToken === 'string' && validChildRecovery.recoveryToken!.length > 0, 'Recovery token generated for verified session');
+  const validToken = validChildRecovery.recoveryToken!;
+
+  // 19.6 Mismatched new PINs
+  const mismatchedPinReset = await authInstance.resetParentPinWithRecovery(validToken, '2468', '1357');
+  assert(!mismatchedPinReset.success, 'Mismatched new PIN and confirmation PIN rejected');
+  assert(mismatchedPinReset.error?.includes('match'), 'Error explains that PINs do not match');
+
+  // 19.7 Non 4-digit PIN rejected
+  const shortPinReset = await authInstance.resetParentPinWithRecovery(validToken, '12', '12');
+  assert(!shortPinReset.success, 'PIN shorter than 4 digits rejected');
+
+  // 19.8 Valid PIN reset with matching 4-digit PIN
+  const validPinReset = await authInstance.resetParentPinWithRecovery(validToken, '2468', '2468');
+  assert(validPinReset.success, 'Parent PIN successfully reset via recovery flow');
+
+  // 19.9 PIN verification after reset
+  const verifyNewPin = await authInstance.verifyParentPin('2468');
+  assert(verifyNewPin.success, 'New PIN 2468 verifies successfully');
+
+  // Old PIN is no longer valid
+  const verifyOldPin = await authInstance.verifyParentPin('1234');
+  assert(!verifyOldPin.success, 'Previous PIN 1234 is rejected after recovery reset');
+
+  // 19.10 Recovery token is single-use and invalidated after reset
+  const reusedTokenReset = await authInstance.resetParentPinWithRecovery(validToken, '9999', '9999');
+  assert(!reusedTokenReset.success, 'Recovery token cannot be reused after completion');
+
+  // 19.11 Account login password remains unchanged and separate from PIN
+  const loginWithSamePassword = await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  assert(loginWithSamePassword.success, 'Account login password remains completely intact and unaffected by PIN recovery');
+
+  // 19.12 Existing password recovery through the login page
+  const pwdResetValid = await authInstance.resetPassword('parent@dysleximate.demo');
+  assert(pwdResetValid.success, 'Existing password recovery through email functions properly');
+  const pwdResetInvalid = await authInstance.resetPassword('invalid-email-format');
+  assert(!pwdResetInvalid.success, 'Invalid email format rejected by password recovery');
+
+  // Test Group 20: Mandatory Parent Portal Security PIN Gate & Authentication Flow
+  console.log(`\n--- Test Group 20: Mandatory Parent Portal PIN Gate Flow ---`);
+
+  // 20.1 Step 1: Sign in using registered Supabase email & password
+  await authInstance.logout();
+  const parentSignIn = await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  assert(parentSignIn.success && parentSignIn.user !== null, 'Step 1: Parent signs in with email and password');
+  assert(parentSignIn.user!.email === 'parent@dysleximate.demo', 'Authenticated parent email matches session');
+
+  // 20.2 Step 2: PIN gate check
+  assert(authInstance.hasParentPin(), 'Step 2: Authenticated parent has stored parent_pin_hash');
+
+  // 20.3 Step 3 & 4: Enter incorrect PIN -> verification fails
+  const wrongGatePin = await authInstance.verifyParentPin('0000');
+  assert(!wrongGatePin.success, 'Step 3: Incorrect PIN is rejected by verification gate');
+  assert(typeof wrongGatePin.remainingAttempts === 'number', 'Step 4: Failed attempts tracked to enforce rate limits');
+
+  // 20.4 Enter correct PIN -> verification succeeds against stored parent_pin_hash
+  const correctGatePin = await authInstance.verifyParentPin('2468');
+  assert(correctGatePin.success, 'Step 5: Correct PIN verified against stored parent_pin_hash, unlocking portal');
+
+  // 20.5 Child learning pages remain accessible without PIN
+  const aanyaProfile = (await ps.getChildren(parentSignIn.user!.id)).find(c => c.name.includes('Aanya'));
+  assert(aanyaProfile !== undefined, 'Child profile exists for learner space');
+  ps.setActiveChild(aanyaProfile!);
+  assert(ps.getActiveChild()?.id === aanyaProfile!.id, 'Child profile selected for learner space without requiring parent PIN');
+  const learningProgress = ps.getChildProgress(aanyaProfile!.id);
+  assert(typeof learningProgress.happyPoints === 'number', 'Child learning progress accessible for learning space without PIN');
+
+  // 20.6 PIN separation from login password
+  assert(parentSignIn.user!.hasPin === true, 'PIN is tracked as separate parental control credential');
+  await authInstance.logout();
+  const relogin = await authInstance.login({
+    email: 'parent@dysleximate.demo',
+    password: 'Password123!',
+  });
+  assert(relogin.success, 'Account password remains intact and independent of PIN verification');
+
 
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);

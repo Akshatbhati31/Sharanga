@@ -5,10 +5,13 @@ import { AuthService } from '../src/services/authService';
 import { LearningPathService } from '../src/services/learningPathService';
 import { ProfileService } from '../src/services/profileService';
 import { ReadingChartService } from '../src/services/readingChartService';
+import { StoryShelfService, type StoryPassage } from '../src/services/storyShelfService';
 import { TinyFishService } from '../src/services/tinyfishService';
+import { LetterMirrorBDModal } from '../src/ui/letterMirrorBDModal';
+import { getSkillDefinition } from '../src/services/skillModel';
 import { i18n } from '../src/i18n';
 import type { ActivityDifficulty, InteractiveActivityContent, LearningAttempt } from '../src/types/adaptive';
-import type { ChildProfile, SupportedLanguage } from '../src/types/auth';
+import type { ChildProfile, SupportedLanguage, ParentUser } from '../src/types/auth';
 import type { EducationalResource, ResourceType } from '../src/types/tinyfish';
 import './styles.css';
 
@@ -23,6 +26,7 @@ const charts = ReadingChartService.getInstance();
 const activityTracker = ActivityTrackerService.getInstance();
 const ai = AiActivityService.getInstance();
 const tinyFish = TinyFishService.getInstance();
+const storyShelf = StoryShelfService.getInstance();
 
 const speechLocales: Record<SupportedLanguage, string> = {
   English: 'en-IN',
@@ -42,7 +46,19 @@ const htmlEntities: Record<string, string> = {
 };
 
 // Application State
-export type AppPage = 'landing' | 'auth' | 'home' | 'practice' | 'progress' | 'resources' | 'profiles';
+export type AppPage = 'landing' | 'auth' | 'home' | 'practice' | 'progress' | 'resources' | 'profiles' | 'stories' | 'parent';
+
+let parentActiveTab: 'overview' | 'child_records' | 'settings' = 'overview';
+let parentSelectedChildId: string | null = null;
+let parentTelemetryPeriod: 'today' | '7days' | '30days' = '30days';
+
+let storyLanguage: SupportedLanguage | null = null;
+let storyRotationAdvance = false;
+let activeStory: StoryPassage | null = null;
+let activeStoryFontSize = 18;
+let storyComprehensionScore = 0;
+let storyAnsweredQids = new Set<string>();
+let storyMissedQuestions: string[] = [];
 
 let activeChild: ChildProfile | null = profiles.getActiveChild();
 let activePage: AppPage = 'landing';
@@ -85,6 +101,14 @@ if (dyslexiaMode) {
 
 // Custom Language Selector State & Dynamic Config
 let customLangMenuOpen = false;
+
+// Parent PIN Recovery Flow State
+let pinRecoveryStage: 'verify_child' | 'reset_pin' | 'success' = 'verify_child';
+let pinRecoveryToken = '';
+
+// Mandatory Parent Portal PIN Gate State (in-memory; prevents bypass on page refresh)
+let isParentPortalUnlocked = false;
+let gatePinVisible = false;
 
 const languageFlags: Record<SupportedLanguage, string> = {
   English: '🇬🇧',
@@ -129,8 +153,14 @@ function toast(message: string, isError = false): void {
 }
 
 function closeModal(): void {
+  const wasRecoverySuccess = pinRecoveryStage === 'success';
+  pinRecoveryStage = 'verify_child';
+  pinRecoveryToken = '';
   activityTracker.stopActivity();
   activity = null;
+  activeStory = null;
+  storyAnsweredQids.clear();
+  storyMissedQuestions = [];
   activitySaving = false;
   activitySaveFailed = false;
   activityQuestionNumber = 1;
@@ -141,6 +171,9 @@ function closeModal(): void {
   const modal = root!.querySelector<HTMLElement>('#modal-root');
   if (modal) modal.innerHTML = '';
   document.body.style.overflow = '';
+  if (wasRecoverySuccess && activePage === 'parent') {
+    void renderAppPage();
+  }
 }
 
 document.addEventListener('keydown', event => {
@@ -183,8 +216,17 @@ function parseRouteFromUrl(): { page: AppPage; authMode?: 'login' | 'register' }
       return { page: 'progress' };
     case 'resources':
       return { page: 'resources' };
+    case 'stories':
+    case 'story':
+    case 'books':
+    case 'shelf':
+      return { page: 'stories' };
     case 'profiles':
       return { page: 'profiles' };
+    case 'parent':
+    case 'parent-dashboard':
+    case 'portal':
+      return { page: 'parent' };
     case 'landing':
     case '':
     default:
@@ -200,7 +242,9 @@ function updateDocumentTitle(page: AppPage): void {
     practice: 'Practice Gentle Adventures — DyslexiMate',
     progress: 'Reading Fluency & Progress — DyslexiMate',
     resources: 'Stories & Learning Resources — DyslexiMate',
+    stories: 'Story Shelf & Comprehension — DyslexiMate',
     profiles: 'Choose Learner Profile — DyslexiMate',
+    parent: 'Parent Dashboard & Family Learning — DyslexiMate',
   };
   document.title = titles[page] || 'DyslexiMate — Little Steps, Big Reading Wins';
 }
@@ -299,12 +343,12 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
           </button>
           
           ${isDemoSignedIn ? `
-            <button type="button" class="btn btn-outline btn-sm" data-action="enter-app">
+            <a href="#/parent" class="btn btn-outline btn-sm" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
               <span>👤</span> ${escapeHtml(currentUser?.fullName || 'Parent Portal')}
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" data-action="enter-app">
-              Open App Space →
-            </button>
+            </a>
+            <a href="#/parent" class="btn btn-primary btn-sm" data-action="navigate-parent" style="text-decoration: none;">
+              Parent Dashboard →
+            </a>
           ` : `
             <button type="button" class="btn btn-ghost btn-sm" data-action="open-auth" data-mode="login">
               Parent Sign In
@@ -334,9 +378,9 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
             <span class="dyslexia-label">Aa</span>
           </button>
           ${isDemoSignedIn ? `
-            <button type="button" class="btn btn-primary btn-sm" data-action="enter-app">
-              Go to Learner Dashboard →
-            </button>
+            <a href="#/parent" class="btn btn-primary btn-sm" data-action="navigate-parent" style="text-decoration: none;">
+              Parent Dashboard →
+            </a>
           ` : `
             <button type="button" class="btn btn-primary btn-sm" data-action="launch-demo">
               🚀 Launch Instant Demo
@@ -714,10 +758,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
           <div class="footer-col">
             <h4>Curriculum</h4>
             <ul>
-              <li><a data-action="start-catalog" data-skill="skill_letter_b_d_mirror" data-title="B/D Letter Mirror">B/D Letter Mirror</a></li>
+              <li><a data-action="start-catalog" data-skill="skill_confused_letters_bd" data-title="Letter Detective (b vs d)">B/D Letter Mirror</a></li>
               <li><a data-action="start-catalog" data-skill="skill_letter_sounds_basic" data-title="Letter-Sound Explorer">Letter-Sound Explorer</a></li>
-              <li><a data-action="start-catalog" data-skill="skill_sight_words_1" data-title="Sight Words">Sight Words Practice</a></li>
-              <li><a data-action="start-catalog" data-skill="skill_word_families_at" data-title="Word Families">Rhyme &amp; Word Families</a></li>
+              <li><a data-action="start-catalog" data-skill="skill_sight_words_high_freq" data-title="Sight Words">Sight Words Practice</a></li>
+              <li><a data-action="start-catalog" data-skill="skill_phonemic_rhyme" data-title="Word Families">Rhyme &amp; Word Families</a></li>
             </ul>
           </div>
 
@@ -853,9 +897,9 @@ function renderProfiles(children: ChildProfile[], editing?: ChildProfile): void 
           <a href="#/landing" class="btn btn-outline btn-sm" data-action="open-website" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
             🌐 View Website
           </a>
-          <button type="button" class="btn btn-outline btn-sm" data-action="settings">
-            ⚙️ Settings
-          </button>
+          <a href="#/parent" class="btn btn-outline btn-sm" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
+            🛡️ Parent Dashboard
+          </a>
           <button type="button" class="btn btn-ghost btn-sm" data-action="logout">
             Sign out
           </button>
@@ -898,6 +942,692 @@ function renderProfiles(children: ChildProfile[], editing?: ChildProfile): void 
 }
 
 // ----------------------------------------------------
+// PARENT DASHBOARD & ACCOUNT MANAGEMENT VIEW
+// ----------------------------------------------------
+function exportChildCsv(child: ChildProfile): void {
+  const prog = profiles.getChildProgress(child.id);
+  const summary = activityTracker.getSummary(child.id, child.name, '30days');
+  const rows = [
+    ['DyslexiMate Learner Progress Report'],
+    ['Generated', new Date().toISOString()],
+    ['Child Name', child.name],
+    ['Grade', child.grade],
+    ['Preferred Language', child.preferredLanguage],
+    [''],
+    ['Learning Metrics', 'Value'],
+    ['Practice Minutes Recorded', String(prog.practiceMinutes)],
+    ['Active Learning Seconds (Last 30 Days)', String(summary.totalActiveSeconds)],
+    ['Active Learning Minutes (Last 30 Days)', String(Math.round(summary.totalActiveSeconds / 60))],
+    ['Total Active Sessions', String(summary.totalSessions)],
+    ['Most Used Activity', summary.mostUsedActivity],
+    ['Happy Points', String(prog.happyPoints)],
+    ['Reading Accuracy (%)', String(prog.accuracyPercent)],
+    ['Current Streak (Days)', String(prog.streakDays)],
+    ['Practice Wins', String(prog.practiceWins)],
+  ];
+
+  const csvContent = rows
+    .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dysleximate-${child.name.toLowerCase().replace(/\s+/g, '_')}-progress-report.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported progress CSV for ${child.name} 📥`);
+}
+
+function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
+  const lockoutSeconds = auth.getPinLockoutRemainingSeconds();
+  root!.innerHTML = `
+    <main class="auth-layout" style="min-height: 100vh;">
+      <section class="auth-story" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+        <a class="brand brand-light" href="#/landing" data-action="open-website" aria-label="Return to DyslexiMate website">
+          ${brandMarkup(true)}
+        </a>
+        <div class="auth-story-copy">
+          <span class="badge badge-warm">PARENTAL CONTROL GATE</span>
+          <h1>Protected<br />Parent Portal</h1>
+          <p>This area contains sensitive learner records, progress telemetry, account credentials, and profile controls. Only authorized parents and guardians may enter.</p>
+          <div style="margin-top: 24px; padding: 16px; background: rgba(255,255,255,0.08); border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.85);">
+            🛡️ <strong>PIN-Protected Session:</strong> Entering your 4-digit PIN ensures children remain in their gentle learning space without accidentally modifying family settings or data.
+          </div>
+        </div>
+        <p class="auth-footnote">Made with empathy by Team PINAKA for growing readers and the people cheering them on.</p>
+      </section>
+
+      <section class="auth-panel">
+        <div class="auth-card" style="max-width: 440px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <a href="#/profiles" class="btn btn-ghost btn-sm" data-action="profiles" style="text-decoration: none; display: flex; align-items: center; gap: 4px;">
+              ← Learner Profiles
+            </a>
+            <span class="badge ${hasPin ? 'badge-primary' : 'badge-warm'}">
+              ${hasPin ? '🔒 PIN Protected' : '⚙️ Setup Required'}
+            </span>
+          </div>
+
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--bg-surface-alt); border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 14px;">
+              🔒
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 0 0 6px;">
+              ${hasPin ? 'Parent Security PIN' : 'Create Parent PIN'}
+            </h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5;">
+              ${hasPin
+                ? `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Enter your 4-digit PIN to access the Parent Dashboard.`
+                : `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Please create a 4-digit PIN to protect parent settings.`
+              }
+            </p>
+          </div>
+
+          <form id="parent-gate-pin-form" class="form-stack">
+            ${hasPin ? `
+              <div style="position: relative;">
+                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
+                  Enter 4-Digit PIN
+                  <div style="position: relative; display: flex; align-items: center;">
+                    <input
+                      name="gatePin"
+                      id="gate-pin-input"
+                      type="${gatePinVisible ? 'text' : 'password'}"
+                      inputmode="numeric"
+                      pattern="[0-9]{4}"
+                      maxlength="4"
+                      required
+                      placeholder="• • • •"
+                      autocomplete="current-password"
+                      autofocus
+                      style="padding: 14px 44px 14px 16px; font-size: 22px; letter-spacing: 12px; text-align: center; border-radius: var(--radius-md); border: 2px solid var(--border-color); width: 100%; font-family: monospace; font-weight: 900;"
+                    />
+                    <button
+                      type="button"
+                      data-action="toggle-gate-pin-visibility"
+                      class="btn btn-ghost btn-sm"
+                      style="position: absolute; right: 8px; padding: 6px 8px; font-size: 14px; color: var(--text-muted);"
+                      title="${gatePinVisible ? 'Hide PIN' : 'Show PIN'}"
+                      aria-label="${gatePinVisible ? 'Hide PIN' : 'Show PIN'}"
+                    >
+                      ${gatePinVisible ? '🙈' : '👁️'}
+                    </button>
+                  </div>
+                </label>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="margin-top: 14px; width: 100%; padding: 12px; font-size: 15px; font-weight: 700;">
+                Unlock Parent Dashboard 🛡️
+              </button>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                <button type="button" class="btn btn-ghost btn-sm" data-action="forgot-parent-pin" style="color: var(--text-muted); text-decoration: underline; font-size: 12px; padding: 0;">
+                  Forgot Parent PIN?
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color: #dc2626; font-size: 12px; padding: 0;">
+                  Sign Out
+                </button>
+              </div>
+            ` : `
+              <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
+                Choose 4-Digit PIN
+                <input
+                  name="gateNewPin"
+                  type="password"
+                  inputmode="numeric"
+                  pattern="[0-9]{4}"
+                  maxlength="4"
+                  required
+                  placeholder="e.g. 1234"
+                  autocomplete="new-password"
+                  autofocus
+                  style="padding: 12px 16px; font-size: 18px; letter-spacing: 6px; text-align: center; border-radius: var(--radius-md); border: 2px solid var(--border-color); width: 100%; font-family: monospace;"
+                />
+              </label>
+
+              <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
+                Confirm 4-Digit PIN
+                <input
+                  name="gateConfirmPin"
+                  type="password"
+                  inputmode="numeric"
+                  pattern="[0-9]{4}"
+                  maxlength="4"
+                  required
+                  placeholder="Repeat 4 digits"
+                  autocomplete="new-password"
+                  style="padding: 12px 16px; font-size: 18px; letter-spacing: 6px; text-align: center; border-radius: var(--radius-md); border: 2px solid var(--border-color); width: 100%; font-family: monospace;"
+                />
+              </label>
+
+              <button type="submit" class="btn btn-primary" style="margin-top: 14px; width: 100%; padding: 12px; font-size: 15px; font-weight: 700;">
+                Set PIN &amp; Unlock Dashboard 🛡️
+              </button>
+            `}
+
+            <p id="gate-pin-message" class="form-message" aria-live="polite" style="margin-top: 12px; font-size: 13px; font-weight: 700; text-align: center; color: #b91c1c;">
+              ${lockoutSeconds > 0 ? `Security lockout active. Please wait ${lockoutSeconds}s before retrying.` : ''}
+            </p>
+          </form>
+
+          <div style="margin-top: 20px; padding: 12px 14px; background: var(--bg-surface-alt); border-radius: var(--radius-md); font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+            🌱 <strong>Want to practice reading?</strong> You can switch directly to your child's profile anytime without entering the parent PIN.
+          </div>
+        </div>
+        <div id="modal-root"></div>
+        ${rightsFooter()}
+      </section>
+    </main>
+  `;
+}
+
+async function renderParentDashboard(children: ChildProfile[], user: ParentUser): Promise<void> {
+  const isLive = auth.isLiveDatabaseConnected();
+  if (!parentSelectedChildId && children.length > 0) {
+    parentSelectedChildId = children[0].id;
+  }
+  const selectedChild = children.find(c => c.id === parentSelectedChildId) || children[0] || null;
+
+  let totalPracticeMinutes = 0;
+  let totalWordsPracticed = 0;
+  let totalHappyPoints = 0;
+
+  children.forEach(c => {
+    const prog = profiles.getChildProgress(c.id);
+    totalPracticeMinutes += prog.practiceMinutes;
+    totalWordsPracticed += prog.wordsLearned;
+    totalHappyPoints += prog.happyPoints;
+  });
+
+  let attempts: LearningAttempt[] = [];
+  let path = null;
+  let summary = null;
+
+  if (selectedChild) {
+    [attempts, path] = await Promise.all([
+      learning.getChildAttempts(selectedChild.id),
+      learning.getOrGeneratePath(selectedChild),
+    ]);
+    summary = activityTracker.getSummary(selectedChild.id, selectedChild.name, parentTelemetryPeriod);
+  }
+
+  const hasPin = auth.hasParentPin();
+
+  root!.innerHTML = `
+    <main class="parent-portal-page" style="min-height: 100vh; background: var(--bg-main, #f8fafc); color: var(--text-main, #0f172a); font-family: var(--font-body, system-ui);">
+      <!-- Top Navigation Header -->
+      <header class="surface" style="padding: 16px 24px; border-bottom: 1.5px solid var(--border-color, #e2e8f0); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; background: #ffffff;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <a href="#/landing" data-action="open-website" style="text-decoration: none;">
+            ${brandMarkup(true)}
+          </a>
+          <span class="badge badge-primary">PARENT &amp; GUARDIAN PORTAL 🛡️</span>
+          ${isLive
+            ? '<span class="badge badge-outline" style="border-color: #86efac; color: #166534; background: #f0fdf4;">🟢 Supabase PostgreSQL &amp; RLS Active</span>'
+            : '<span class="badge badge-outline" style="border-color: #fde047; color: #854d0e; background: #fefce8;">⚡ Local Sandbox</span>'}
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <a href="#/landing" class="btn btn-outline btn-sm" data-action="open-website" style="text-decoration: none;">
+            🌐 View Website
+          </a>
+          <a href="#/profiles" class="btn btn-primary btn-sm" data-action="profiles" style="text-decoration: none;">
+            👧🏽 Learner Profiles (${children.length}) →
+          </a>
+          <button type="button" class="btn btn-outline btn-sm" data-action="lock-parent-portal" title="Lock the parent dashboard">
+            🔒 Lock Portal
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color: #dc2626;">
+            Sign Out
+          </button>
+        </div>
+      </header>
+
+      <div style="max-width: 1120px; margin: 0 auto; padding: 28px 20px;">
+        <!-- Welcome Hero Banner -->
+        <section style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <span style="font-size: 12px; font-weight: 800; color: var(--primary); letter-spacing: 0.5px; text-transform: uppercase;">
+              FAMILY LEARNING MANAGEMENT
+            </span>
+            <h1 style="font-family: var(--font-heading); font-size: 28px; font-weight: 900; margin: 4px 0 6px;">
+              Welcome, ${escapeHtml(user.fullName)}
+            </h1>
+            <p style="font-size: 14px; color: var(--text-muted); margin: 0;">
+              Review your children’s reading practice records, track progress telemetry, and manage your account credentials.
+            </p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" data-action="add-child">
+            ＋ Add Another Child
+          </button>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav style="display: flex; gap: 8px; border-bottom: 2px solid var(--border-color, #e2e8f0); margin-bottom: 24px; overflow-x: auto;" role="tablist">
+          <button
+            type="button"
+            class="btn btn-sm ${parentActiveTab === 'overview' ? 'btn-primary' : 'btn-ghost'}"
+            data-action="parent-tab"
+            data-tab="overview"
+            role="tab"
+            aria-selected="${parentActiveTab === 'overview'}"
+            style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
+          >
+            👥 Family Overview &amp; Children
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm ${parentActiveTab === 'child_records' ? 'btn-primary' : 'btn-ghost'}"
+            data-action="parent-tab"
+            data-tab="child_records"
+            role="tab"
+            aria-selected="${parentActiveTab === 'child_records'}"
+            style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
+          >
+            📊 Detailed Learning Records
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm ${parentActiveTab === 'settings' ? 'btn-primary' : 'btn-ghost'}"
+            data-action="parent-tab"
+            data-tab="settings"
+            role="tab"
+            aria-selected="${parentActiveTab === 'settings'}"
+            style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
+          >
+            ⚙️ Account &amp; Security Settings
+          </button>
+        </nav>
+
+        <!-- TAB 1: OVERVIEW & CHILDREN LIST -->
+        ${parentActiveTab === 'overview' ? `
+          <section class="stats-grid" style="margin-bottom: 28px;">
+            ${statCard('👥', 'Linked learners', children.length, 'Registered children')}
+            ${statCard('⏱', 'Combined practice', `${totalPracticeMinutes} min`, 'Across all learning sessions')}
+            ${statCard('📖', 'Total words', totalWordsPracticed, 'Practiced and mastered')}
+            ${statCard('✦', 'Happy points', `${totalHappyPoints} ⭐`, 'Little wins celebrated')}
+          </section>
+
+          <section class="surface" style="padding: 24px; border-radius: var(--radius-lg); margin-bottom: 28px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+              <div>
+                <h2 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 0 0 4px;">
+                  Registered Child Profiles
+                </h2>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                  Select a child to inspect their verified learning records, edit their preferences, or launch practice.
+                </p>
+              </div>
+            </div>
+
+            ${children.length === 0 ? `
+              <div style="text-align: center; padding: 40px 20px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
+                <span style="font-size: 40px;">🌱</span>
+                <h3 style="font-size: 16px; margin: 8px 0 4px;">No learner profiles created yet</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 16px;">Add your first child profile to personalize practice adventures and track their reading journey.</p>
+                <button type="button" class="btn btn-primary" data-action="add-child">Create First Child Profile →</button>
+              </div>
+            ` : `
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                ${children.map(c => {
+                  const p = profiles.getChildProgress(c.id);
+                  return `
+                    <article class="surface" style="background: var(--bg-surface-alt); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                      <div style="display: flex; align-items: center; gap: 14px; min-width: 240px;">
+                        <span style="font-size: 38px; width: 56px; height: 56px; display: grid; place-items: center; background: #ffffff; border-radius: 14px; border: 1px solid var(--border-color);">
+                          ${escapeHtml(c.avatar)}
+                        </span>
+                        <div>
+                          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 2px;">
+                            ${escapeHtml(c.name)}
+                          </h3>
+                          <small style="color: var(--text-muted); font-size: 12px; display: block;">
+                            ${escapeHtml(c.grade)} · 🌐 <strong>${escapeHtml(c.preferredLanguage)}</strong>
+                          </small>
+                          <div style="display: flex; gap: 10px; margin-top: 6px; font-size: 11px; font-weight: 700; color: var(--text-subtle);">
+                            <span>⏱ ${p.practiceMinutes} min</span>
+                            <span>✦ ${p.happyPoints} pts</span>
+                            <span>🎯 ${p.accuracyPercent}% accuracy</span>
+                            <span>🏆 ${p.practiceWins} wins</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-outline btn-sm" data-action="view-child-records" data-id="${escapeHtml(c.id)}">
+                          📊 Inspect Records
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="edit-child" data-id="${escapeHtml(c.id)}">
+                          ✏️ Edit Profile
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="export-child-csv" data-id="${escapeHtml(c.id)}" title="Download CSV Progress Report">
+                          📥 CSV
+                        </button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="select-child" data-id="${escapeHtml(c.id)}">
+                          Open Learner Space →
+                        </button>
+                      </div>
+                    </article>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </section>
+        ` : ''}
+
+        <!-- TAB 2: DETAILED LEARNING RECORDS -->
+        ${parentActiveTab === 'child_records' ? `
+          ${!selectedChild ? `
+            <div class="surface" style="text-align: center; padding: 40px 20px;">
+              <span style="font-size: 40px;">🌱</span>
+              <p style="color: var(--text-muted); margin-top: 8px;">No child profile selected. Add a child to inspect records.</p>
+            </div>
+          ` : `
+            <!-- Child Switcher (if multiple) -->
+            ${children.length > 1 ? `
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+                <span style="font-size: 13px; font-weight: 800; color: var(--text-muted);">Select Child:</span>
+                ${children.map(c => `
+                  <button
+                    type="button"
+                    class="btn btn-sm ${c.id === selectedChild.id ? 'btn-primary' : 'btn-outline'}"
+                    data-action="select-report-child"
+                    data-id="${escapeHtml(c.id)}"
+                  >
+                    <span>${escapeHtml(c.avatar)}</span> ${escapeHtml(c.name)}
+                  </button>
+                `).join('')}
+              </div>
+            ` : ''}
+
+            <!-- Selected Child Header -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #bfdbfe;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                  <span style="font-size: 48px; width: 70px; height: 70px; display: grid; place-items: center; background: #ffffff; border-radius: 18px; border: 1.5px solid #bfdbfe;">
+                    ${escapeHtml(selectedChild.avatar)}
+                  </span>
+                  <div>
+                    <span class="badge badge-primary">CONFIRMED SUPABASE DATA</span>
+                    <h2 style="font-family: var(--font-heading); font-size: 24px; font-weight: 900; margin: 4px 0 2px;">
+                      ${escapeHtml(selectedChild.name)}’s Progress &amp; Telemetry
+                    </h2>
+                    <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                      ${escapeHtml(selectedChild.grade)} · Learning Language: <strong>${escapeHtml(selectedChild.preferredLanguage)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-outline btn-sm" data-action="export-child-csv" data-id="${escapeHtml(selectedChild.id)}">
+                    📥 Export CSV Report
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" data-action="select-child" data-id="${escapeHtml(selectedChild.id)}">
+                    Launch Practice Adventure →
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Activity Telemetry Metrics Grid -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 2px;">
+                    ⏱️ Active Practice Time &amp; Categories
+                  </h3>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+                    Telemetry calculated strictly from active session duration without idle padding.
+                  </p>
+                </div>
+
+                <!-- Telemetry Period Buttons -->
+                <div style="display: flex; gap: 4px; background: var(--bg-surface-alt); padding: 4px; border-radius: var(--radius-md);">
+                  <button type="button" class="btn btn-sm ${parentTelemetryPeriod === 'today' ? 'btn-primary' : 'btn-ghost'}" data-action="parent-telemetry-period" data-period="today" style="padding: 4px 10px; font-size: 12px;">
+                    Today
+                  </button>
+                  <button type="button" class="btn btn-sm ${parentTelemetryPeriod === '7days' ? 'btn-primary' : 'btn-ghost'}" data-action="parent-telemetry-period" data-period="7days" style="padding: 4px 10px; font-size: 12px;">
+                    Last 7 Days
+                  </button>
+                  <button type="button" class="btn btn-sm ${parentTelemetryPeriod === '30days' ? 'btn-primary' : 'btn-ghost'}" data-action="parent-telemetry-period" data-period="30days" style="padding: 4px 10px; font-size: 12px;">
+                    Last 30 Days
+                  </button>
+                </div>
+              </div>
+
+              ${summary ? `
+                <div class="stats-grid" style="margin-bottom: 18px;">
+                  ${statCard('◷', 'Active time', `${Math.round(summary.totalActiveSeconds / 60)} min`, 'Tracked interaction time')}
+                  ${statCard('✦', 'Sessions', summary.totalSessions, 'Active learning logins')}
+                  ${statCard('⏱', 'Average session', `${Math.round(summary.averageSessionSeconds / 60)} min`, 'Per practice session')}
+                  ${statCard('⭐', 'Top activity', summary.mostUsedActivity, 'Most engaged format')}
+                </div>
+
+                <div style="display: grid; gap: 8px; margin-top: 14px;">
+                  <strong style="font-size: 13px; color: var(--text-muted); display: block; margin-bottom: 4px;">Category Breakdown:</strong>
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 8px 12px; background: var(--bg-surface-alt); border-radius: var(--radius-sm);">
+                    <span>🎮 Picture Word Match &amp; Practice Games</span>
+                    <strong>${Math.round((summary.categoryBreakdown.practice_game?.seconds || 0) / 60)} min</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 8px 12px; background: var(--bg-surface-alt); border-radius: var(--radius-sm);">
+                    <span>📖 Story Shelf &amp; Reading Comprehension</span>
+                    <strong>${Math.round((summary.categoryBreakdown.story_reading?.seconds || 0) / 60)} min</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 8px 12px; background: var(--bg-surface-alt); border-radius: var(--radius-sm);">
+                    <span>🔤 Letter Mirror Detective (b vs d)</span>
+                    <strong>${Math.round((summary.categoryBreakdown.letter_mirror?.seconds || 0) / 60)} min</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 8px 12px; background: var(--bg-surface-alt); border-radius: var(--radius-sm);">
+                    <span>🎙️ Voice Spelling &amp; Pronunciation Coach</span>
+                    <strong>${Math.round((summary.categoryBreakdown.voice_spelling?.seconds || 0) / 60)} min</strong>
+                  </div>
+                </div>
+              ` : ''}
+            </section>
+
+            <!-- Adaptive Learning Path & Demonstrated / Struggle Skills -->
+            ${path ? `
+              <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px;">
+                <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 10px;">
+                  ⚡ Adaptive Learning Model &amp; Skill Progression
+                </h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.5;">
+                  ${escapeHtml(path.explanation)}
+                </p>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px;">
+                  <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: var(--radius-md); padding: 16px;">
+                    <strong style="font-size: 13px; color: #166534; display: block; margin-bottom: 8px;">
+                      ✓ Demonstrated Skills (${path.demonstratedSkills.length})
+                    </strong>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                      ${path.demonstratedSkills.length > 0
+                        ? path.demonstratedSkills.map(sid => `<span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
+                        : '<span style="font-size: 12px; color: var(--text-muted);">Practicing foundational skills.</span>'}
+                    </div>
+                  </div>
+
+                  <div style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: var(--radius-md); padding: 16px;">
+                    <strong style="font-size: 13px; color: #92400e; display: block; margin-bottom: 8px;">
+                      🎯 Priority Growth &amp; Support Areas (${path.prioritySkills.length})
+                    </strong>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                      ${path.prioritySkills.length > 0
+                        ? path.prioritySkills.map(sid => `<span class="badge" style="background: #fef3c7; color: #92400e; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
+                        : '<span style="font-size: 12px; color: var(--text-muted);">No persistent struggle patterns observed.</span>'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-surface-alt); border-radius: var(--radius-md); padding: 14px;">
+                  <strong style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">
+                    Current Active Goals:
+                  </strong>
+                  <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-main); line-height: 1.6;">
+                    ${path.currentGoals.map(g => `<li>${escapeHtml(g)}</li>`).join('')}
+                  </ul>
+                </div>
+              </section>
+            ` : ''}
+
+            <!-- Real Saved Activity Attempts History -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div>
+                  <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 2px;">
+                    📖 Practice History &amp; Attempt Records (${attempts.length})
+                  </h3>
+                  <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+                    Individual learning attempts recorded from practice games and story shelf comprehension.
+                  </p>
+                </div>
+              </div>
+
+              ${attempts.length === 0 ? `
+                <div style="text-align: center; padding: 30px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
+                  <span style="font-size: 32px;">🌱</span>
+                  <p style="color: var(--text-muted); font-size: 13px; margin-top: 8px;">
+                    No practice attempts recorded yet for ${escapeHtml(selectedChild.name)}. Complete an activity in the learning space to see verified attempt records here.
+                  </p>
+                </div>
+              ` : `
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  ${[...attempts].reverse().slice(0, 15).map(att => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-surface-alt); border-radius: var(--radius-md); border: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px;">
+                      <div>
+                        <strong style="font-size: 14px; display: block;">
+                          ${escapeHtml(att.activityId.replace(/^act_/, '').replace(/^story_/, 'Story: ').replace(/_/g, ' '))}
+                        </strong>
+                        <small style="color: var(--text-muted); font-size: 11px;">
+                          Skill: ${escapeHtml(getSkillDefinition(att.skillId)?.name || att.skillId)} · ${new Date(att.completedAt).toLocaleString()}
+                        </small>
+                      </div>
+
+                      <div style="display: flex; align-items: center; gap: 14px;">
+                        <span style="font-size: 12px; color: var(--text-muted);">
+                          ${att.correctAnswers}/${att.totalQuestions} correct
+                          ${att.hintsRequested > 0 ? `· ${att.hintsRequested} hints` : ''}
+                        </span>
+                        <strong style="font-size: 16px; color: ${att.accuracy >= 0.8 ? '#16a34a' : att.accuracy >= 0.5 ? '#d97706' : '#dc2626'}; min-width: 50px; text-align: right;">
+                          ${Math.round(att.accuracy * 100)}%
+                        </strong>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </section>
+          `}
+        ` : ''}
+
+        <!-- TAB 3: ACCOUNT & SECURITY SETTINGS -->
+        ${parentActiveTab === 'settings' ? `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+            <!-- Profile Info Card -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
+              <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 14px;">
+                Parent Account Overview
+              </h3>
+              <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px;">
+                <div>
+                  <span style="color: var(--text-muted); display: block; font-size: 11px; font-weight: 700;">FULL NAME</span>
+                  <strong>${escapeHtml(user.fullName)}</strong>
+                </div>
+                <div>
+                  <span style="color: var(--text-muted); display: block; font-size: 11px; font-weight: 700;">EMAIL ADDRESS</span>
+                  <strong>${escapeHtml(user.email)}</strong>
+                </div>
+                <div>
+                  <span style="color: var(--text-muted); display: block; font-size: 11px; font-weight: 700;">PARENT ID</span>
+                  <code style="font-size: 11px; background: var(--bg-surface-alt); padding: 2px 6px; border-radius: 4px;">${escapeHtml(user.id)}</code>
+                </div>
+                <div>
+                  <span style="color: var(--text-muted); display: block; font-size: 11px; font-weight: 700;">AUTHENTICATION PROVIDER</span>
+                  <span>${isLive ? 'Supabase Auth (PostgreSQL &amp; Row Level Security)' : 'Demo Sandbox'}</span>
+                </div>
+              </div>
+
+              <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-color);">
+                <button type="button" class="btn btn-outline btn-sm" data-action="logout" style="color: #dc2626; border-color: #fca5a5; width: 100%;">
+                  Sign Out of Parent Account
+                </button>
+              </div>
+            </section>
+
+            <!-- Change Password Form -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
+              <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 4px;">
+                Change Account Password
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px;">
+                Update your login password securely through the authentication engine.
+              </p>
+
+              <form id="parent-change-password-form" class="form-stack">
+                <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+                  New Password
+                  <input name="newPassword" type="password" required minlength="6" placeholder="At least 6 characters" style="padding: 8px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color);" />
+                </label>
+                <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+                  Confirm New Password
+                  <input name="confirmPassword" type="password" required minlength="6" placeholder="Repeat new password" style="padding: 8px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color);" />
+                </label>
+                <button type="submit" class="btn btn-primary" style="margin-top: 8px;">
+                  Update Password
+                </button>
+                <p id="password-message" class="form-message" aria-live="polite" style="margin-top: 8px; font-size: 12px; font-weight: 700;"></p>
+              </form>
+            </section>
+
+            <!-- Parent PIN Security Form -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+                <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0;">
+                  Parent Security PIN 🔒
+                </h3>
+                <span class="badge ${hasPin ? 'badge-primary' : 'badge-warm'}">
+                  ${hasPin ? 'PIN Active' : 'Not Set'}
+                </span>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px;">
+                Protects parent dashboard and profile editing from young readers. Kept completely separate from your login password.
+              </p>
+
+              <form id="pin-form" class="form-stack">
+                ${hasPin ? `
+                  <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+                    Current 4-Digit PIN
+                    <input name="oldPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="Current 4-digit PIN" style="padding: 8px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color);" />
+                  </label>
+                ` : ''}
+                <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+                  ${hasPin ? 'New 4-Digit PIN' : 'Create 4-Digit Parent PIN'}
+                  <input name="newPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="Choose 4 digits (e.g. 1234)" style="padding: 8px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color);" />
+                </label>
+                <button type="submit" class="btn btn-primary" style="margin-top: 8px;">
+                  ${hasPin ? 'Change Parent PIN' : 'Save Parent PIN'}
+                </button>
+                ${hasPin ? `
+                  <button type="button" class="btn btn-ghost btn-sm" data-action="forgot-parent-pin" style="margin-top: 8px; color: var(--text-muted); font-size: 12px; text-decoration: underline; align-self: flex-start; padding: 4px 0;">
+                    Forgot Parent PIN?
+                  </button>
+                ` : ''}
+                <p id="pin-message" class="form-message" aria-live="polite" style="margin-top: 8px; font-size: 12px; font-weight: 700;"></p>
+              </form>
+            </section>
+          </div>
+        ` : ''}
+      </div>
+
+      <div id="modal-root"></div>
+      ${rightsFooter()}
+    </main>
+  `;
+}
+
+// ----------------------------------------------------
 // LEARNER APPLICATION SHELL & DASHBOARD
 // ----------------------------------------------------
 function renderShell(userName: string): string {
@@ -906,6 +1636,7 @@ function renderShell(userName: string): string {
   const nav = [
     ['home', '⌂', 'Overview'],
     ['practice', '✳', 'Practice'],
+    ['stories', '📖', 'Story Shelf'],
     ['progress', '↗', 'Progress'],
     ['resources', '⌕', 'Resources'],
   ];
@@ -938,7 +1669,7 @@ function renderShell(userName: string): string {
           <span style="font-size: 24px;">🌱</span>
           <strong>Every little step counts.</strong>
           <p>10 minutes of daily playful reading can make a massive difference in fluency.</p>
-          <a href="#/resources" class="btn btn-warm btn-sm" style="width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center;" data-action="navigate-resources">
+          <a href="#/stories" class="btn btn-warm btn-sm" style="width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center;" data-action="navigate-stories">
             Find a Story
           </a>
         </div>
@@ -1010,9 +1741,9 @@ function renderShell(userName: string): string {
             <span class="badge badge-outline today-badge">
               ${new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
-            <button class="btn btn-outline btn-sm user-settings-chip" data-action="settings" type="button">
-              <span>☼</span> <span>${escapeHtml(userName)}</span>
-            </button>
+            <a href="#/parent" class="btn btn-outline btn-sm user-settings-chip" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;" title="Open Parent Dashboard for ${escapeHtml(userName)}">
+              <span>🛡️</span> <span>Parent Dashboard</span>
+            </a>
           </div>
         </header>
 
@@ -1027,6 +1758,7 @@ function renderShell(userName: string): string {
 
 function pageTitle(): string {
   if (activePage === 'practice') return 'Choose a gentle adventure';
+  if (activePage === 'stories') return 'Story Shelf & Reading Adventures';
   if (activePage === 'progress') return 'Look how far you’ve come';
   if (activePage === 'resources') return 'Stories and learning ideas';
   return `Good things grow, ${activeChild?.name || 'reader'}!`;
@@ -1112,6 +1844,225 @@ async function homePage(): Promise<string> {
             Try this activity <span>→</span>
           </button>
         ` : button('Browse activities', 'navigate-practice', 'btn btn-primary btn-lg')}
+      </section>
+    </div>
+
+    <!-- Story of the Day Hero Banner -->
+    <section class="surface" style="margin-top: 24px; background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%); border: 1.5px solid #bbf7d0; padding: 22px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 260px;">
+          <span class="badge badge-primary">STORY OF THE DAY 📖</span>
+          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 8px 0 4px;">
+            ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).emoji)} ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).title)}
+          </h3>
+          <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 14px;">
+            ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).synopsis)}
+          </p>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary btn-sm" data-action="open-story" data-id="${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).id)}">
+              Read Story &amp; Quiz <span>→</span>
+            </button>
+            <a href="#/stories" class="btn btn-ghost btn-sm" data-action="navigate-stories" style="text-decoration: none;">
+              Browse all stories (${storyShelf.getStories(child.preferredLanguage).length})
+            </a>
+          </div>
+        </div>
+        <div style="font-size: 52px; align-self: center;">
+          ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).emoji)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function storiesPage(): string {
+  const child = activeChild!;
+  const currentLang = storyLanguage || child.preferredLanguage || 'English';
+  const supportedLangs = storyShelf.getSupportedLanguages();
+  const allStories = storyShelf.getStories(currentLang);
+  const storyOfTheDay = storyShelf.getStoryOfTheDay(currentLang, storyRotationAdvance);
+
+  return `
+    <section style="margin-bottom: 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+        <div>
+          <span class="badge badge-primary">READ, ENJOY, UNDERSTAND</span>
+          <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">
+            Story Shelf &amp; Comprehension
+          </h2>
+          <p style="color: var(--text-muted); font-size: 14px; margin: 0;">
+            Illustrated reading passages with read-aloud voice support, dyslexia-friendly spacing, and gentle comprehension quizzes.
+          </p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+            Language:
+            <select class="story-lang-select" style="padding: 6px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700;">
+              ${supportedLangs.map((l: SupportedLanguage) => `<option value="${l}" ${l === currentLang ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
+          <button type="button" class="btn btn-outline btn-sm" data-action="shuffle-stories" title="Shuffle stories">
+            🎲 Shuffle
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Featured Story Banner -->
+    <section class="surface" style="margin-bottom: 28px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #bfdbfe; padding: 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 260px;">
+          <span class="badge badge-warm">FEATURED PASSAGE</span>
+          <h3 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 8px 0 6px;">
+            ${escapeHtml(storyOfTheDay.emoji)} ${escapeHtml(storyOfTheDay.title)}
+          </h3>
+          <p style="color: var(--text-main); font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+            ${escapeHtml(storyOfTheDay.synopsis)}
+          </p>
+          <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary" data-action="open-story" data-id="${escapeHtml(storyOfTheDay.id)}">
+              Read This Story <span>→</span>
+            </button>
+            <span style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
+              ⏱️ ${storyOfTheDay.estimatedMinutes} min · Level: ${escapeHtml(storyOfTheDay.readingLevel)}
+            </span>
+          </div>
+        </div>
+        <div style="font-size: 64px;">
+          ${escapeHtml(storyOfTheDay.emoji)}
+        </div>
+      </div>
+    </section>
+
+    <!-- Grid of All Stories in Selected Language -->
+    <section>
+      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 16px;">
+        All Stories in ${escapeHtml(currentLang)} (${allStories.length})
+      </h3>
+      <div class="curriculum-grid">
+        ${allStories.map((s, idx) => `
+          <article class="curriculum-card tone-${idx % 6}">
+            <div class="card-top-row">
+              <span class="curriculum-emoji">${escapeHtml(s.emoji)}</span>
+              <span class="badge badge-outline">${escapeHtml(s.readingLevel.toUpperCase())}</span>
+            </div>
+            <h3>${escapeHtml(s.title)}</h3>
+            <p>${escapeHtml(s.synopsis)}</p>
+            <div class="curriculum-meta-row">
+              <span>⏱ ${s.estimatedMinutes} min · ${s.comprehensionQuestions.length} questions</span>
+              <button type="button" class="btn btn-outline btn-sm" data-action="open-story" data-id="${escapeHtml(s.id)}">
+                Read <span>→</span>
+              </button>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function openStoryReader(storyId: string, lang?: SupportedLanguage): void {
+  const child = activeChild;
+  if (!child) return;
+  const currentLang = lang || storyLanguage || child.preferredLanguage || 'English';
+  const story = storyShelf.getStoryById(storyId, currentLang);
+  if (!story) {
+    toast('Story not found.', true);
+    return;
+  }
+
+  activeStory = story;
+  activeStoryFontSize = 18;
+  storyComprehensionScore = 0;
+  storyAnsweredQids.clear();
+  storyMissedQuestions = [];
+
+  const parentId = auth.getCurrentUser()?.id || child.parentId;
+  activityTracker.startActivity(parentId, child.id, 'story_reading', `Story: ${story.title}`);
+
+  renderStoryReaderModal();
+}
+
+function renderStoryReaderModal(): void {
+  const modal = root!.querySelector<HTMLElement>('#modal-root');
+  if (!modal || !activeStory || !activeChild) return;
+  document.body.style.overflow = 'hidden';
+
+  const story = activeStory;
+  const totalQuestions = story.comprehensionQuestions.length;
+
+  modal.innerHTML = `
+    <div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal-card story-reader-modal" style="max-width: 760px; max-height: 90vh; overflow-y: auto;" role="dialog" aria-modal="true" aria-labelledby="story-modal-title">
+        <div class="modal-heading">
+          <div>
+            <span class="badge badge-primary">${escapeHtml(story.readingLevel.toUpperCase())} · ⏱️ ${story.estimatedMinutes} MIN READ</span>
+            <h2 id="story-modal-title" style="display: flex; align-items: center; gap: 8px;">
+              <span>${story.emoji}</span> <span>${escapeHtml(story.title)}</span>
+            </h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-modal" aria-label="Close">×</button>
+        </div>
+
+        <div class="story-controls-bar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
+          <button type="button" class="btn btn-outline btn-sm" data-action="speak-story">
+            🔊 <span id="story-tts-label">Read aloud</span>
+          </button>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">Text size:</span>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="story-font-smaller" title="Make text smaller" style="padding: 4px 8px; font-weight: 800;">A−</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="story-font-larger" title="Make text larger" style="padding: 4px 8px; font-weight: 800;">A+</button>
+          </div>
+          <span style="flex: 1;"></span>
+          <button type="button" class="btn btn-primary btn-sm" data-action="finish-story-reading">
+            Finish Reading ✓
+          </button>
+        </div>
+
+        <div id="story-paragraphs" class="story-reading-content" style="font-size: ${activeStoryFontSize}px; line-height: 1.8; color: var(--text-main); margin-bottom: 24px; padding: 8px 4px;">
+          ${story.paragraphs.map(p => `<p style="margin-bottom: 16px;">${escapeHtml(p)}</p>`).join('')}
+        </div>
+
+        ${totalQuestions > 0 ? `
+          <section class="story-comprehension-block" style="border-top: 2px dashed var(--border-color); padding-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+              <div>
+                <span class="badge badge-warm">COMPREHENSION CHECK</span>
+                <h3 style="font-family: var(--font-heading); font-size: 17px; font-weight: 800; margin: 4px 0 2px;">Check your understanding</h3>
+              </div>
+              <span id="storyCompScoreTag" class="badge badge-primary">
+                ${storyComprehensionScore} / ${totalQuestions} Correct ⭐
+              </span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              ${story.comprehensionQuestions.map((q, qIdx) => {
+                const isAnswered = storyAnsweredQids.has(q.id);
+                return `
+                  <article class="surface" style="background: var(--bg-surface-alt); padding: 14px;" data-qid="${escapeHtml(q.id)}">
+                    <p style="font-weight: 800; font-size: 14px; margin: 0 0 10px;">${qIdx + 1}. ${escapeHtml(q.question)}</p>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      ${q.options.map((opt, optIdx) => `
+                        <button
+                          type="button"
+                          class="btn btn-outline btn-sm story-comp-opt"
+                          data-action="answer-story-comp"
+                          data-qid="${escapeHtml(q.id)}"
+                          data-idx="${optIdx}"
+                          ${isAnswered ? 'disabled' : ''}
+                          style="text-align: left; justify-content: flex-start; padding: 10px 14px; white-space: normal;"
+                        >
+                          ${escapeHtml(opt)}
+                        </button>
+                      `).join('')}
+                    </div>
+                    <div id="feedback_${escapeHtml(q.id)}" class="comp-feedback-msg" style="margin-top: 8px; font-size: 13px; font-weight: 700; display: none;"></div>
+                  </article>
+                `;
+              }).join('')}
+            </div>
+          </section>
+        ` : ''}
       </section>
     </div>`;
 }
@@ -1234,6 +2185,16 @@ async function resourcesPage(): Promise<string> {
       </div>
     </div>
 
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: var(--radius-md); background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1px solid #bfdbfe; margin-bottom: 24px; gap: 16px; flex-wrap: wrap;">
+      <div>
+        <strong style="font-size: 14px; color: #1e3a8a; display: block;">Looking for curated reading passages with voice read-aloud?</strong>
+        <p style="font-size: 12px; color: #475569; margin: 2px 0 0;">Check out our illustrated Story Shelf with comprehension quizzes and happy points!</p>
+      </div>
+      <a href="#/stories" class="btn btn-primary btn-sm" data-action="navigate-stories" style="text-decoration: none;">
+        Open Story Shelf 📖 <span>→</span>
+      </a>
+    </div>
+
     <section class="surface" style="margin-bottom: 24px;">
       <form id="resource-form" class="resource-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: flex-end;">
         <label style="grid-column: 1 / -1; display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
@@ -1349,6 +2310,15 @@ async function renderAppPage(): Promise<void> {
     return;
   }
 
+  if (activePage === 'parent') {
+    if (!isParentPortalUnlocked) {
+      renderParentPinGate(user, auth.hasParentPin());
+      return;
+    }
+    await renderParentDashboard(children, user);
+    return;
+  }
+
   const storedActiveChild = profiles.getActiveChild();
   activeChild = activeChild && children.some(child => child.id === activeChild!.id)
     ? activeChild
@@ -1380,11 +2350,13 @@ async function renderAppPage(): Promise<void> {
 
     const pageContent = activePage === 'practice'
       ? practicePage()
-      : activePage === 'progress'
-        ? await progressPage()
-        : activePage === 'resources'
-          ? await resourcesPage()
-          : await homePage();
+      : activePage === 'stories'
+        ? storiesPage()
+        : activePage === 'progress'
+          ? await progressPage()
+          : activePage === 'resources'
+            ? await resourcesPage()
+            : await homePage();
 
     if (renderRevision === appRenderRevision) content.innerHTML = pageContent;
   } catch (error) {
@@ -1398,6 +2370,122 @@ async function renderAppPage(): Promise<void> {
         <button class="btn btn-primary" type="button" data-action="retry">Try again</button>
       </section>`;
   }
+}
+
+function renderForgotPinModal(errorMsg = '', infoMsg = ''): void {
+  const modal = root!.querySelector<HTMLElement>('#modal-root');
+  if (!modal) return;
+  document.body.style.overflow = 'hidden';
+
+  let bodyContent = '';
+
+  if (pinRecoveryStage === 'verify_child') {
+    bodyContent = `
+      <form id="pin-recovery-step1-form" class="form-stack">
+        <div style="background: var(--bg-surface-alt); padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 6px;">
+          <p style="font-size: 13px; font-weight: 700; margin: 0 0 4px; color: var(--text-main);">
+            Verify your child's profile
+          </p>
+          <p style="font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.4;">
+            To verify your identity and protect your learner records, enter the name of one of your registered children.
+          </p>
+        </div>
+
+        <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+          Registered Child's Name
+          <input name="childName" type="text" required placeholder="e.g. Aanya" autocomplete="off" style="padding: 10px 14px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-size: 14px;" />
+        </label>
+
+        <div id="pin-recovery-otp-container" style="display: none; margin-top: 8px;">
+          <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+            Email Verification Code (OTP)
+            <input name="otpCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code sent to your email" style="padding: 10px 14px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-size: 14px;" />
+          </label>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; flex-wrap: wrap; gap: 8px;">
+          <button type="button" class="btn btn-ghost btn-sm" data-action="toggle-recovery-otp" style="font-size: 12px; color: var(--text-muted); padding: 0;">
+            Need verification code instead?
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="send-recovery-otp" style="font-size: 12px; color: var(--brand-primary); font-weight: 700; padding: 0;">
+            Send code to email
+          </button>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="margin-top: 12px; width: 100%;">
+          Verify Profile &amp; Continue →
+        </button>
+
+        <p id="recovery-message" class="form-message" aria-live="polite" style="margin-top: 8px; font-size: 12px; font-weight: 700; ${errorMsg ? 'color: #b91c1c;' : infoMsg ? 'color: #15803d;' : ''}">
+          ${escapeHtml(errorMsg || infoMsg)}
+        </p>
+      </form>
+    `;
+  } else if (pinRecoveryStage === 'reset_pin') {
+    bodyContent = `
+      <form id="pin-recovery-step2-form" class="form-stack">
+        <div style="background: rgba(22, 163, 74, 0.1); border: 1px solid rgba(22, 163, 74, 0.25); padding: 10px 14px; border-radius: var(--radius-md); margin-bottom: 6px;">
+          <span style="font-size: 12px; font-weight: 700; color: #16a34a; display: flex; align-items: center; gap: 6px;">
+            ✓ Child profile ownership verified
+          </span>
+        </div>
+
+        <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.4;">
+          Choose a new 4-digit PIN for parental controls and settings access.
+        </p>
+
+        <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+          New 4-Digit PIN
+          <input name="newPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="4 digits (e.g. 1234)" autocomplete="new-password" style="padding: 10px 14px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-size: 14px;" />
+        </label>
+
+        <label style="display: grid; gap: 4px; font-size: 13px; font-weight: 700;">
+          Confirm New 4-Digit PIN
+          <input name="confirmPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="Repeat 4 digits" autocomplete="new-password" style="padding: 10px 14px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-size: 14px;" />
+        </label>
+
+        <button type="submit" class="btn btn-primary" style="margin-top: 12px; width: 100%;">
+          Reset Parent PIN
+        </button>
+
+        <p id="recovery-message" class="form-message" aria-live="polite" style="margin-top: 8px; font-size: 12px; font-weight: 700; ${errorMsg ? 'color: #b91c1c;' : infoMsg ? 'color: #15803d;' : ''}">
+          ${escapeHtml(errorMsg || infoMsg)}
+        </p>
+      </form>
+    `;
+  } else {
+    bodyContent = `
+      <div style="text-align: center; padding: 20px 10px;">
+        <span style="font-size: 42px; display: block; margin-bottom: 12px;">🎉</span>
+        <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 8px; color: #16a34a;">
+          Parent PIN Reset Successfully
+        </h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 20px; line-height: 1.5;">
+          Your new 4-digit Parent Security PIN is now active. You can use it anytime to protect parental settings and manage learner profiles.
+        </p>
+        <button type="button" class="btn btn-primary" data-action="close-modal" style="width: 100%;">
+          Done
+        </button>
+      </div>
+    `;
+  }
+
+  modal.innerHTML = `
+    <div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="recovery-modal-title" style="max-width: 440px;">
+        <div class="modal-heading">
+          <div>
+            <span class="badge badge-warm">SECURITY RECOVERY</span>
+            <h2 id="recovery-modal-title" style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin-top: 4px;">
+              ${pinRecoveryStage === 'success' ? 'PIN Reset Complete' : 'Recover Parent PIN'}
+            </h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-modal" aria-label="Close">×</button>
+        </div>
+        ${bodyContent}
+      </section>
+    </div>
+  `;
 }
 
 function showProfileForm(child?: ChildProfile): void {
@@ -1475,32 +2563,9 @@ function showProfileForm(child?: ChildProfile): void {
 }
 
 function showSettings(): void {
-  const hasPin = auth.hasParentPin();
-  const modal = root!.querySelector<HTMLElement>('#modal-root');
-  if (!modal) return;
-  document.body.style.overflow = 'hidden';
-  modal.innerHTML = `
-    <div class="modal-backdrop" data-action="dismiss-modal">
-      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <div class="modal-heading">
-          <div>
-            <span class="badge badge-primary">PARENT CONTROLS</span>
-            <h2 id="settings-title">Account &amp; privacy</h2>
-          </div>
-          <button class="icon-button" type="button" data-action="close-modal" aria-label="Close">×</button>
-        </div>
-        <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 16px;">
-          Signed in as ${escapeHtml(auth.getCurrentUser()?.email)}. ${auth.isLiveDatabaseConnected() ? 'Live Supabase database connected.' : 'Running with local demo storage.'}
-        </p>
-        <form id="pin-form" class="form-stack">
-          ${hasPin ? '<label>Current parent PIN<input name="oldPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="4-digit PIN" /></label>' : ''}
-          <label>${hasPin ? 'New parent PIN' : 'Set a parent PIN'}<input name="newPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="Choose a 4-digit PIN" /></label>
-          <button class="btn btn-primary" type="submit">${hasPin ? 'Change parent PIN' : 'Set parent PIN'}</button>
-          <p id="pin-message" class="form-message" aria-live="polite"></p>
-        </form>
-      </section>
-    </div>`;
-  modal.querySelector<HTMLInputElement>('input')?.focus();
+  closeModal();
+  parentActiveTab = 'settings';
+  navigateTo('parent');
 }
 
 // ----------------------------------------------------
@@ -1515,6 +2580,13 @@ async function startActivity(skillId: string, title: string, difficulty: string)
 
   const child = activeChild;
   if (!child) return;
+
+  if (skillId === 'skill_confused_letters_bd' || skillId === 'skill_letter_b_d_mirror') {
+    LetterMirrorBDModal.getInstance().start(child, () => {
+      void renderAppPage();
+    });
+    return;
+  }
 
   const level = difficulty === 'advanced' ? 'advanced' : difficulty === 'intermediate' ? 'intermediate' : 'beginner';
   const parentId = auth.getCurrentUser()?.id || child.parentId;
@@ -1986,12 +3058,12 @@ root!.addEventListener('click', async event => {
     } else if (action === 'launch-demo') {
       await quickDemoLogin();
       toast('Welcome to the DyslexiMate Sandbox! ✨');
-      navigateTo('home');
+      navigateTo('parent');
     } else if (action === 'enter-app') {
       if (auth.getCurrentUser()) {
-        navigateTo('home');
+        navigateTo('parent');
       } else {
-        navigateTo('auth', { authMode: 'register' });
+        navigateTo('auth', { authMode: 'login' });
       }
     } else if (action === 'open-website') {
       navigateTo('landing');
@@ -2004,6 +3076,7 @@ root!.addEventListener('click', async event => {
     } else if (action === 'logout') {
       closeModal();
       await auth.logout();
+      isParentPortalUnlocked = false;
       profiles.setActiveChild(null);
       activeChild = null;
       learningPath = null;
@@ -2017,13 +3090,37 @@ root!.addEventListener('click', async event => {
       }
       const result = await auth.resetPassword(email);
       toast(result.message, !result.success);
-    } else if (action === 'navigate' || action === 'navigate-practice' || action === 'navigate-resources') {
+    } else if (action === 'navigate' || action === 'navigate-practice' || action === 'navigate-resources' || action === 'navigate-stories' || action === 'navigate-parent') {
       const targetPage: AppPage = action === 'navigate-practice'
         ? 'practice'
         : action === 'navigate-resources'
           ? 'resources'
-          : (control.dataset.page as AppPage) || 'home';
+          : action === 'navigate-stories'
+            ? 'stories'
+            : action === 'navigate-parent'
+              ? 'parent'
+              : (control.dataset.page as AppPage) || 'home';
       navigateTo(targetPage);
+    } else if (action === 'parent-tab') {
+      parentActiveTab = (control.dataset.tab as 'overview' | 'child_records' | 'settings') || 'overview';
+      await renderAppPage();
+    } else if (action === 'parent-telemetry-period') {
+      parentTelemetryPeriod = (control.dataset.period as 'today' | '7days' | '30days') || '30days';
+      await renderAppPage();
+    } else if (action === 'select-report-child') {
+      parentSelectedChildId = control.dataset.id || null;
+      await renderAppPage();
+    } else if (action === 'view-child-records') {
+      parentSelectedChildId = control.dataset.id || null;
+      parentActiveTab = 'child_records';
+      await renderAppPage();
+    } else if (action === 'export-child-csv') {
+      const u = auth.getCurrentUser();
+      if (u) {
+        const ch = await profiles.getChildren(u.id);
+        const targetChild = ch.find(c => c.id === control.dataset.id);
+        if (targetChild) exportChildCsv(targetChild);
+      }
     } else if (action === 'retry') {
       await renderAppPage();
     } else if (action === 'profiles') {
@@ -2059,6 +3156,40 @@ root!.addEventListener('click', async event => {
     } else if (action === 'close-modal' || action === 'dismiss-modal') {
       if (action === 'dismiss-modal' && target !== control) return;
       closeModal();
+    } else if (action === 'forgot-parent-pin') {
+      pinRecoveryStage = 'verify_child';
+      pinRecoveryToken = '';
+      renderForgotPinModal();
+    } else if (action === 'toggle-recovery-otp') {
+      const otpContainer = root!.querySelector<HTMLElement>('#pin-recovery-otp-container');
+      if (otpContainer) {
+        otpContainer.style.display = otpContainer.style.display === 'none' ? 'block' : 'none';
+      }
+    } else if (action === 'toggle-gate-pin-visibility') {
+      gatePinVisible = !gatePinVisible;
+      const input = root!.querySelector<HTMLInputElement>('#gate-pin-input');
+      if (input) {
+        input.type = gatePinVisible ? 'text' : 'password';
+      }
+      if (control) {
+        control.textContent = gatePinVisible ? '🙈' : '👁️';
+        control.setAttribute('title', gatePinVisible ? 'Hide PIN' : 'Show PIN');
+        control.setAttribute('aria-label', gatePinVisible ? 'Hide PIN' : 'Show PIN');
+      }
+    } else if (action === 'lock-parent-portal') {
+      isParentPortalUnlocked = false;
+      toast('Parent Portal locked. 🔒');
+      await renderAppPage();
+    } else if (action === 'send-recovery-otp') {
+      const res = await auth.requestPinRecoveryOtp();
+      const otpContainer = root!.querySelector<HTMLElement>('#pin-recovery-otp-container');
+      if (otpContainer) otpContainer.style.display = 'block';
+      const msgEl = root!.querySelector<HTMLElement>('#recovery-message');
+      if (msgEl) {
+        msgEl.style.color = res.success ? '#15803d' : '#b91c1c';
+        msgEl.textContent = res.success ? res.message : (res.error || res.message);
+      }
+      toast(res.message, !res.success);
     } else if (action === 'settings') {
       showSettings();
     } else if (action === 'start-recommendation' || action === 'start-catalog') {
@@ -2094,6 +3225,169 @@ root!.addEventListener('click', async event => {
       } else toast('Read-aloud is not available in this browser.');
     } else if (action === 'finish-activity') {
       await finishActivity();
+    } else if (action === 'open-story') {
+      openStoryReader(control.dataset.id || '');
+    } else if (action === 'shuffle-stories') {
+      storyRotationAdvance = !storyRotationAdvance;
+      await renderAppPage();
+      toast('Stories shuffled! 🎲');
+    } else if (action === 'speak-story') {
+      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+          const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
+          if (lbl) lbl.textContent = 'Read aloud';
+        } else {
+          const text = activeStory?.paragraphs.join(' ') || '';
+          const utterance = new SpeechSynthesisUtterance(text);
+          const lang: SupportedLanguage = activeStory?.language || activeChild?.preferredLanguage || 'English';
+          utterance.lang = speechLocales[lang] || 'en-IN';
+          utterance.rate = 0.85;
+          utterance.onend = () => {
+            const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
+            if (lbl) lbl.textContent = 'Read aloud';
+          };
+          const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
+          if (lbl) lbl.textContent = 'Pause voice';
+          window.speechSynthesis.speak(utterance);
+        }
+      } else {
+        toast('Speech synthesis is not supported in this browser.');
+      }
+    } else if (action === 'story-font-smaller') {
+      activeStoryFontSize = Math.max(14, activeStoryFontSize - 2);
+      const el = root!.querySelector<HTMLElement>('#story-paragraphs');
+      if (el) el.style.fontSize = `${activeStoryFontSize}px`;
+    } else if (action === 'story-font-larger') {
+      activeStoryFontSize = Math.min(32, activeStoryFontSize + 2);
+      const el = root!.querySelector<HTMLElement>('#story-paragraphs');
+      if (el) el.style.fontSize = `${activeStoryFontSize}px`;
+    } else if (action === 'answer-story-comp') {
+      const qid = control.dataset.qid;
+      const idx = parseInt(control.dataset.idx || '-1', 10);
+      if (!activeStory || !qid || idx < 0) return;
+      const q = activeStory.comprehensionQuestions.find(item => item.id === qid);
+      if (!q || storyAnsweredQids.has(qid)) return;
+
+      storyAnsweredQids.add(qid);
+      const container = root!.querySelector<HTMLElement>(`article[data-qid="${qid}"]`);
+      const feedback = root!.querySelector<HTMLElement>(`#feedback_${qid}`);
+      const scoreTag = root!.querySelector<HTMLElement>('#storyCompScoreTag');
+
+      if (idx === q.correctIndex) {
+        storyComprehensionScore++;
+        control.classList.remove('btn-outline');
+        control.classList.add('btn-primary');
+        control.style.backgroundColor = '#16a34a';
+        control.style.borderColor = '#16a34a';
+        control.style.color = '#ffffff';
+        if (feedback) {
+          feedback.style.display = 'block';
+          feedback.style.color = '#15803d';
+          feedback.textContent = `✓ Correct! ${q.explanation || 'Great job understanding the story.'}`;
+        }
+        if (activeChild) {
+          const currentProg = profiles.getChildProgress(activeChild.id);
+          profiles.updateChildProgress(activeChild.id, {
+            happyPoints: currentProg.happyPoints + 5,
+          });
+          await learning.recordAttempt({
+            id: `story_comp_${Date.now()}`,
+            childId: activeChild.id,
+            activityId: `story_comp_${q.id}`,
+            skillId: 'skill_reading_comprehension',
+            activityType: 'comprehension',
+            score: 100,
+            accuracy: 1,
+            totalQuestions: 1,
+            correctAnswers: 1,
+            incorrectAnswers: 0,
+            attemptsRequired: 1,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [],
+            completedAt: new Date().toISOString(),
+          });
+        }
+        toast('+5 Happy Points earned! ⭐');
+      } else {
+        control.classList.remove('btn-outline');
+        control.style.borderColor = '#dc2626';
+        control.style.color = '#dc2626';
+        const missedChoice = q.options[idx] || 'Incorrect option';
+        if (!storyMissedQuestions.includes(q.question)) {
+          storyMissedQuestions.push(q.question);
+        }
+        if (feedback) {
+          feedback.style.display = 'block';
+          feedback.style.color = '#b91c1c';
+          feedback.textContent = `Nice try! The correct answer was: "${q.options[q.correctIndex]}". ${q.explanation || ''}`;
+        }
+        if (activeChild) {
+          await learning.recordAttempt({
+            id: `story_comp_${Date.now()}`,
+            childId: activeChild.id,
+            activityId: `story_comp_${q.id}`,
+            skillId: 'skill_reading_comprehension',
+            activityType: 'comprehension',
+            score: 0,
+            accuracy: 0,
+            totalQuestions: 1,
+            correctAnswers: 0,
+            incorrectAnswers: 1,
+            attemptsRequired: 1,
+            hintsRequested: 0,
+            correctedAfterHint: 0,
+            durationSeconds: 15,
+            missedItems: [missedChoice],
+            completedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      container?.querySelectorAll<HTMLButtonElement>('.story-comp-opt').forEach(btn => {
+        btn.disabled = true;
+      });
+
+      if (scoreTag) {
+        scoreTag.textContent = `${storyComprehensionScore} / ${activeStory.comprehensionQuestions.length} Correct ⭐`;
+      }
+    } else if (action === 'finish-story-reading') {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      if (activeStory && activeChild) {
+        activityTracker.stopActivity();
+        const currentProg = profiles.getChildProgress(activeChild.id);
+        const totalQ = Math.max(1, activeStory.comprehensionQuestions.length || 1);
+        const acc = storyComprehensionScore / totalQ;
+        profiles.updateChildProgress(activeChild.id, {
+          happyPoints: currentProg.happyPoints + 10,
+          practiceWins: currentProg.practiceWins + 1,
+        });
+        await learning.recordAttempt({
+          id: `story_read_${Date.now()}`,
+          childId: activeChild.id,
+          activityId: `story_${activeStory.id}`,
+          skillId: 'skill_reading_comprehension',
+          activityType: 'comprehension',
+          score: Math.round(acc * 100),
+          accuracy: acc,
+          totalQuestions: totalQ,
+          correctAnswers: storyComprehensionScore,
+          incorrectAnswers: totalQ - storyComprehensionScore,
+          attemptsRequired: totalQ,
+          hintsRequested: 0,
+          correctedAfterHint: 0,
+          durationSeconds: 60,
+          missedItems: [...storyMissedQuestions],
+          completedAt: new Date().toISOString(),
+        });
+        toast(`Story finished! 🌟 +10 Happy Points awarded to ${activeChild.name}!`);
+      }
+      closeModal();
+      await renderAppPage();
     } else if (action === 'resource-suggestion') {
       const input = root!.querySelector<HTMLInputElement>('[name="topic"]');
       if (input) input.value = control.dataset.topic || '';
@@ -2137,8 +3431,9 @@ root!.addEventListener('submit', async event => {
         if (message) message.textContent = result.message || 'Check your email to finish signing in.';
         return;
       }
+      isParentPortalUnlocked = false;
       toast(result.message || 'You’re signed in.');
-      navigateTo('home');
+      navigateTo('parent');
     } else if (form.id === 'child-form') {
       const data = new FormData(form);
       const currentUser = auth.getCurrentUser();
@@ -2208,14 +3503,170 @@ root!.addEventListener('submit', async event => {
         ? await auth.changeParentPin(oldPin, newPin)
         : await auth.setupParentPin(newPin);
       const message = root!.querySelector<HTMLElement>('#pin-message');
-      if (message) message.textContent = result.success ? 'Parent PIN saved.' : result.error || 'Could not save your PIN.';
-      if (result.success) toast('Parent PIN updated.');
+      if (message) {
+        message.style.color = result.success ? '#15803d' : '#b91c1c';
+        message.textContent = result.success ? 'Parent PIN saved successfully.' : result.error || 'Could not save your PIN.';
+      }
+      if (result.success) {
+        toast('Parent PIN updated.');
+        form.reset();
+      }
+    } else if (form.id === 'parent-change-password-form') {
+      const data = new FormData(form);
+      const newPassword = String(data.get('newPassword') || '');
+      const confirmPassword = String(data.get('confirmPassword') || '');
+      const message = root!.querySelector<HTMLElement>('#password-message');
+      if (newPassword.length < 6) {
+        if (message) {
+          message.style.color = '#b91c1c';
+          message.textContent = 'Password must be at least 6 characters long.';
+        }
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        if (message) {
+          message.style.color = '#b91c1c';
+          message.textContent = 'Passwords do not match.';
+        }
+        return;
+      }
+      const res = await auth.updatePassword(newPassword);
+      if (message) {
+        message.style.color = res.success ? '#15803d' : '#b91c1c';
+        message.textContent = res.message;
+      }
+      if (res.success) {
+        toast('Password updated successfully! 🔒');
+        form.reset();
+      }
+    } else if (form.id === 'pin-recovery-step1-form') {
+      const data = new FormData(form);
+      const childName = String(data.get('childName') || '');
+      const otpCode = String(data.get('otpCode') || '');
+      const msgEl = root!.querySelector<HTMLElement>('#recovery-message');
+
+      const res = await auth.verifyChildForPinRecovery(childName, otpCode);
+      if (!res.success) {
+        if (msgEl) {
+          msgEl.style.color = '#b91c1c';
+          msgEl.textContent = res.error || 'Verification failed. Please try again.';
+        }
+        const otpContainer = root!.querySelector<HTMLElement>('#pin-recovery-otp-container');
+        if (otpContainer && res.error?.includes('verification code')) {
+          otpContainer.style.display = 'block';
+        }
+      } else {
+        pinRecoveryToken = res.recoveryToken!;
+        pinRecoveryStage = 'reset_pin';
+        renderForgotPinModal();
+      }
+    } else if (form.id === 'pin-recovery-step2-form') {
+      const data = new FormData(form);
+      const newPin = String(data.get('newPin') || '');
+      const confirmPin = String(data.get('confirmPin') || '');
+      const msgEl = root!.querySelector<HTMLElement>('#recovery-message');
+
+      if (newPin !== confirmPin) {
+        if (msgEl) {
+          msgEl.style.color = '#b91c1c';
+          msgEl.textContent = 'PINs do not match. Please ensure both fields are identical.';
+        }
+        return;
+      }
+      if (!/^\d{4}$/.test(newPin.trim())) {
+        if (msgEl) {
+          msgEl.style.color = '#b91c1c';
+          msgEl.textContent = 'Parent PIN must be exactly 4 numeric digits.';
+        }
+        return;
+      }
+
+      const res = await auth.resetParentPinWithRecovery(pinRecoveryToken, newPin, confirmPin);
+      if (!res.success) {
+        if (msgEl) {
+          msgEl.style.color = '#b91c1c';
+          msgEl.textContent = res.error || 'Failed to reset PIN.';
+        }
+      } else {
+        isParentPortalUnlocked = true;
+        pinRecoveryStage = 'success';
+        renderForgotPinModal();
+        toast('Parent PIN reset successfully! 🔒');
+      }
+    } else if (form.id === 'parent-gate-pin-form') {
+      const data = new FormData(form);
+      const message = root!.querySelector<HTMLElement>('#gate-pin-message');
+
+      if (auth.hasParentPin()) {
+        const pin = String(data.get('gatePin') || '').trim();
+        if (!/^\d{4}$/.test(pin)) {
+          if (message) {
+            message.style.color = '#b91c1c';
+            message.textContent = 'Please enter exactly 4 numeric digits.';
+          }
+          return;
+        }
+
+        const verify = await auth.verifyParentPin(pin);
+        if (!verify.success) {
+          if (message) {
+            message.style.color = '#b91c1c';
+            if (verify.lockoutSeconds) {
+              message.textContent = `Security lockout active. Please wait ${verify.lockoutSeconds} seconds before retrying.`;
+            } else {
+              message.textContent = verify.error || 'Incorrect PIN. Please try again.';
+            }
+          }
+          const pinInput = root!.querySelector<HTMLInputElement>('#gate-pin-input');
+          if (pinInput) {
+            pinInput.value = '';
+            pinInput.focus();
+          }
+          return;
+        }
+
+        isParentPortalUnlocked = true;
+        toast('Parent Portal Unlocked! 🛡️');
+        await renderAppPage();
+      } else {
+        const newPin = String(data.get('gateNewPin') || '').trim();
+        const confirmPin = String(data.get('gateConfirmPin') || '').trim();
+
+        if (newPin !== confirmPin) {
+          if (message) {
+            message.style.color = '#b91c1c';
+            message.textContent = 'PINs do not match. Please ensure both fields are identical.';
+          }
+          return;
+        }
+
+        if (!/^\d{4}$/.test(newPin)) {
+          if (message) {
+            message.style.color = '#b91c1c';
+            message.textContent = 'Parent PIN must be exactly 4 numeric digits.';
+          }
+          return;
+        }
+
+        const setup = await auth.setupParentPin(newPin);
+        if (!setup.success) {
+          if (message) {
+            message.style.color = '#b91c1c';
+            message.textContent = setup.error || 'Failed to setup Parent PIN.';
+          }
+          return;
+        }
+
+        isParentPortalUnlocked = true;
+        toast('Parent PIN set and portal unlocked! 🛡️');
+        await renderAppPage();
+      }
     } else if (form.id === 'resource-form') {
       await submitResourceSearch(form);
     }
   } catch (error) {
     console.error('Form submission failed:', error);
-    const message = root!.querySelector<HTMLElement>('#child-message, #pin-message, #auth-message');
+    const message = root!.querySelector<HTMLElement>('#child-message, #pin-message, #auth-message, #password-message, #recovery-message, #gate-pin-message');
     if (message) message.textContent = error instanceof Error ? error.message : 'Please try again.';
     else toast(error instanceof Error ? error.message : 'Please try again.', true);
   }
@@ -2227,6 +3678,13 @@ root!.addEventListener('submit', async event => {
 root!.addEventListener('change', async event => {
   const target = event.target as HTMLElement;
   if (!target) return;
+
+  if (target.classList.contains('story-lang-select')) {
+    const select = target as HTMLSelectElement;
+    storyLanguage = select.value as SupportedLanguage;
+    await renderAppPage();
+    return;
+  }
 
   // Visual toggle for language checkboxes in profile form
   if (target.matches('input[name="configuredLanguages"]')) {

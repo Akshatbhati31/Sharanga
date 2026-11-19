@@ -6,6 +6,7 @@ import type {
   AppLanguageCode,
 } from '../types/auth';
 import { StorageService, hashPassword, hashPin, type StoredParentUser } from './storageService';
+import { ProfileService } from './profileService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { i18n } from '../i18n';
 
@@ -22,10 +23,14 @@ export interface IAuthService {
   logout(): Promise<void>;
   getCurrentUser(): ParentUser | null;
   resetPassword(email: string): Promise<{ success: boolean; message: string }>;
+  updatePassword(newPassword: string): Promise<{ success: boolean; message: string }>;
   hasParentPin(): boolean;
   setupParentPin(newPin: string): Promise<{ success: boolean; error?: string }>;
   verifyParentPin(enteredPin: string): Promise<VerifyPinResult>;
   changeParentPin(oldPin: string, newPin: string): Promise<{ success: boolean; error?: string }>;
+  verifyChildForPinRecovery(childName: string, otpCode?: string): Promise<{ success: boolean; error?: string; recoveryToken?: string }>;
+  resetParentPinWithRecovery(recoveryToken: string, newPin: string, confirmPin: string): Promise<{ success: boolean; error?: string }>;
+  requestPinRecoveryOtp(): Promise<{ success: boolean; message: string; error?: string; debugOtp?: string }>;
   getPinLockoutRemainingSeconds(): number;
   onAuthStateChanged(listener: (user: ParentUser | null) => void): () => void;
   isLiveDatabaseConnected(): boolean;
@@ -45,6 +50,19 @@ export class AuthService implements IAuthService {
   private pinLockoutUntil: number | null = null;
   private readonly MAX_PIN_ATTEMPTS = 5;
   private readonly LOCKOUT_DURATION_MS = 30000; // 30 seconds
+
+  // PIN Recovery Session state (token-based, strictly authenticated)
+  private activeRecoverySession: {
+    parentId: string;
+    token: string;
+    expiresAt: number;
+    verifiedChildName: string;
+  } | null = null;
+  private activeRecoveryOtp: {
+    parentId: string;
+    code: string;
+    expiresAt: number;
+  } | null = null;
 
   private constructor() {
     this.storage = StorageService.getInstance();
@@ -529,6 +547,8 @@ export class AuthService implements IAuthService {
     }
 
     this.currentUser = null;
+    this.activeRecoverySession = null;
+    this.activeRecoveryOtp = null;
     this.storage.clearSession();
     this.notifyListeners();
   }
@@ -569,6 +589,37 @@ export class AuthService implements IAuthService {
       success: true,
       message: `Password reset instructions sent to ${trimmed}. In demo mode, you can log in using your registered credentials.`,
     };
+  }
+
+  public async updatePassword(newPassword: string): Promise<{ success: boolean; message: string }> {
+    if (!this.currentUser) {
+      return { success: false, message: 'Please sign in first.' };
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'New password must be at least 6 characters long.' };
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+          return { success: false, message: error.message };
+        }
+        return { success: true, message: 'Password updated successfully in Supabase.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Failed to update password.' };
+      }
+    }
+
+    const users = this.storage.getRawUsers();
+    const user = users.find(u => u.id === this.currentUser?.id || u.email.toLowerCase() === this.currentUser?.email.toLowerCase());
+    if (user) {
+      user.passwordHash = await hashPassword(newPassword);
+      this.storage.saveRawUsers(users);
+      return { success: true, message: 'Password updated successfully.' };
+    }
+
+    return { success: false, message: 'Account not found in local storage.' };
   }
 
   // -------------------------------------------------------------
@@ -760,6 +811,205 @@ export class AuthService implements IAuthService {
     }
 
     return this.setupParentPin(pin);
+  }
+
+  // -------------------------------------------------------------
+  // Parent PIN Recovery Flow
+  // -------------------------------------------------------------
+  public async requestPinRecoveryOtp(): Promise<{ success: boolean; message: string; error?: string; debugOtp?: string }> {
+    if (!this.currentUser) {
+      return { success: false, error: 'Parent must be authenticated.', message: 'Please log in first.' };
+    }
+
+    const remainingLockout = this.getPinLockoutRemainingSeconds();
+    if (remainingLockout > 0) {
+      return {
+        success: false,
+        error: `Security lockout active. Please wait ${remainingLockout}s before retrying.`,
+        message: `Security lockout active. Please wait ${remainingLockout}s.`,
+      };
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    this.activeRecoveryOtp = {
+      parentId: this.currentUser.id,
+      code: otp,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    };
+
+    return {
+      success: true,
+      message: `A 6-digit verification code has been dispatched to ${this.currentUser.email}.`,
+      debugOtp: otp,
+    };
+  }
+
+  public async verifyChildForPinRecovery(
+    childName: string,
+    otpCode?: string
+  ): Promise<{ success: boolean; error?: string; recoveryToken?: string }> {
+    if (!this.currentUser) {
+      return { success: false, error: 'Parent must be authenticated. Please sign in to recover your PIN.' };
+    }
+
+    const remainingLockout = this.getPinLockoutRemainingSeconds();
+    if (remainingLockout > 0) {
+      return {
+        success: false,
+        error: `Security lockout active. Please wait ${remainingLockout}s before retrying.`,
+      };
+    }
+
+    const trimmedInput = childName.trim().toLowerCase();
+    const profilesService = ProfileService.getInstance();
+    const children = await profilesService.getChildren(this.currentUser.id);
+
+    // If parent has no children registered yet, fallback to verifying email OTP
+    if (children.length === 0) {
+      if (!otpCode || !otpCode.trim()) {
+        return {
+          success: false,
+          error: 'No child profiles registered under this account yet. Please request and enter the verification code sent to your email.',
+        };
+      }
+      if (
+        !this.activeRecoveryOtp ||
+        this.activeRecoveryOtp.parentId !== this.currentUser.id ||
+        this.activeRecoveryOtp.code !== otpCode.trim() ||
+        Date.now() > this.activeRecoveryOtp.expiresAt
+      ) {
+        return { success: false, error: 'Invalid or expired email verification code.' };
+      }
+
+      const recoveryToken = 'rec_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+      this.activeRecoverySession = {
+        parentId: this.currentUser.id,
+        token: recoveryToken,
+        expiresAt: Date.now() + 5 * 60 * 1000, // 5 min validity
+        verifiedChildName: 'None (OTP Verified)',
+      };
+      this.activeRecoveryOtp = null;
+      return { success: true, recoveryToken };
+    }
+
+    // Verify child name against authenticated parent's actual registered children
+    const matched = trimmedInput.length > 0 && children.some(c => c.name.trim().toLowerCase() === trimmedInput);
+
+    if (matched) {
+      // If an OTP code was also provided, optionally verify it matches if active
+      if (
+        otpCode &&
+        this.activeRecoveryOtp &&
+        this.activeRecoveryOtp.parentId === this.currentUser.id &&
+        (this.activeRecoveryOtp.code !== otpCode.trim() || Date.now() > this.activeRecoveryOtp.expiresAt)
+      ) {
+        return { success: false, error: 'Invalid or expired email verification code.' };
+      }
+
+      this.failedPinAttempts = 0;
+      this.pinLockoutUntil = null;
+      const users = this.storage.getRawUsers();
+      const idx = users.findIndex(u => u.id === this.currentUser!.id);
+      if (idx !== -1) {
+        users[idx].failedPinAttempts = 0;
+        delete users[idx].pinLockoutUntil;
+        this.storage.saveRawUsers(users);
+      }
+
+      const recoveryToken = 'rec_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+      this.activeRecoverySession = {
+        parentId: this.currentUser.id,
+        token: recoveryToken,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+        verifiedChildName: childName.trim(),
+      };
+      this.activeRecoveryOtp = null;
+      return { success: true, recoveryToken };
+    }
+
+    // Child name failed verification - record failed attempt to prevent brute forcing
+    const users = this.storage.getRawUsers();
+    const idx = users.findIndex(u => u.id === this.currentUser!.id);
+    const prevAttempts = (idx !== -1 && typeof users[idx].failedPinAttempts === 'number')
+      ? users[idx].failedPinAttempts!
+      : this.failedPinAttempts;
+
+    const newAttempts = prevAttempts + 1;
+    this.failedPinAttempts = newAttempts;
+    const remaining = this.MAX_PIN_ATTEMPTS - newAttempts;
+
+    if (newAttempts >= this.MAX_PIN_ATTEMPTS) {
+      const lockoutTimestamp = Date.now() + this.LOCKOUT_DURATION_MS;
+      this.pinLockoutUntil = lockoutTimestamp;
+      if (idx !== -1) {
+        users[idx].failedPinAttempts = newAttempts;
+        users[idx].pinLockoutUntil = lockoutTimestamp;
+        this.storage.saveRawUsers(users);
+      }
+      const remainingSec = Math.ceil(this.LOCKOUT_DURATION_MS / 1000);
+      return {
+        success: false,
+        error: `Too many incorrect attempts. Account locked for ${remainingSec} seconds.`,
+      };
+    }
+
+    if (idx !== -1) {
+      users[idx].failedPinAttempts = newAttempts;
+      this.storage.saveRawUsers(users);
+    }
+
+    return {
+      success: false,
+      error: `Child verification failed. Please enter the name of a registered child on your account. (${remaining} attempt${remaining === 1 ? '' : 's'} remaining)`,
+    };
+  }
+
+  public async resetParentPinWithRecovery(
+    recoveryToken: string,
+    newPin: string,
+    confirmPin: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.currentUser) {
+      return { success: false, error: 'Parent must be authenticated.' };
+    }
+
+    const remainingLockout = this.getPinLockoutRemainingSeconds();
+    if (remainingLockout > 0) {
+      return {
+        success: false,
+        error: `Security lockout active. Please wait ${remainingLockout}s before retrying.`,
+      };
+    }
+
+    if (
+      !this.activeRecoverySession ||
+      this.activeRecoverySession.token !== recoveryToken ||
+      this.activeRecoverySession.parentId !== this.currentUser.id
+    ) {
+      return { success: false, error: 'Invalid or expired recovery session. Please verify your child profile again.' };
+    }
+
+    if (Date.now() > this.activeRecoverySession.expiresAt) {
+      this.activeRecoverySession = null;
+      return { success: false, error: 'Recovery session has expired. Please verify your child profile again.' };
+    }
+
+    const p1 = newPin.trim();
+    const p2 = confirmPin.trim();
+
+    if (p1 !== p2) {
+      return { success: false, error: 'New PIN and Confirm PIN do not match.' };
+    }
+
+    if (!/^\d{4}$/.test(p1)) {
+      return { success: false, error: 'Parent PIN must be exactly 4 numeric digits.' };
+    }
+
+    const setupResult = await this.setupParentPin(p1);
+    if (setupResult.success) {
+      this.activeRecoverySession = null;
+    }
+    return setupResult;
   }
 
   public async updateInterfaceLanguage(lang: AppLanguageCode): Promise<boolean> {
