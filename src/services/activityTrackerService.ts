@@ -186,6 +186,10 @@ export class ActivityTrackerService {
     }
   }
 
+  public endActivity(_parentId?: string, _childId?: string, _category?: ActivityCategory): void {
+    this.stopActivity();
+  }
+
   public getActiveSession(): ActiveSession | null {
     return this.currentSession;
   }

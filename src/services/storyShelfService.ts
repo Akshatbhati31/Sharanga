@@ -17,6 +17,7 @@ export interface StoryPassage {
   estimatedMinutes: number;
   paragraphs: string[];
   comprehensionQuestions: StoryQuestion[];
+  language?: SupportedLanguage;
 }
 
 export class StoryShelfService {
@@ -922,9 +923,13 @@ export class StoryShelfService {
     return StoryShelfService.instance;
   }
 
-    public getStories(lang: SupportedLanguage, grade?: string): StoryPassage[] {
+    public getSupportedLanguages(): SupportedLanguage[] {
+    return Object.keys(this.stories) as SupportedLanguage[];
+  }
+
+  public getStories(lang: SupportedLanguage, grade?: string): StoryPassage[] {
     const list = this.stories[lang] || this.stories.English;
-    if (!grade) return list;
+    if (!grade) return list.map(s => ({ ...s, language: s.language || lang }));
 
     const lowerGrade = grade.toLowerCase();
     let filtered: StoryPassage[] = [];
@@ -933,7 +938,13 @@ export class StoryShelfService {
     } else if (lowerGrade.includes('5') || lowerGrade.includes('6') || lowerGrade.includes('confident')) {
       filtered = list.filter(s => s.readingLevel === 'confident' || s.readingLevel === 'growing');
     }
-    return filtered.length > 0 ? filtered : list;
+    const res = filtered.length > 0 ? filtered : list;
+    return res.map(s => ({ ...s, language: s.language || lang }));
+  }
+
+  public getStoryOfTheDay(lang: SupportedLanguage, advance: boolean = false): StoryPassage {
+    const { featured } = this.getFeaturedAndShelfStories(lang, undefined, advance);
+    return { ...featured, language: lang };
   }
 
   /**
@@ -967,11 +978,11 @@ export class StoryShelfService {
   public getStoryById(idOrTitle: string, lang: SupportedLanguage): StoryPassage | null {
     const list = this.stories[lang] || this.stories.English;
     const lower = (idOrTitle || '').trim().toLowerCase();
-    return (
+    const found =
       list.find(s => s.id === idOrTitle || s.id.toLowerCase() === lower || s.title.toLowerCase() === lower || s.title.toLowerCase().includes(lower)) ||
       this.stories.English.find(s => s.id === idOrTitle || s.id.toLowerCase() === lower || s.title.toLowerCase() === lower || s.title.toLowerCase().includes(lower)) ||
       list[0] ||
-      null
-    );
+      null;
+    return found ? { ...found, language: found.language || lang } : null;
   }
 }
