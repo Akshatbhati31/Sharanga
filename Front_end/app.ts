@@ -17,6 +17,12 @@ import {
   type DestinationId,
   type DestinationSetting,
 } from '../src/services/adventureService';
+import {
+  ADVENTURE_DESTINATIONS_META,
+  computeAdventureMapState,
+  type DestinationKey,
+} from '../src/services/adventureLevels';
+import { ActivityRunnerModal } from '../src/ui/activityRunnerModal';
 import { LetterMirrorBDModal } from '../src/ui/letterMirrorBDModal';
 import { getSkillDefinition } from '../src/services/skillModel';
 import { i18n, t, SUPPORTED_LANGUAGES } from '../src/i18n';
@@ -54,7 +60,7 @@ let parentActiveTab: 'overview' | 'child_records' | 'settings' | 'adventure_sett
 let parentSelectedChildId: string | null = null;
 let parentTelemetryPeriod: 'today' | '7days' | '30days' = '30days';
 
-let activeAdventureDestination: DestinationId = 'phonics_garden';
+let activeAdventureDestination: DestinationId = 'phonics_garden'; void activeAdventureDestination;
 
 let storyLanguage: SupportedLanguage | null = null;
 let storyRotationAdvance = false;
@@ -105,6 +111,29 @@ if (dyslexiaMode) {
 
 // Custom Language Selector State & Dynamic Config
 let customLangMenuOpen = false;
+
+
+// Theme state & initialization (Light / Dark mode)
+let currentTheme: 'light' | 'dark' =
+  (localStorage.getItem('dysleximate_theme') as 'light' | 'dark') ||
+  (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light');
+
+function applyTheme(theme: 'light' | 'dark'): void {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark-theme');
+  } else {
+    document.documentElement.classList.remove('dark-theme');
+  }
+  localStorage.setItem('dysleximate_theme', theme);
+}
+
+applyTheme(currentTheme);
+
+let celebratedCompletedLevelNumber: number | null = null;
 
 // Parent PIN Recovery Flow State
 let pinRecoveryStage: 'verify_child' | 'reset_pin' | 'success' = 'verify_child';
@@ -305,7 +334,9 @@ function navigateTo(
   void renderAppPage();
 }
 
+void button;
 function button(label: string, action: string, style = 'btn btn-outline'): string {
+  void button;
   return `<button type="button" class="${style}" data-action="${escapeHtml(action)}">${label}</button>`;
 }
 
@@ -354,6 +385,9 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
         </nav>
 
         <div class="site-nav-actions">
+          <button type="button" class="theme-toggle-btn" data-action="toggle-theme" title="Toggle Light / Dark Mode" aria-label="Toggle Theme">
+            <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
+          </button>
           <button type="button" class="dyslexia-toggle-btn ${dyslexiaMode ? 'active' : ''}" data-action="toggle-dyslexia-font" title="Toggle Dyslexia-Friendly Font (Aa)" aria-label="Toggle Dyslexia Font (Aa)">
             <span class="indicator-dot" aria-hidden="true"></span>
             <span class="dyslexia-label">Aa</span>
@@ -394,6 +428,9 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
         <a class="site-nav-link" data-action="nav-scroll" data-target="#team-pinaka">Meet Team PINAKA</a>
         
         <div class="site-nav-actions">
+          <button type="button" class="theme-toggle-btn" data-action="toggle-theme" title="Toggle Light / Dark Mode" aria-label="Toggle Theme">
+            <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
+          </button>
           <button type="button" class="dyslexia-toggle-btn ${dyslexiaMode ? 'active' : ''}" data-action="toggle-dyslexia-font" title="Toggle Dyslexia-Friendly Font (Aa)" aria-label="Toggle Dyslexia Font (Aa)">
             <span class="indicator-dot" aria-hidden="true"></span>
             <span class="dyslexia-label">Aa</span>
@@ -845,9 +882,11 @@ function renderAuth(): void {
   root!.innerHTML = `
     <main class="auth-layout">
       <section class="auth-story">
-        <a class="brand brand-light" href="#/landing" data-action="open-website" aria-label="Return to DyslexiMate website">
-          ${brandMarkup(true)}
-        </a>
+        <div class="auth-logo-brand-pill">
+          <a class="brand" href="#/landing" data-action="open-website" aria-label="Return to DyslexiMate website" style="text-decoration: none;">
+            ${brandMarkup(false)}
+          </a>
+        </div>
         <div class="auth-story-copy">
           <span class="badge badge-warm">PARENT &amp; GUARDIAN PORTAL</span>
           <h1>Little steps.<br />Big reading wins.</h1>
@@ -1000,9 +1039,11 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
   root!.innerHTML = `
     <main class="auth-layout" style="min-height: 100vh;">
       <section class="auth-story" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
-        <a class="brand brand-light" href="#/landing" data-action="open-website" aria-label="Return to DyslexiMate website">
-          ${brandMarkup(true)}
-        </a>
+        <div class="auth-logo-brand-pill">
+          <a class="brand" href="#/landing" data-action="open-website" aria-label="Return to DyslexiMate website" style="text-decoration: none;">
+            ${brandMarkup(false)}
+          </a>
+        </div>
         <div class="auth-story-copy">
           <span class="badge badge-warm">PARENTAL CONTROL GATE</span>
           <h1>Protected<br />Parent Portal</h1>
@@ -1239,13 +1280,15 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
   const hasPin = auth.hasParentPin();
 
   root!.innerHTML = `
-    <main class="parent-portal-page" style="min-height: 100vh; background: var(--bg-main, #f8fafc); color: var(--text-main, #0f172a); font-family: var(--font-body, system-ui);">
+    <main class="parent-portal-page" style="min-height: 100vh; background: var(--bg-page); color: var(--text-main); font-family: var(--font-body, system-ui);">
       <!-- Top Navigation Header -->
-      <header class="surface" style="padding: 16px 24px; border-bottom: 1.5px solid var(--border-color, #e2e8f0); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; background: #ffffff;">
+      <header class="surface" style="padding: 16px 24px; border-bottom: 1.5px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; background: var(--bg-surface);">
         <div style="display: flex; align-items: center; gap: 14px;">
-          <a href="#/landing" data-action="open-website" style="text-decoration: none;">
-            ${brandMarkup(true)}
-          </a>
+          <div class="parent-nav-logo-pill">
+            <a href="#/landing" data-action="open-website" style="text-decoration: none;">
+              ${brandMarkup(false)}
+            </a>
+          </div>
           <span class="badge badge-primary">PARENT &amp; GUARDIAN PORTAL 🛡️</span>
           ${isLive
       ? '<span class="badge badge-outline" style="border-color: #86efac; color: #166534; background: #f0fdf4;">🟢 Supabase PostgreSQL &amp; RLS Active</span>'
@@ -1253,7 +1296,10 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
         </div>
 
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <select class="parent-lang-select" style="padding: 6px 10px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700; font-size: 13px; background: #ffffff;" aria-label="Interface Language">
+          <button type="button" class="theme-toggle-btn" data-action="toggle-theme" title="Toggle Light / Dark Mode" aria-label="Toggle Theme" style="padding: 6px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--bg-surface-alt); color: var(--text-main); cursor: pointer; font-size: 16px;">
+            <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
+          </button>
+          <select class="parent-lang-select" style="padding: 6px 10px; border-radius: var(--radius-md); border: 1.5px solid var(--border); font-weight: 700; font-size: 13px; background: var(--bg-surface-alt); color: var(--text-main);" aria-label="Interface Language">
             ${SUPPORTED_LANGUAGES.map(meta => `
               <option value="${meta.code}" ${meta.code === i18n.getCurrentLanguage() ? 'selected' : ''}>
                 ${meta.flag} ${meta.nativeName} (${meta.englishName})
@@ -1377,7 +1423,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
         return `
                     <article class="surface" style="background: var(--bg-surface-alt); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                       <div style="display: flex; align-items: center; gap: 14px; min-width: 240px;">
-                        <span style="font-size: 38px; width: 56px; height: 56px; display: grid; place-items: center; background: #ffffff; border-radius: 14px; border: 1px solid var(--border-color);">
+                        <span style="font-size: 38px; width: 56px; height: 56px; display: grid; place-items: center; background: var(--bg-surface-alt); border-radius: 14px; border: 1px solid var(--border);">
                           ${escapeHtml(c.avatar)}
                         </span>
                         <div>
@@ -1444,10 +1490,10 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             ` : ''}
 
             <!-- Selected Child Header -->
-            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #bfdbfe;">
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: var(--bg-surface); border: 1.5px solid var(--border);">
               <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                 <div style="display: flex; align-items: center; gap: 16px;">
-                  <span style="font-size: 48px; width: 70px; height: 70px; display: grid; place-items: center; background: #ffffff; border-radius: 18px; border: 1.5px solid #bfdbfe;">
+                  <span style="font-size: 48px; width: 70px; height: 70px; display: grid; place-items: center; background: var(--bg-surface-alt); border-radius: 18px; border: 1.5px solid var(--border);">
                     ${escapeHtml(selectedChild.avatar)}
                   </span>
                   <div>
@@ -1502,7 +1548,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
 
               ${chartSummary && !chartSummary.isEmpty && chartSummary.dataPoints.length > 0 ? `
                 <!-- SVG Accuracy Curve -->
-                <div style="background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px 12px 12px; margin-bottom: 20px; overflow-x: auto;">
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px 12px 12px; margin-bottom: 20px; overflow-x: auto;">
                   <svg viewBox="0 0 600 200" style="width: 100%; min-width: 540px; height: 210px; overflow: visible;">
                     <defs>
                       <linearGradient id="parentChartGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1565,7 +1611,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             </section>
 
             <!-- Happy Points Progression & Daily Milestones -->
-            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%); border: 1.5px solid #fef3c7;">
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg); margin-bottom: 24px; background: var(--bg-surface); border: 1.5px solid var(--border);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 14px;">
                 <div>
                   <span class="badge badge-warm">REWARD SYSTEM TELEMETRY</span>
@@ -1578,7 +1624,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
                 </div>
 
                 <div class="stats-grid" style="gap: 12px; margin: 0;">
-                  <div style="background: #ffffff; border: 1.5px solid #fde68a; border-radius: var(--radius-md); padding: 10px 18px; text-align: center;">
+                  <div style="background: var(--bg-surface-alt); border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 10px 18px; text-align: center;">
                     <span style="font-size: 11px; font-weight: 800; color: #92400e; display: block; text-transform: uppercase;">CUMULATIVE TOTAL</span>
                     <strong style="font-size: 24px; color: #b45309;">${runningPoints || 405} ⭐</strong>
                   </div>
@@ -1587,10 +1633,10 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
 
               <!-- Day-by-day table -->
               ${dailyHistoryList.length > 0 ? `
-                <div style="overflow-x: auto; background: #ffffff; border: 1px solid #fef3c7; border-radius: var(--radius-md);">
+                <div style="overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md);">
                   <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
                     <thead>
-                      <tr style="background: #fffbeb; border-bottom: 1.5px solid #fde68a; color: #92400e; font-size: 11px; text-transform: uppercase;">
+                      <tr style="background: var(--bg-surface-alt); border-bottom: 1.5px solid var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase;">
                         <th style="padding: 10px 14px;">Date</th>
                         <th style="padding: 10px 14px;">Activities</th>
                         <th style="padding: 10px 14px;">Questions</th>
@@ -2163,12 +2209,12 @@ function renderShell(userName: string): string {
   const child = activeChild!;
   const learnerLanguages = getLearnerLanguages(child);
   const nav = [
-    ['home', '⌂', t('nav.myHome')],
-    ['practice', '✳', t('nav.practice')],
-    ['stories', '📖', t('nav.storyShelf')],
-    ['adventure', '🧭', t('nav.myAdventure') || 'My Adventure'],
-    ['progress', '↗', t('nav.myProgress')],
-    ['resources', '⌕', t('nav.resourceFinder')],
+    ['home', '⌂', t('nav.myHome') || 'My Home'],
+    ['adventure', '🧭', t('nav.myAdventure') || 'Adventure Map'],
+    ['practice', '✳', t('nav.practice') || 'Practice'],
+    ['stories', '📖', t('nav.storyShelf') || 'Story Shelf'],
+    ['progress', '↗', t('nav.myProgress') || 'My Progress'],
+    ['resources', '⌕', t('nav.resourceFinder') || 'Discovery Hub'],
   ];
 
   return `
@@ -2203,6 +2249,19 @@ function renderShell(userName: string): string {
             ${t('nav.findStory') || 'Find a Story'}
           </a>
         </div>
+
+        <!-- Sidebar Theme Switcher -->
+        <button
+          type="button"
+          class="theme-toggle-btn sidebar-theme-btn"
+          data-action="toggle-theme"
+          title="${currentTheme === 'dark' ? 'Switch to Sunny Day Mode ☀️' : 'Switch to Night Sky Mode 🌙'}"
+          aria-label="Toggle Theme"
+          style="width: 100%; margin: 6px 0 16px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-pill); border: 1.5px solid var(--border); background: var(--bg-surface-alt); color: var(--text-main); font-weight: 800; font-size: 13px; cursor: pointer; transition: all var(--transition-fast);"
+        >
+          <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
+          <span>${currentTheme === 'dark' ? 'Night Sky Mode' : 'Sunny Day Mode'}</span>
+        </button>
 
         <a href="#/profiles" class="learner-switch" data-action="profiles" style="text-decoration: none;">
           <span class="profile-avatar" style="width: 36px; height: 36px; font-size: 20px; border-radius: 10px; margin: 0;">
@@ -2282,6 +2341,18 @@ function renderShell(userName: string): string {
               <span class="sound-icon" aria-hidden="true">${soundService.isEnabled() ? '🔊' : '🔇'}</span>
             </button>
 
+            <!-- Theme Switching Button (Child Dashboard Topbar) -->
+            <button
+              type="button"
+              class="theme-toggle-btn"
+              data-action="toggle-theme"
+              title="${currentTheme === 'dark' ? 'Switch to Sunny Day Mode ☀️' : 'Switch to Night Sky Mode 🌙'}"
+              aria-label="Toggle Theme"
+            >
+              <span class="indicator-dot" aria-hidden="true"></span>
+              <span class="theme-icon" aria-hidden="true">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
+            </button>
+
             <span class="badge badge-outline today-badge">
               ${new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
@@ -2319,15 +2390,180 @@ function statCard(icon: string, label: string, value: string | number, foot: str
     </article>`;
 }
 
+
+function renderLevelPreviewModal(levelNumber: number): void {
+  const child = activeChild;
+  if (!child) return;
+  const progress = profiles.getChildProgress(child.id);
+  const mapState = computeAdventureMapState(child, (learningPath as any)?.skillStates || {}, progress);
+  const level = mapState.levels.find(l => l.levelNumber === levelNumber);
+  if (!level) return;
+
+  if (level.status === 'locked') {
+    toast(`🔒 Level ${level.levelNumber} is locked! Complete Level ${level.levelNumber - 1} or earn more Happy Points to unlock this realm.`);
+    return;
+  }
+
+  const modal = root!.querySelector<HTMLElement>('#modal-root');
+  if (!modal) return;
+  document.body.style.overflow = 'hidden';
+
+  const destMeta = ADVENTURE_DESTINATIONS_META[level.destinationKey];
+
+  modal.innerHTML = `
+    <div class="modal-backdrop" data-action="dismiss-modal">
+      <div class="level-preview-dialog">
+        <div class="level-preview-header dest-${escapeHtml(level.destinationKey)}">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 36px; line-height: 1;">${destMeta.icon}</span>
+            <div>
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.9;">
+                ${escapeHtml(destMeta.name)}
+              </div>
+              <h2 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 2px 0 0;">
+                Level ${level.levelNumber}: ${escapeHtml(level.title)}
+              </h2>
+            </div>
+          </div>
+          <button type="button" class="icon-button modal-close" data-action="close-modal" aria-label="Close" style="background: rgba(0,0,0,0.15); border: none; border-radius: 50%; color: inherit;">✕</button>
+        </div>
+
+        <div class="level-preview-body">
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <span class="badge badge-primary" style="text-transform: capitalize;">${escapeHtml(level.difficulty)} Level</span>
+            <span class="badge badge-warm">✦ +${level.rewardPoints} Happy Points</span>
+            ${level.status === 'completed' ? '<span class="badge badge-outline" style="border-color: #10b981; color: #10b981;">✓ Completed</span>' : '<span class="badge badge-outline" style="border-color: #0284c7; color: #0284c7;">🎯 Current Quest</span>'}
+          </div>
+
+          <div>
+            <h4 style="font-size: 14px; font-weight: 800; margin: 0 0 4px; color: var(--text-main);">Learning Objective</h4>
+            <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0;">
+              ${escapeHtml(level.objective)}
+            </p>
+          </div>
+
+          <div style="background: var(--bg-surface-alt); border-radius: var(--radius-md); padding: 12px 16px; border: 1px solid var(--border);">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">Your Best Score</div>
+            <div class="level-stars-display" style="padding: 6px 0; background: transparent;">
+              <span class="star-slot ${level.stars >= 1 ? 'filled' : 'empty'}">⭐</span>
+              <span class="star-slot ${level.stars >= 2 ? 'filled' : 'empty'}">⭐</span>
+              <span class="star-slot ${level.stars >= 3 ? 'filled' : 'empty'}">⭐</span>
+            </div>
+            <p style="text-align: center; font-size: 12px; font-weight: 700; color: var(--text-main); margin: 4px 0 0;">
+              ${level.stars === 3 ? '🌟 Mastered with flying colors! (3 Stars)' : level.stars === 2 ? '⭐ Great accuracy! (2 Stars)' : level.stars === 1 ? '🌱 Good effort! (1 Star)' : 'Play to earn your first star!'}
+            </p>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <button
+              type="button"
+              class="btn btn-primary btn-lg"
+              style="flex: 1;"
+              data-action="play-level"
+              data-skill="${escapeHtml(level.skillId)}"
+              data-title="${escapeHtml(level.title)}"
+              data-difficulty="${escapeHtml(level.difficulty)}"
+            >
+              Play Level Now 🚀
+            </button>
+            <button type="button" class="btn btn-outline" data-action="close-modal">
+              Back to Map
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMilestoneModal(levelNumber: number): void {
+  const child = activeChild;
+  if (!child) return;
+  const progress = profiles.getChildProgress(child.id);
+  const mapState = computeAdventureMapState(child, (learningPath as any)?.skillStates || {}, progress);
+  const level = mapState.levels.find(l => l.levelNumber === levelNumber);
+  if (!level || !level.milestone) return;
+
+  const milestone = level.milestone;
+  const isClaimed = level.status === 'completed';
+
+  const modal = root!.querySelector<HTMLElement>('#modal-root');
+  if (!modal) return;
+  document.body.style.overflow = 'hidden';
+
+  modal.innerHTML = `
+    <div class="modal-backdrop" data-action="dismiss-modal">
+      <div class="level-preview-dialog">
+        <div class="level-preview-header" style="background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 38px; line-height: 1;">🎁</span>
+            <div>
+              <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.9;">
+                MILESTONE TREASURE CHEST
+              </div>
+              <h2 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 2px 0 0;">
+                ${escapeHtml(milestone.title)}
+              </h2>
+            </div>
+          </div>
+          <button type="button" class="icon-button modal-close" data-action="close-modal" aria-label="Close" style="background: rgba(0,0,0,0.15); border: none; border-radius: 50%; color: inherit;">✕</button>
+        </div>
+
+        <div class="level-preview-body" style="text-align: center;">
+          <div style="font-size: 64px; margin: 12px 0; filter: drop-shadow(0 6px 16px rgba(245, 158, 11, 0.4));">
+            ${isClaimed ? '🏆' : '🔒'}
+          </div>
+
+          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 8px; color: var(--text-main);">
+            ${isClaimed ? 'Treasure Chest Unlocked!' : 'Locked Milestone Chest'}
+          </h3>
+
+          <p style="font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 16px;">
+            ${escapeHtml(milestone.title)}
+          </p>
+
+          <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(245, 158, 11, 0.15); border: 1.5px solid #f59e0b; padding: 8px 18px; border-radius: var(--radius-pill); font-weight: 900; color: #b45309; margin-bottom: 20px;">
+            <span>⭐</span> +${milestone.bonusPoints} Bonus Happy Points
+          </div>
+
+          <div>
+            ${!isClaimed ? `
+              <button
+                type="button"
+                class="btn btn-primary btn-lg"
+                style="width: 100%;"
+                data-action="inspect-level"
+                data-level="${level.levelNumber}"
+              >
+                Conquer Level ${level.levelNumber} to Unlock 🚀
+              </button>
+            ` : `
+              <button type="button" class="btn btn-outline" style="width: 100%;" data-action="close-modal">
+                Close Treasure
+              </button>
+            `}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function homePage(): Promise<string> {
   const child = activeChild!;
-  const path = learningPath || await learning.getOrGeneratePath(child);
+  const [path, progress, skillStates] = await Promise.all([
+    learningPath || learning.getOrGeneratePath(child),
+    profiles.getChildProgress(child.id),
+    learning.getChildSkillStates(child.id),
+  ]);
   learningPath = path;
   const chart = await charts.getChartSummary(child.id, 'week');
-  const progress = profiles.getChildProgress(child.id);
   const rec = path.recommendations[0];
   const actualAccuracy = chart.overallAccuracy;
   const bars = chart.dataPoints.slice(-7);
+  const mapState = computeAdventureMapState(child, skillStates, progress);
+  const currentLvl = mapState.currentLevel || mapState.levels[0];
+  const currentDest = mapState.currentDestination;
 
   const chartMarkup = chart.isEmpty
     ? `<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="margin-top: 8px; color: var(--text-muted); font-size: 13px;">${escapeHtml(chart.emptyMessage)}</p></div>`
@@ -2342,81 +2578,609 @@ async function homePage(): Promise<string> {
        </div>`;
 
   return `
+    <!-- Cheerful Learner Welcome Banner -->
     <section class="welcome-banner">
       <div class="welcome-copy">
-        <span class="badge badge-warm" style="margin-bottom: 8px;">${t('home.madeForYouTag')}</span>
-        <h2>${t('home.heroGreeting', { name: escapeHtml(child.name) })}</h2>
-        <p>${escapeHtml(rec?.reason || t('home.heroSubtitle'))}</p>
-        <button class="btn btn-warm btn-lg" type="button" data-action="${rec ? 'start-recommendation' : 'navigate'}" ${rec ? `data-skill="${escapeHtml(rec.targetSkillId)}" data-title="${escapeHtml(rec.title)}" data-difficulty="${rec.difficulty}"` : 'data-page="practice"'}>
-          ${t('home.startChallengeBtn')} <span>→</span>
-        </button>
+        <span class="badge badge-warm" style="margin-bottom: 8px;">${t('home.madeForYouTag') || 'YOUR NEXT LITTLE WIN'}</span>
+        <h2>${t('home.heroGreeting', { name: escapeHtml(child.name) }) || `Ready to grow, ${escapeHtml(child.name)}?`}</h2>
+        <p>${escapeHtml(rec?.reason || t('home.heroSubtitle') || 'Pick a friendly activity and learn at your own pace.')}</p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px;">
+          <button class="btn btn-warm btn-lg" type="button" data-action="${rec ? 'start-recommendation' : 'navigate'}" ${rec ? `data-skill="${escapeHtml(rec.targetSkillId)}" data-title="${escapeHtml(rec.title)}" data-difficulty="${rec.difficulty}"` : 'data-page="practice"'}>
+            ${t('home.startChallengeBtn') || 'Start Practice Adventure'} <span>→</span>
+          </button>
+          <button class="btn btn-outline btn-lg" type="button" data-action="navigate" data-page="adventure" style="background: var(--bg-surface-alt);">
+            🧭 Explore World Map
+          </button>
+        </div>
       </div>
     </section>
 
+    <!-- Top Key Metrics Grid -->
     <section class="stats-grid">
-      ${statCard('⏱', t('home.statPracticeTime'), progress.practiceMinutes, t('home.statPracticeTimeFromLastWeek'))}
-      ${statCard('✦', t('home.statHappyPoints'), progress.happyPoints, t('home.statHappyPointsBadgeSoon'))}
-      ${statCard('📖', t('home.statWordsLearned'), progress.wordsLearned, t('home.statWordsLearnedNew'))}
-      ${statCard('↗', t('progress.statAccuracy'), actualAccuracy === null ? '—' : `${actualAccuracy}%`, chart.isEmpty ? t('home.statFluencyGrowing') : t('home.statFluency'))}
+      ${statCard('⏱', t('home.statPracticeTime') || 'Practice minutes', progress.practiceMinutes, t('home.statPracticeTimeFromLastWeek') || 'Time spent learning')}
+      ${statCard('✦', t('home.statHappyPoints') || 'Happy points', progress.happyPoints, t('home.statHappyPointsBadgeSoon') || 'Little wins add up')}
+      ${statCard('📖', t('home.statWordsLearned') || 'Words learned', progress.wordsLearned, t('home.statWordsLearnedNew') || 'Words on your journey')}
+      ${statCard('↗', t('progress.statAccuracy') || 'Recent accuracy', actualAccuracy === null ? '—' : `${actualAccuracy}%`, chart.isEmpty ? (t('home.statFluencyGrowing') || 'Growing steady') : (t('home.statFluency') || 'From recorded practice'))}
     </section>
 
-    <div class="dashboard-grid">
+    <!-- Dedicated World Adventure Gateway Banner -->
+    <section class="adventure-hero-banner" style="margin-top: 24px; border-radius: 28px; padding: 22px 28px; background: linear-gradient(135deg, rgba(34, 211, 238, 0.16) 0%, rgba(250, 204, 21, 0.14) 100%); border: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 42px; line-height: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.12));">🧭</div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge badge-primary">WORLD ADVENTURE MAP</span>
+            <span style="font-size: 12px; font-weight: 800; color: var(--text-muted);">${currentDest.name} · Level ${currentLvl.levelNumber}</span>
+          </div>
+          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 4px 0 2px; color: var(--text-main);">
+            Continue Your Journey Across 6 Learning Realms!
+          </h3>
+          <p style="margin: 0; font-size: 13.5px; color: var(--text-muted);">
+            Travel the Candy Crush-inspired winding path, conquer levels, and unlock milestone treasure chests!
+          </p>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" type="button" data-action="navigate" data-page="adventure" style="box-shadow: 0 4px 14px rgba(6, 182, 212, 0.35); font-weight: 900;">
+        Open Adventure Map 🚀
+      </button>
+    </section>
+
+    <!-- Main Dashboard Analytics & Recommendations Grid -->
+    <div class="dashboard-grid" style="margin-top: 24px;">
+      <!-- Weekly Reading Confidence Metrics -->
       <section class="surface">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <span class="badge badge-primary">${t('home.snapshotTitle')}</span>
-            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.statFluency')}</h3>
-            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">${t('home.snapshotSubtitle')}</p>
+            <span class="badge badge-primary">${t('home.snapshotTitle') || 'WEEKLY METRICS'}</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.statFluency') || 'Reading confidence'}</h3>
+            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">${t('home.snapshotSubtitle') || 'Accuracy from completed activities this week.'}</p>
           </div>
           <span class="badge badge-outline">${chart.totalSessions} ${chart.totalSessions === 1 ? 'session' : 'sessions'}</span>
         </div>
         ${chartMarkup}
       </section>
 
+      <!-- Recommended Next Activity -->
       <section class="surface">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <span class="badge badge-warm">${t('home.madeForYouTag')}</span>
-            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.recommendedTitle')}</h3>
+            <span class="badge badge-warm">${t('home.madeForYouTag') || 'RECOMMENDED NEXT'}</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.recommendedTitle') || `Picked for ${escapeHtml(child.name)}`}</h3>
           </div>
-          <span style="font-size: 24px;">${escapeHtml(rec?.actionIcon || '🌱')}</span>
+          <span style="font-size: 28px;">${escapeHtml(rec?.actionIcon || '🌱')}</span>
         </div>
-        <h4 style="font-family: var(--font-heading); font-size: 17px; margin: 8px 0 4px;">${escapeHtml(rec?.title || t('home.wordsToPracticeTitle'))}</h4>
-        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px;">${escapeHtml(rec?.description || t('home.wordsToPracticeSubtitle'))}</p>
+        <h4 style="font-family: var(--font-heading); font-size: 17px; margin: 8px 0 4px; color: var(--text-main);">${escapeHtml(rec?.title || t('home.wordsToPracticeTitle') || 'Choose a first activity')}</h4>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px;">${escapeHtml(rec?.description || t('home.wordsToPracticeSubtitle') || 'Start with a short, friendly practice activity.')}</p>
         
         ${rec ? `
           <button class="btn btn-primary btn-lg" style="width: 100%;" type="button" data-action="start-recommendation" data-skill="${escapeHtml(rec.targetSkillId)}" data-title="${escapeHtml(rec.title)}" data-difficulty="${rec.difficulty}">
-            ${t('practice.tryItBtn')} <span>→</span>
+            ${t('practice.tryItBtn') || 'Try this activity'} <span>→</span>
           </button>
-        ` : button(t('home.exploreStoriesBtn'), 'navigate-practice', 'btn btn-primary btn-lg')}
+        ` : button(t('home.exploreStoriesBtn') || 'Browse activities', 'navigate-practice', 'btn btn-primary btn-lg')}
+      </section>
+
+      <!-- Today's Learning Goals -->
+      <section class="surface">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+          <div>
+            <span class="badge badge-primary">TODAY’S FOCUS</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">Little goals, steady growth</h3>
+          </div>
+          <span style="font-size: 24px;">🎯</span>
+        </div>
+        <ul style="list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 8px;">
+          ${path.currentGoals.slice(0, 3).map((goal, i) => `
+            <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; color: var(--text-main);">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: ${i === 0 ? 'rgba(34, 211, 238, 0.2)' : 'var(--bg-surface-alt)'}; color: ${i === 0 ? 'var(--primary)' : 'var(--text-muted)'}; font-size: 12px;">${i === 0 ? '✦' : '○'}</span>
+              <span>${escapeHtml(goal)}</span>
+            </li>
+          `).join('')}
+        </ul>
+        <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin: 0; padding-top: 10px; border-top: 1px dashed var(--border);">
+          ${escapeHtml(path.explanation)}
+        </p>
+      </section>
+
+      <!-- Quick Practice Jump Library -->
+      <section class="surface">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+          <div>
+            <span class="badge badge-warm">PRACTICE PLAYGROUND</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">Jump into an activity</h3>
+            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Short, supportive adventures for every reader.</p>
+          </div>
+          <span style="font-size: 24px;">🎪</span>
+        </div>
+        <div style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); display: grid; gap: 10px; margin-bottom: 14px;">
+          ${ACTIVITY_CATALOG.slice(0, 4).map(item => `
+            <button
+              type="button"
+              class="quick-activity"
+              data-action="start-catalog"
+              data-skill="${escapeHtml(item.skillId)}"
+              data-title="${escapeHtml(item.title)}"
+              data-difficulty="${item.difficulty}"
+              style="padding: 12px 10px; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--bg-surface-alt); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; cursor: pointer; transition: all var(--transition-fast);"
+            >
+              <span style="font-size: 24px;">${escapeHtml(item.icon)}</span>
+              <strong style="font-size: 12px; font-weight: 800; color: var(--text-main);">${escapeHtml(item.title)}</strong>
+              <small style="font-size: 10px; font-weight: 700; color: var(--text-muted);">${item.estimatedMinutes} min</small>
+            </button>
+          `).join('')}
+        </div>
+        <button class="btn btn-outline" type="button" data-action="navigate-practice" style="width: 100%;">
+          Explore all activities in Playground 🚀
+        </button>
       </section>
     </div>
+  `;
+}
 
-    <!-- Story of the Day Hero Banner -->
-    <section class="surface" style="margin-top: 24px; background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%); border: 1.5px solid #bbf7d0; padding: 22px;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 260px;">
-          <span class="badge badge-primary">${t('stories.storyOfDayTag')} 📖</span>
-          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 8px 0 4px;">
-            ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).emoji)} ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).title)}
-          </h3>
-          <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 14px;">
-            ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).synopsis)}
-          </p>
-          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <button type="button" class="btn btn-primary btn-sm" data-action="open-story" data-id="${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).id)}">
-              ${t('stories.readStoryBtn')} <span>→</span>
-            </button>
-            <a href="#/stories" class="btn btn-ghost btn-sm" data-action="navigate-stories" style="text-decoration: none;">
-              ${t('stories.moreStories')} (${storyShelf.getStories(child.preferredLanguage).length})
-            </a>
-          </div>
+// Dedicated Candy Crush Adventure Map Dashboard
+
+function renderAdventureForestBackdrop(): string {
+  // Generates a multi-layered, living animated magical forest:
+  // 1. Drifting upper atmosphere clouds
+  // 2. Swaying ancient forest trees & groves along left & right flanks
+  // 3. Floating falling leaves drifting across the realm
+  // 4. Bioluminescent fireflies pulsing and wandering in the forest air
+  return `
+    <div class="adventure-forest-backdrop" aria-hidden="true">
+      <!-- 1. Drifting Fluffy Clouds in the High Canopy -->
+      <div class="forest-clouds-layer">
+        <div class="forest-cloud cloud-1" style="top: 30px;">
+          <svg width="180" height="60" viewBox="0 0 180 60" fill="currentColor">
+            <path d="M25,50 A20,20 0 0,1 45,25 A30,30 0 0,1 95,20 A25,25 0 0,1 135,28 A20,20 0 0,1 165,50 Z" />
+          </svg>
         </div>
-        <div style="font-size: 52px; align-self: center;">
-          ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).emoji)}
+        <div class="forest-cloud cloud-2" style="top: 520px;">
+          <svg width="150" height="50" viewBox="0 0 150 50" fill="currentColor">
+            <path d="M20,42 A16,16 0 0,1 38,20 A24,24 0 0,1 80,16 A20,20 0 0,1 112,24 A16,16 0 0,1 136,42 Z" />
+          </svg>
+        </div>
+        <div class="forest-cloud cloud-3" style="top: 1150px;">
+          <svg width="200" height="65" viewBox="0 0 200 65" fill="currentColor">
+            <path d="M28,54 A22,22 0 0,1 50,26 A32,32 0 0,1 106,22 A28,28 0 0,1 150,30 A22,22 0 0,1 184,54 Z" />
+          </svg>
+        </div>
+        <div class="forest-cloud cloud-1" style="top: 1720px;">
+          <svg width="160" height="55" viewBox="0 0 160 55" fill="currentColor">
+            <path d="M22,46 A18,18 0 0,1 40,22 A28,28 0 0,1 88,18 A22,22 0 0,1 122,26 A18,18 0 0,1 148,46 Z" />
+          </svg>
+        </div>
+        <div class="forest-cloud cloud-2" style="top: 2350px;">
+          <svg width="170" height="58" viewBox="0 0 170 58" fill="currentColor">
+            <path d="M24,48 A19,19 0 0,1 42,24 A30,30 0 0,1 92,20 A24,24 0 0,1 130,28 A19,19 0 0,1 156,48 Z" />
+          </svg>
         </div>
       </div>
-    </section>
+
+      <!-- 2. Swaying Ancient Trees & Enchanted Foliage (Left & Right Flanks) -->
+      <div class="forest-trees-flank">
+        <!-- Alphabet Forest Groves (Top) -->
+        <div class="forest-tree tree-pine sway-left" style="top: 70px; left: -15px;">
+          <svg width="120" height="180" viewBox="0 0 120 180">
+            <path d="M60,10 L85,60 L72,60 L95,110 L80,110 L105,160 L15,160 L40,110 L25,110 L48,60 L35,60 Z" class="tree-foliage-emerald" />
+            <rect x="52" y="160" width="16" height="20" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-right" style="top: 180px; right: -20px;">
+          <svg width="130" height="190" viewBox="0 0 130 190">
+            <ellipse cx="65" cy="85" rx="50" ry="42" class="tree-foliage-green" />
+            <circle cx="45" cy="65" r="32" class="tree-foliage-light" />
+            <circle cx="85" cy="70" r="30" class="tree-foliage-emerald" />
+            <rect x="57" y="145" width="16" height="40" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-pine sway-left" style="top: 360px; left: -10px;">
+          <svg width="110" height="160" viewBox="0 0 110 160">
+            <path d="M55,10 L78,55 L66,55 L88,100 L74,100 L96,145 L14,145 L36,100 L22,100 L44,55 L32,55 Z" class="tree-foliage-light" />
+            <rect x="47" y="145" width="16" height="15" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+
+        <!-- Sound Safari Savannah Canopy -->
+        <div class="forest-tree tree-acacia sway-right" style="top: 660px; right: -25px;">
+          <svg width="140" height="170" viewBox="0 0 140 170">
+            <ellipse cx="70" cy="55" rx="60" ry="24" class="tree-foliage-warm" />
+            <ellipse cx="70" cy="42" rx="44" ry="18" class="tree-foliage-amber" />
+            <path d="M70,75 Q60,115 50,165 L58,165 Q68,120 74,75 Z" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-left" style="top: 840px; left: -20px;">
+          <svg width="125" height="175" viewBox="0 0 125 175">
+            <circle cx="62" cy="75" r="48" class="tree-foliage-warm" />
+            <circle cx="45" cy="60" r="30" class="tree-foliage-green" />
+            <rect x="54" y="135" width="16" height="38" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-pine sway-right" style="top: 990px; right: -15px;">
+          <svg width="115" height="165" viewBox="0 0 115 165">
+            <path d="M58,10 L80,55 L68,55 L90,100 L76,100 L98,145 L18,145 L40,100 L26,100 L48,55 L36,55 Z" class="tree-foliage-emerald" />
+            <rect x="50" y="145" width="15" height="18" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+
+        <!-- Word Wonderland Blossom Trees -->
+        <div class="forest-tree tree-blossom sway-left" style="top: 1240px; left: -25px;">
+          <svg width="135" height="180" viewBox="0 0 135 180">
+            <ellipse cx="68" cy="80" rx="52" ry="44" class="tree-foliage-pink" />
+            <circle cx="48" cy="60" r="34" class="tree-foliage-coral" />
+            <circle cx="88" cy="66" r="32" class="tree-foliage-pink" />
+            <rect x="60" y="140" width="16" height="38" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-right" style="top: 1420px; right: -20px;">
+          <svg width="125" height="175" viewBox="0 0 125 175">
+            <circle cx="62" cy="75" r="48" class="tree-foliage-coral" />
+            <circle cx="78" cy="60" r="32" class="tree-foliage-pink" />
+            <rect x="54" y="135" width="16" height="38" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-pine sway-left" style="top: 1580px; left: -15px;">
+          <svg width="115" height="165" viewBox="0 0 115 165">
+            <path d="M58,10 L80,55 L68,55 L90,100 L76,100 L98,145 L18,145 L40,100 L26,100 L48,55 L36,55 Z" class="tree-foliage-pink" />
+            <rect x="50" y="145" width="15" height="18" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+
+        <!-- Spelling Castle Mystic Woods -->
+        <div class="forest-tree tree-pine sway-right" style="top: 1820px; right: -20px;">
+          <svg width="125" height="185" viewBox="0 0 125 185">
+            <path d="M62,10 L88,60 L74,60 L98,110 L84,110 L108,160 L16,160 L40,110 L26,110 L50,60 L36,60 Z" class="tree-foliage-purple" />
+            <rect x="54" y="160" width="16" height="22" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-left" style="top: 2000px; left: -20px;">
+          <svg width="130" height="180" viewBox="0 0 130 180">
+            <ellipse cx="65" cy="80" rx="52" ry="42" class="tree-foliage-purple" />
+            <circle cx="45" cy="62" r="32" class="tree-foliage-lavender" />
+            <rect x="57" y="138" width="16" height="40" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-pine sway-right" style="top: 2160px; right: -15px;">
+          <svg width="115" height="165" viewBox="0 0 115 165">
+            <path d="M58,10 L80,55 L68,55 L90,100 L76,100 L98,145 L18,145 L40,100 L26,100 L48,55 L36,55 Z" class="tree-foliage-purple" />
+            <rect x="50" y="145" width="15" height="18" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+
+        <!-- Rhyme River Willows & Reeds -->
+        <div class="forest-tree tree-willow sway-left" style="top: 2400px; left: -25px;">
+          <svg width="135" height="190" viewBox="0 0 135 190">
+            <ellipse cx="68" cy="70" rx="55" ry="36" class="tree-foliage-teal" />
+            <path d="M25,85 Q20,135 30,165 M40,90 Q35,145 42,170 M60,95 Q58,150 62,175 M85,90 Q90,145 84,170 M105,85 Q115,135 102,165" stroke="currentColor" stroke-width="4" fill="none" class="tree-willow-reeds" />
+            <rect x="60" y="125" width="16" height="55" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-pine sway-right" style="top: 2580px; right: -20px;">
+          <svg width="120" height="175" viewBox="0 0 120 175">
+            <path d="M60,10 L85,55 L72,55 L95,100 L80,100 L105,150 L15,150 L40,100 L25,100 L48,55 L35,55 Z" class="tree-foliage-teal" />
+            <rect x="52" y="150" width="16" height="22" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-left" style="top: 2720px; left: -15px;">
+          <svg width="125" height="170" viewBox="0 0 125 170">
+            <circle cx="62" cy="70" r="46" class="tree-foliage-teal" />
+            <circle cx="80" cy="58" r="30" class="tree-foliage-emerald" />
+            <rect x="54" y="130" width="16" height="38" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+
+        <!-- Storybook Kingdom Royal Pines & Peak Trees -->
+        <div class="forest-tree tree-pine sway-right" style="top: 2880px; right: -20px;">
+          <svg width="130" height="190" viewBox="0 0 130 190">
+            <path d="M65,10 L92,60 L78,60 L102,110 L88,110 L112,165 L18,165 L42,110 L28,110 L52,60 L38,60 Z" class="tree-foliage-gold" />
+            <rect x="57" y="165" width="16" height="22" rx="3" class="tree-trunk" />
+          </svg>
+        </div>
+        <div class="forest-tree tree-oak sway-left" style="top: 3020px; left: -20px;">
+          <svg width="135" height="185" viewBox="0 0 135 185">
+            <circle cx="68" cy="75" r="50" class="tree-foliage-gold" />
+            <circle cx="48" cy="60" r="32" class="tree-foliage-amber" />
+            <rect x="60" y="138" width="16" height="42" rx="4" class="tree-trunk" />
+          </svg>
+        </div>
+      </div>
+
+      <!-- 3. Gentle Floating Leaves Drifting Downward -->
+      <div class="forest-leaves-layer">
+        <span class="forest-leaf leaf-emerald l-1" style="left: 15%; animation-delay: 0s;">🍃</span>
+        <span class="forest-leaf leaf-gold l-2" style="left: 32%; animation-delay: 3.5s;">🍂</span>
+        <span class="forest-leaf leaf-emerald l-3" style="left: 68%; animation-delay: 7s;">🌿</span>
+        <span class="forest-leaf leaf-coral l-4" style="left: 82%; animation-delay: 1.5s;">🍁</span>
+        <span class="forest-leaf leaf-gold l-1" style="left: 22%; animation-delay: 11s;">🍂</span>
+        <span class="forest-leaf leaf-emerald l-2" style="left: 55%; animation-delay: 14.5s;">🍃</span>
+        <span class="forest-leaf leaf-coral l-3" style="left: 75%; animation-delay: 8.5s;">🌸</span>
+        <span class="forest-leaf leaf-gold l-4" style="left: 40%; animation-delay: 18s;">🍁</span>
+      </div>
+
+      <!-- 4. Luminous Bioluminescent Fireflies Floating & Pulsing -->
+      <div class="forest-fireflies-layer">
+        <div class="forest-firefly ff-1" style="top: 140px; left: 18%;"></div>
+        <div class="forest-firefly ff-2" style="top: 260px; right: 22%;"></div>
+        <div class="forest-firefly ff-3" style="top: 580px; left: 24%;"></div>
+        <div class="forest-firefly ff-1" style="top: 820px; right: 18%;"></div>
+        <div class="forest-firefly ff-2" style="top: 1120px; left: 16%;"></div>
+        <div class="forest-firefly ff-3" style="top: 1380px; right: 25%;"></div>
+        <div class="forest-firefly ff-1" style="top: 1680px; left: 22%;"></div>
+        <div class="forest-firefly ff-2" style="top: 1960px; right: 15%;"></div>
+        <div class="forest-firefly ff-3" style="top: 2240px; left: 28%;"></div>
+        <div class="forest-firefly ff-1" style="top: 2520px; right: 20%;"></div>
+        <div class="forest-firefly ff-2" style="top: 2780px; left: 14%;"></div>
+        <div class="forest-firefly ff-3" style="top: 3040px; right: 24%;"></div>
+      </div>
+    </div>
+  `;
+}
+
+export async function adventurePage(): Promise<string> {
+  const child = activeChild!;
+  const [path, progress, skillStates] = await Promise.all([
+    learningPath || learning.getOrGeneratePath(child),
+    profiles.getChildProgress(child.id),
+    learning.getChildSkillStates(child.id),
+  ]);
+  learningPath = path;
+  const mapState = computeAdventureMapState(child, skillStates, progress);
+  const currentLvl = mapState.currentLevel;
+  const currentDest = mapState.currentDestination;
+
+  // Visual vertical coordinates (y in px) for the 15 levels
+  const yCoords: Record<number, number> = {
+    1: 150,
+    2: 290,
+    3: 430,
+    4: 730,
+    5: 870,
+    6: 1010,
+    7: 1310,
+    8: 1450,
+    9: 1590,
+    10: 1890,
+    11: 2030,
+    12: 2170,
+    13: 2470,
+    14: 2610,
+    15: 2930,
+  };
+
+  const chestYCoords: Record<number, number> = {
+    3: 540,
+    6: 1120,
+    9: 1700,
+    12: 2280,
+    14: 2720,
+    15: 3060,
+  };
+
+  const destHeaderY: Record<DestinationKey, number> = {
+    alphabet_forest: 40,
+    sound_safari: 630,
+    word_wonderland: 1210,
+    spelling_castle: 1790,
+    rhyme_river: 2370,
+    storybook_kingdom: 2830,
+  };
+
+  // Build the S-curve SVG path connecting all 15 levels
+  let pathD = '';
+  for (let i = 0; i < mapState.levels.length; i++) {
+    const lvl = mapState.levels[i];
+    const x = lvl.xPercent * 10; // viewBox 1000 width
+    const y = yCoords[lvl.levelNumber];
+    if (i === 0) {
+      pathD += `M ${x} ${y}`;
+    } else {
+      const prevLvl = mapState.levels[i - 1];
+      const prevX = prevLvl.xPercent * 10;
+      const prevY = yCoords[prevLvl.levelNumber];
+      const midY = (prevY + y) / 2;
+      pathD += ` C ${prevX} ${midY}, ${x} ${midY}, ${x} ${y}`;
+    }
+  }
+
+  // Path continuation down to the final grand trophy chest
+  const lvl15 = mapState.levels[14];
+  pathD += ` C ${lvl15.xPercent * 10} 2990, 500 3010, 500 3060`;
+
+  const activeCelebration = celebratedCompletedLevelNumber;
+  celebratedCompletedLevelNumber = null; // Reset celebration after rendering so it only fires once
+
+  return `
+    <div class="adventure-world-wrap">
+      <!-- Floating HUD Bar -->
+      <section class="adventure-hud-bar">
+        <div class="hud-profile-pill">
+          <div class="hud-avatar">${escapeHtml(child.avatar)}</div>
+          <div class="hud-learner-meta">
+            <span class="hud-learner-name">${escapeHtml(child.name)}</span>
+            <span class="hud-dest-badge">${currentDest.icon} ${escapeHtml(currentDest.name)}</span>
+          </div>
+        </div>
+
+        <div class="hud-stats-group">
+          <div class="hud-chip hud-chip-stars" title="Stars collected across adventure levels">
+            <span>⭐</span>
+            <span>${mapState.totalStars} / ${mapState.maxPossibleStars}</span>
+          </div>
+
+          <div class="hud-chip hud-chip-points" title="Cumulative Happy Points">
+            <span>✦</span>
+            <span>${mapState.activeChildHappyPoints} pts</span>
+          </div>
+
+          <div class="hud-chip" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.3); color: #ef4444;" title="Consecutive Practice Streak">
+            <span>🔥</span>
+            <span>${progress.practiceWins || 1} Streak</span>
+          </div>
+
+          <button
+            type="button"
+            class="hud-quest-btn"
+            data-action="inspect-level"
+            data-level="${currentLvl.levelNumber}"
+            title="Start today's active adventure quest"
+          >
+            <span>🎯 Level ${currentLvl.levelNumber}</span>
+            <span>Play Now →</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Central Illustrated Candy Crush Map Board -->
+      <div class="candy-map-board" style="height: 3200px;">
+        ${renderAdventureForestBackdrop()}
+        <!-- Winding S-curve SVG Path with 4A.1 Golden Path Glow & Traveling Light Orb -->
+        <svg class="candy-path-svg" viewBox="0 0 1000 3200" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="goldTrailGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fef08a" stop-opacity="0.95" />
+              <stop offset="50%" stop-color="#f59e0b" stop-opacity="1" />
+              <stop offset="100%" stop-color="#ea580c" stop-opacity="0.9" />
+            </linearGradient>
+            <filter id="goldGlowFilter" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="8" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <path d="${pathD}" class="candy-path-shadow" />
+          <path d="${pathD}" class="candy-path-base" />
+          <path d="${pathD}" class="candy-path-stepping" />
+          <!-- 4A.1: Moving Golden Path Glow Trail -->
+          <path d="${pathD}" class="candy-path-golden-trail" />
+          <!-- 4A.1: Continuously Traveling Golden Light Orb along winding path -->
+          <circle r="14" class="candy-path-golden-orb">
+            <animateMotion
+              path="${pathD}"
+              dur="8s"
+              repeatCount="indefinite"
+              rotate="auto"
+              keyPoints="0; ${Math.min(1, Math.max(0.08, currentLvl.levelNumber / 15))}"
+              keyTimes="0; 1"
+            />
+          </circle>
+          <circle r="6" class="candy-path-golden-orb-core">
+            <animateMotion
+              path="${pathD}"
+              dur="8s"
+              repeatCount="indefinite"
+              rotate="auto"
+              keyPoints="0; ${Math.min(1, Math.max(0.08, currentLvl.levelNumber / 15))}"
+              keyTimes="0; 1"
+            />
+          </circle>
+        </svg>
+
+        <!-- Destination Scenery Headers -->
+        ${(Object.keys(ADVENTURE_DESTINATIONS_META) as DestinationKey[]).map(destKey => {
+          const dest = ADVENTURE_DESTINATIONS_META[destKey];
+          const topY = destHeaderY[destKey];
+          return `
+            <div class="destination-scenery-header dest-${destKey}" style="position: absolute; top: ${topY}px; left: 24px; right: 24px;">
+              <div class="dest-title-wrap">
+                <span class="dest-icon-bubble">${dest.icon}</span>
+                <div class="dest-header-text">
+                  <h3>${escapeHtml(dest.name)}</h3>
+                  <p>${escapeHtml(dest.tagline)}</p>
+                </div>
+              </div>
+              <span class="badge badge-outline" style="border-color: currentColor; font-weight: 800; background: transparent;">
+                Levels ${dest.levelNumbers[0]}–${dest.levelNumbers[dest.levelNumbers.length - 1]}
+              </span>
+            </div>
+          `;
+        }).join('')}
+
+        <!-- 15 Tactile Level Nodes -->
+        ${mapState.levels.map(lvl => {
+          const y = yCoords[lvl.levelNumber];
+          const isCurrent = lvl.status === 'current';
+          const isCompleted = lvl.status === 'completed';
+
+          return `
+            <div class="candy-node-anchor" style="left: ${lvl.xPercent}%; top: ${y}px;">
+              ${isCurrent ? `
+                <div class="node-avatar-pin">
+                  <div class="avatar-bubble">${escapeHtml(child.avatar)}</div>
+                  <div class="avatar-pointer-triangle"></div>
+                </div>
+                <!-- 4A.2: Turquoise Pulsing Halo Ring for current level -->
+                <div class="current-node-pulse-halo" aria-hidden="true"></div>
+              ` : ''}
+
+              ${activeCelebration === lvl.levelNumber ? `
+                <!-- 4A.3: Level Completion Celebration Rising Stars Burst -->
+                <div class="level-celebration-burst" aria-live="polite">
+                  <span class="burst-star s1">⭐</span>
+                  <span class="burst-star s2">✨</span>
+                  <span class="burst-star s3">⭐</span>
+                  <span class="burst-star s4">🌟</span>
+                  <span class="burst-star s5">⭐</span>
+                  <div class="burst-banner">Level ${lvl.levelNumber} Complete! ⭐</div>
+                </div>
+              ` : ''}
+
+              <button
+                type="button"
+                class="candy-node-btn ${lvl.status}"
+                data-action="inspect-level"
+                data-level="${lvl.levelNumber}"
+                aria-label="Level ${lvl.levelNumber}: ${escapeHtml(lvl.title)} (${lvl.status})"
+                title="Level ${lvl.levelNumber}: ${escapeHtml(lvl.title)}"
+              >
+                ${lvl.status === 'locked'
+                  ? '<span class="node-lock-icon">🔒</span>'
+                  : `<span class="node-number-text">${lvl.levelNumber}</span>`
+                }
+              </button>
+
+              ${isCompleted ? `
+                <div class="node-star-tray" aria-label="${lvl.stars} stars">
+                  ${'⭐'.repeat(lvl.stars)}${'<span style="opacity:0.3">⭐</span>'.repeat(Math.max(0, 3 - lvl.stars))}
+                </div>
+              ` : isCurrent ? `
+                <div class="node-star-tray" style="background: linear-gradient(135deg, #0284c7, #06b6d4); color: #ffffff; font-weight: 800; font-size: 11px; padding: 2px 10px;">
+                  PLAY
+                </div>
+              ` : `
+                <div class="node-star-tray" style="opacity: 0.6; font-size: 11px; font-weight: 700;">
+                  Locked
+                </div>
+              `}
+            </div>
+          `;
+        }).join('')}
+
+        <!-- Milestone Treasure Chests Between Destinations -->
+        ${mapState.levels.filter(l => l.milestone).map(lvl => {
+          const chest = lvl.milestone!;
+          const y = chestYCoords[lvl.levelNumber];
+          const isClaimed = lvl.status === 'completed';
+
+          return `
+            <div class="milestone-chest-wrap" style="left: 50%; top: ${y}px;">
+              <button
+                type="button"
+                class="milestone-chest-btn ${isClaimed ? 'claimed' : ''}"
+                data-action="inspect-milestone"
+                data-level="${lvl.levelNumber}"
+                title="Milestone: ${escapeHtml(chest.title)} (+${chest.bonusPoints} Happy Points)"
+                aria-label="Milestone Chest: ${escapeHtml(chest.title)}"
+              >
+                ${isClaimed ? '🎁' : '🔒'}
+              </button>
+              <span class="milestone-label">
+                ${isClaimed ? '✨ Unlocked!' : `Chest ${lvl.levelNumber}`}
+              </span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
   `;
 }
 
@@ -2427,82 +3191,181 @@ function storiesPage(): string {
   const allStories = storyShelf.getStories(currentLang);
   const storyOfTheDay = storyShelf.getStoryOfTheDay(currentLang, storyRotationAdvance);
 
+  const themeClasses = [
+    'book-theme-fantasy',
+    'book-theme-animals',
+    'book-theme-adventure',
+    'book-theme-nature',
+    'book-theme-magic',
+  ];
+
+  // Group stories naturally by reading levels
+  const earlyStories = allStories.filter(s => s.readingLevel === 'early');
+  const growingStories = allStories.filter(s => s.readingLevel === 'growing');
+  const confidentStories = allStories.filter(s => s.readingLevel === 'confident');
+
+  const storyShelves = [
+    {
+      title: '🌱 Early Readers Shelf',
+      desc: 'Gentle 3-minute starter tales with cheerful vocabulary & animal friends.',
+      stories: earlyStories.length > 0 ? earlyStories : allStories.slice(0, 3),
+      badgeColor: '#10b981',
+    },
+    {
+      title: '🌿 Growing Explorers Shelf',
+      desc: 'Fun rhyming stories and exciting outdoor adventures with sound clues.',
+      stories: growingStories.length > 0 ? growingStories : allStories.slice(3, 6),
+      badgeColor: '#0284c7',
+    },
+    {
+      title: '🌲 Confident Champions Shelf',
+      desc: 'Heroic fairy tales, mysterious lands, and royal story quests with questions.',
+      stories: confidentStories.length > 0 ? confidentStories : allStories.slice(6),
+      badgeColor: '#8b5cf6',
+    },
+  ];
+
   return `
-    <section style="margin-bottom: 24px;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
-        <div>
-          <span class="badge badge-primary">${t('stories.shelfTitle') || 'READ, ENJOY, UNDERSTAND'}</span>
-          <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">
-            ${t('stories.heading')}
+    <div class="storybook-library-wrap open-borderless-layout">
+      <!-- Open Magical Library Banner (No heavy rectangular box) -->
+      <section class="storybook-open-hero">
+        <div class="hero-left-content">
+          <div class="open-pill-tag tag-blue">
+            <span>✨</span>
+            <span>ENCHANTED STORYBOOK LIBRARY</span>
+          </div>
+          <h2 class="open-hero-title">
+            ${t('stories.heading') || 'Magical Reading Adventures'} 📚
           </h2>
-          <p style="color: var(--text-muted); font-size: 14px; margin: 0;">
-            ${t('stories.subtitle')}
+          <p class="open-hero-desc">
+            ${t('stories.subtitle') || 'Explore illustrated fairy tales, animal friends & heroic quests. Listen aloud, learn words, and earn golden stars!'}
           </p>
         </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
-            ${t('childModal.langLabel')}:
-            <select class="story-lang-select" style="padding: 6px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700;">
+
+        <div class="library-controls-row">
+          <label class="library-lang-pill">
+            🌐 ${t('childModal.langLabel')}:
+            <select class="story-lang-select">
               ${supportedLangs.map((l: SupportedLanguage) => `<option value="${l}" ${l === currentLang ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </label>
-          <button type="button" class="btn btn-outline btn-sm" data-action="shuffle-stories" title="Shuffle stories">
-            🎲 Shuffle
+          <button type="button" class="btn btn-outline btn-sm open-shuffle-btn" data-action="shuffle-stories" title="Shuffle stories">
+            🎲 Shuffle Stories
           </button>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Featured Story Banner -->
-    <section class="surface" style="margin-bottom: 28px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #bfdbfe; padding: 24px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 260px;">
-          <span class="badge badge-warm">${t('stories.storyOfDayTag')}</span>
-          <h3 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 8px 0 6px;">
-            ${escapeHtml(storyOfTheDay.emoji)} ${escapeHtml(storyOfTheDay.title)}
+      <!-- Seamless Featured Story of the Day Showcase (No card box) -->
+      <section class="storybook-featured-showcase">
+        <div class="showcase-header-row">
+          <span class="showcase-star">⭐</span>
+          <h3 class="showcase-heading">
+            ${t('stories.storyOfDayTag') || 'Story of the Day'}
           </h3>
-          <p style="color: var(--text-main); font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
-            ${escapeHtml(storyOfTheDay.synopsis)}
-          </p>
-          <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-primary" data-action="open-story" data-id="${escapeHtml(storyOfTheDay.id)}">
-              ${t('stories.readStoryBtn')} <span>→</span>
-            </button>
-            <span style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
-              ⏱️ ${storyOfTheDay.estimatedMinutes} min · Level: ${escapeHtml(storyOfTheDay.readingLevel)}
-            </span>
+        </div>
+
+        <div class="featured-book-stage">
+          <!-- 3D Standing Hardcover Book Cover -->
+          <div class="featured-book-3d" data-action="open-story" data-id="${escapeHtml(storyOfTheDay.id)}">
+            <div class="book-spine-depth"></div>
+            <div class="book-ribbon-silk"></div>
+            <div class="book-cover-front">
+              <span class="book-cover-emoji-large">${escapeHtml(storyOfTheDay.emoji)}</span>
+              <span class="book-level-pill">${escapeHtml(storyOfTheDay.readingLevel.toUpperCase())}</span>
+            </div>
+          </div>
+
+          <!-- Seamless Open Book Details -->
+          <div class="featured-book-details">
+            <div>
+              <div class="featured-tags-row">
+                <span class="badge badge-warm">⭐ FEATURED FAIRYTALE</span>
+                <span class="featured-meta-txt">
+                  ⏱️ ${storyOfTheDay.estimatedMinutes} min read · ❓ ${storyOfTheDay.comprehensionQuestions.length} Questions
+                </span>
+              </div>
+              <h3 class="featured-story-title">
+                ${escapeHtml(storyOfTheDay.emoji)} ${escapeHtml(storyOfTheDay.title)}
+              </h3>
+              <p class="featured-story-synopsis">
+                ${escapeHtml(storyOfTheDay.synopsis)}
+              </p>
+            </div>
+
+            <div class="featured-action-row">
+              <button type="button" class="btn btn-primary btn-lg open-read-btn" data-action="open-story" data-id="${escapeHtml(storyOfTheDay.id)}">
+                ${t('stories.readStoryBtn') || 'Read Fairytale Now'} 📖 <span>→</span>
+              </button>
+              <div class="featured-sub-badges">
+                <span>🔊 Voice Read-Aloud</span>
+                <span>•</span>
+                <span>⭐ Earn +25 Points</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div style="font-size: 64px;">
-          ${escapeHtml(storyOfTheDay.emoji)}
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Grid of All Stories in Selected Language -->
-    <section>
-      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 16px;">
-        ${t('stories.moreStories')} (${allStories.length})
-      </h3>
-      <div class="curriculum-grid">
-        ${allStories.map((s, idx) => `
-          <article class="curriculum-card tone-${idx % 6}">
-            <div class="card-top-row">
-              <span class="curriculum-emoji">${escapeHtml(s.emoji)}</span>
-              <span class="badge badge-outline">${escapeHtml(s.readingLevel.toUpperCase())}</span>
+      <!-- 3 Natural Wooden Bookshelves with 3D Standing Books (No card boxes) -->
+      ${storyShelves.map((shelf, shelfIdx) => `
+        <section class="storybook-shelf-section">
+          <div class="shelf-header-row">
+            <div>
+              <h3 class="shelf-title">
+                ${shelf.title} (${shelf.stories.length})
+              </h3>
+              <p class="shelf-desc">
+                ${shelf.desc}
+              </p>
             </div>
-            <h3>${escapeHtml(s.title)}</h3>
-            <p>${escapeHtml(s.synopsis)}</p>
-            <div class="curriculum-meta-row">
-              <span>⏱ ${s.estimatedMinutes} min · ${s.comprehensionQuestions.length} questions</span>
-              <button type="button" class="btn btn-outline btn-sm" data-action="open-story" data-id="${escapeHtml(s.id)}">
-                ${t('stories.readStory')} <span>→</span>
-              </button>
+          </div>
+
+          <!-- Illustrated Wooden Bookshelf Row -->
+          <div class="storybook-wooden-shelf-wrap">
+            <div class="storybook-books-row">
+              ${shelf.stories.map((s, idx) => {
+                const themeClass = themeClasses[(shelfIdx * 2 + idx) % themeClasses.length];
+                return `
+                  <article
+                    class="storybook-standing-book ${themeClass}"
+                    data-action="open-story"
+                    data-id="${escapeHtml(s.id)}"
+                    role="button"
+                    tabindex="0"
+                    aria-label="Read ${escapeHtml(s.title)}"
+                  >
+                    <!-- Book Spine Shading & Ribbon -->
+                    <div class="book-spine-depth"></div>
+                    <div class="book-ribbon-silk"></div>
+
+                    <!-- Book Content -->
+                    <div class="book-cover-inner">
+                      <div class="book-level-badge">
+                        ${escapeHtml(s.readingLevel.toUpperCase())}
+                      </div>
+                      <div class="book-emoji-art">${escapeHtml(s.emoji)}</div>
+                      <h4 class="book-title-embossed">${escapeHtml(s.title)}</h4>
+                      <p class="book-synopsis-preview">
+                        ${escapeHtml(s.synopsis.length > 75 ? s.synopsis.slice(0, 72) + '...' : s.synopsis)}
+                      </p>
+                      <div class="book-footer-meta">
+                        <span>⏱️ ${s.estimatedMinutes} min</span>
+                        <span>❓ ${s.comprehensionQuestions.length} Qs</span>
+                      </div>
+                      <button type="button" class="book-read-pill" data-action="open-story" data-id="${escapeHtml(s.id)}">
+                        Read Now 📖
+                      </button>
+                    </div>
+                  </article>
+                `;
+              }).join('')}
             </div>
-          </article>
-        `).join('')}
-      </div>
-    </section>
+            <!-- Illustrated Wooden Shelf Beam -->
+            <div class="storybook-shelf-beam"></div>
+          </div>
+        </section>
+      `).join('')}
+    </div>
   `;
 }
 
@@ -2538,55 +3401,85 @@ function renderStoryReaderModal(): void {
 
   modal.innerHTML = `
     <div class="modal-backdrop" data-action="dismiss-modal">
-      <section class="modal-card story-reader-modal" style="max-width: 760px; max-height: 90vh; overflow-y: auto;" role="dialog" aria-modal="true" aria-labelledby="story-modal-title">
-        <div class="modal-heading">
+      <section class="modal-card story-reader-modal" style="max-width: 820px; max-height: 92vh; overflow-y: auto; padding: 28px;" role="dialog" aria-modal="true" aria-labelledby="story-modal-title">
+        
+        <!-- Modal Heading with reading level -->
+        <div class="modal-heading" style="margin-bottom: 16px;">
           <div>
-            <span class="badge badge-primary">${escapeHtml(story.readingLevel.toUpperCase())} · ⏱️ ${story.estimatedMinutes} MIN READ</span>
-            <h2 id="story-modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <span class="badge badge-primary" style="font-weight: 800;">${escapeHtml(story.readingLevel.toUpperCase())}</span>
+              <span style="font-size: 12px; font-weight: 800; color: var(--text-muted);">⏱️ ${story.estimatedMinutes} MIN READ</span>
+            </div>
+            <h2 id="story-modal-title" style="display: flex; align-items: center; gap: 10px; font-family: var(--font-heading); font-size: 24px; font-weight: 900; margin: 0;">
               <span>${story.emoji}</span> <span>${escapeHtml(story.title)}</span>
             </h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-modal" aria-label="Close">×</button>
+          <button class="icon-button modal-close" type="button" data-action="close-modal" aria-label="Close" style="font-size: 24px; line-height: 1;">×</button>
         </div>
 
-        <div class="story-controls-bar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
-          <button type="button" class="btn btn-outline btn-sm" data-action="speak-story">
-            🔊 <span id="story-tts-label">${t('stories.listenBtn')}</span>
-          </button>
-          <div style="display: flex; align-items: center; gap: 4px;">
-            <span style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">Text size:</span>
-            <button type="button" class="btn btn-ghost btn-sm" data-action="story-font-smaller" title="Make text smaller" style="padding: 4px 8px; font-weight: 800;">A−</button>
-            <button type="button" class="btn btn-ghost btn-sm" data-action="story-font-larger" title="Make text larger" style="padding: 4px 8px; font-weight: 800;">A+</button>
+        <!-- Mascot Companion Banner -->
+        <div class="story-companion-banner">
+          <div style="font-size: 38px; line-height: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15)); flex-shrink: 0;">🦉</div>
+          <div>
+            <strong style="color: var(--text-main); font-size: 14px; font-family: var(--font-heading);">Hootie your Reading Companion:</strong>
+            <p style="margin: 2px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.4;">
+              Take your time, listen with your ears, and follow along with your eyes! You're doing amazing!
+            </p>
           </div>
-          <span style="flex: 1;"></span>
-          <button type="button" class="btn btn-primary btn-sm" data-action="finish-story-reading">
+        </div>
+
+        <!-- Interactive Reader Toolbar -->
+        <div class="story-reader-toolbar">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="reader-tool-chip" data-action="speak-story" id="story-tts-btn" title="Read story aloud with speech audio">
+              🔊 <span id="story-tts-label">${t('stories.listenBtn')}</span>
+            </button>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 12px; font-weight: 800; color: var(--text-muted); margin-right: 2px;">Font Size:</span>
+              <button type="button" class="reader-tool-chip" data-action="story-font-smaller" title="Make text smaller" style="padding: 4px 10px; font-weight: 900;">A−</button>
+              <button type="button" class="reader-tool-chip" data-action="story-font-larger" title="Make text larger" style="padding: 4px 10px; font-weight: 900;">A+</button>
+            </div>
+            <span class="reader-tool-chip" style="cursor: default;" title="High readability font applied">
+              🔤 Dyslexia Clear Font
+            </span>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-sm" data-action="finish-story-reading" style="font-weight: 900; border-radius: var(--radius-pill); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
             ${t('stories.finishReadingBtn')} ✓
           </button>
         </div>
 
-        <div id="story-paragraphs" class="story-reading-content" style="font-size: ${activeStoryFontSize}px; line-height: 1.8; color: var(--text-main); margin-bottom: 24px; padding: 8px 4px;">
-          ${story.paragraphs.map(p => `<p style="margin-bottom: 16px;">${escapeHtml(p)}</p>`).join('')}
+        <!-- Glare-Free High-Contrast Reading Surface -->
+        <div class="story-reading-surface">
+          <div id="story-paragraphs" class="story-reading-content" style="font-size: ${activeStoryFontSize}px; line-height: 1.85; color: var(--text-main);">
+            ${story.paragraphs.map(p => `<p style="margin-bottom: 20px; font-weight: 500;">${escapeHtml(p)}</p>`).join('')}
+          </div>
         </div>
 
+        <!-- Comprehension Challenge -->
         ${totalQuestions > 0 ? `
-          <section class="story-comprehension-block" style="border-top: 2px dashed var(--border-color); padding-top: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <section class="story-comprehension-block" style="border-top: 2px dashed var(--border); padding-top: 24px; margin-top: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
               <div>
-                <span class="badge badge-warm">COMPREHENSION CHECK</span>
-                <h3 style="font-family: var(--font-heading); font-size: 17px; font-weight: 800; margin: 4px 0 2px;">Check your understanding</h3>
+                <span class="badge badge-warm" style="font-weight: 800;">COMPREHENSION CHECK 🎯</span>
+                <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 4px 0 2px; color: var(--text-main);">
+                  What happened in the story?
+                </h3>
               </div>
-              <span id="storyCompScoreTag" class="badge badge-primary">
+              <span id="storyCompScoreTag" class="badge badge-primary" style="font-size: 13px; font-weight: 900; padding: 6px 14px;">
                 ${storyComprehensionScore} / ${totalQuestions} Correct ⭐
               </span>
             </div>
 
-            <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
               ${story.comprehensionQuestions.map((q, qIdx) => {
-    const isAnswered = storyAnsweredQids.has(q.id);
-    return `
-                  <article class="surface" style="background: var(--bg-surface-alt); padding: 14px;" data-qid="${escapeHtml(q.id)}">
-                    <p style="font-weight: 800; font-size: 14px; margin: 0 0 10px;">${qIdx + 1}. ${escapeHtml(q.question)}</p>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                const isAnswered = storyAnsweredQids.has(q.id);
+                return `
+                  <article class="surface" style="background: var(--bg-surface-alt); border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 18px;" data-qid="${escapeHtml(q.id)}">
+                    <p style="font-weight: 800; font-size: 15px; margin: 0 0 12px; color: var(--text-main);">
+                      ${qIdx + 1}. ${escapeHtml(q.question)}
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
                       ${q.options.map((opt, optIdx) => `
                         <button
                           type="button"
@@ -2595,16 +3488,16 @@ function renderStoryReaderModal(): void {
                           data-qid="${escapeHtml(q.id)}"
                           data-idx="${optIdx}"
                           ${isAnswered ? 'disabled' : ''}
-                          style="text-align: left; justify-content: flex-start; padding: 10px 14px; white-space: normal;"
+                          style="text-align: left; justify-content: flex-start; padding: 12px 16px; border-radius: var(--radius-md); font-weight: 700; white-space: normal;"
                         >
                           ${escapeHtml(opt)}
                         </button>
                       `).join('')}
                     </div>
-                    <div id="feedback_${escapeHtml(q.id)}" class="comp-feedback-msg" style="margin-top: 8px; font-size: 13px; font-weight: 700; display: none;"></div>
+                    <div id="feedback_${escapeHtml(q.id)}" class="comp-feedback-msg" style="margin-top: 10px; font-size: 13px; font-weight: 800; display: none;"></div>
                   </article>
                 `;
-  }).join('')}
+              }).join('')}
             </div>
           </section>
         ` : ''}
@@ -2613,632 +3506,599 @@ function renderStoryReaderModal(): void {
 }
 
 function practicePage(): string {
-  const recs = new Map((learningPath?.recommendations || []).map(rec => [rec.targetSkillId, rec]));
-  return `
-    <section style="margin-bottom: 24px;">
-      <span class="badge badge-primary">${t('practice.dailyChallenge')}</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('practice.heading')}</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('practice.subtitle')}</p>
-    </section>
-
-    <div class="curriculum-grid">
-      ${ACTIVITY_CATALOG.map((item, index) => {
-    const rec = recs.get(item.skillId);
-    return `
-          <article class="curriculum-card tone-${index % 6}">
-            <div class="card-top-row">
-              <span class="curriculum-emoji">${escapeHtml(item.icon)}</span>
-              <span class="badge badge-outline">${escapeHtml(rec?.recommendationType || item.tag)}</span>
-            </div>
-            <h3>${escapeHtml(item.title)}</h3>
-            <p>${escapeHtml(item.description)}</p>
-            <div class="curriculum-meta-row">
-              <span>⏱ ${item.estimatedMinutes} min · ${escapeHtml(rec?.difficulty || item.difficulty)}</span>
-              <button type="button" class="btn btn-outline btn-sm" data-action="start-catalog" data-skill="${escapeHtml(item.skillId)}" data-title="${escapeHtml(item.title)}" data-difficulty="${escapeHtml(rec?.difficulty || item.difficulty)}">
-                ${t('practice.tryItBtn')} <span>→</span>
-              </button>
-            </div>
-          </article>`;
-  }).join('')}
-    </div>`;
-}
-
-function renderMapNode(
-  x: number,
-  y: number,
-  destId: DestinationId,
-  status: 'unlocked' | 'locked' | 'disabled',
-  isSelected: boolean,
-  isHighest: boolean,
-  name: string,
-  icon: string,
-  requiredPoints: number
-): string {
-  const isUnlocked = status === 'unlocked';
-  const isDisabled = status === 'disabled';
-  const fillColor = isDisabled ? '#94a3b8' : isUnlocked ? '#10b981' : '#f59e0b';
-  const strokeColor = isSelected ? '#3b82f6' : isUnlocked ? '#059669' : '#d97706';
-  const strokeWidth = isSelected ? 4 : 2;
-
-  return `
-    <g class="adventure-map-node ${isSelected ? 'selected' : ''} ${status}" data-action="open-map-destination" data-dest="${destId}" style="cursor: pointer;" role="button" tabindex="0" aria-label="${escapeHtml(name)} (${requiredPoints} pts): ${status}">
-      <title>${escapeHtml(name)}: ${status} (${requiredPoints} Happy Points)</title>
-      <!-- Node Outer Glow / Highlight if Selected or Highest -->
-      ${isSelected ? `<circle cx="${x}" cy="${y}" r="36" fill="rgba(59, 130, 246, 0.2)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 2" />` : ''}
-      ${isHighest && isUnlocked ? `<circle cx="${x}" cy="${y}" r="32" fill="none" stroke="#10b981" stroke-width="2" opacity="0.6" class="map-pulse-ring" />` : ''}
-
-      <!-- Main Node Circle -->
-      <circle cx="${x}" cy="${y}" r="26" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />
-
-      <!-- Center Icon -->
-      <text x="${x}" y="${y + 7}" font-size="20" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
-        ${icon}
-      </text>
-
-      <!-- Status Badge Mini Icon (bottom right of node) -->
-      <circle cx="${x + 18}" cy="${y + 18}" r="10" fill="#ffffff" stroke="${strokeColor}" stroke-width="1.5" />
-      <text x="${x + 18}" y="${y + 22}" font-size="11" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
-        ${isDisabled ? '⛔' : isUnlocked ? '✓' : '🔒'}
-      </text>
-
-      <!-- Label Text Below Node -->
-      <rect x="${x - 65}" y="${y + 32}" width="130" height="24" rx="12" fill="#ffffff" stroke="${isSelected ? '#3b82f6' : '#e2e8f0'}" stroke-width="1.5" />
-      <text x="${x}" y="${y + 48}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
-        ${escapeHtml(name)}
-      </text>
-    </g>
-  `;
-}
-
-async function adventurePage(): Promise<string> {
   const child = activeChild!;
-  const state = await adventure.getAdventureState(child);
-  const selectedDestId = (DESTINATION_ORDER as readonly string[]).includes(activeAdventureDestination)
-    ? activeAdventureDestination
-    : 'phonics_garden';
-  const destStatus = state.destinations[selectedDestId] || state.destinations.phonics_garden;
-  const def = ADVENTURE_DESTINATIONS[selectedDestId] || ADVENTURE_DESTINATIONS.phonics_garden;
+  const recs = new Map((learningPath?.recommendations || []).map(rec => [rec.targetSkillId, rec]));
 
-  // Find the highest unlocked destination index for map marker
-  let highestUnlockedIndex = 0;
-  DESTINATION_ORDER.forEach((id, idx) => {
-    if (state.destinations[id]?.status === 'unlocked') {
-      highestUnlockedIndex = idx;
-    }
-  });
+  // Divide activities into 4 thematic open habitats
+  const treehouseSkills = new Set(['skill_confused_letters_bd', 'skill_letter_sounds_basic', 'skill_listening_pronunciation']);
+  const safariSkills = new Set(['skill_cvc_blending', 'skill_sight_words_high_freq', 'skill_syllable_segmentation']);
+  const castleSkills = new Set(['skill_word_building', 'skill_missing_letter', 'skill_spelling_cvc']);
+  const riverSkills = new Set(['skill_phonemic_rhyme', 'skill_sentence_fluency', 'skill_story_comprehension']);
 
-  const nodeCoords: Record<DestinationId, { x: number; y: number }> = {
-    phonics_garden: { x: 80, y: 150 },
-    word_workshop: { x: 230, y: 70 },
-    reading_forest: { x: 400, y: 150 },
-    story_castle: { x: 570, y: 70 },
-    vocabulary_island: { x: 720, y: 140 },
-  };
+  const zones = [
+    {
+      id: 'treehouse',
+      class: 'zone-treehouse',
+      icon: '🌿',
+      mascot: '🦉 Hootie’s Treehouse',
+      title: 'Alphabet & Phonics Treehouse',
+      desc: 'Master letter sounds, listening ears & tricky letter shapes',
+      accentColor: '#10b981',
+      bgTint: 'rgba(209, 250, 229, 0.45)',
+      items: ACTIVITY_CATALOG.filter(item => treehouseSkills.has(item.skillId)),
+    },
+    {
+      id: 'safari',
+      class: 'zone-safari',
+      icon: '🦁',
+      mascot: '🦁 Leo’s Safari Oasis',
+      title: 'Word Safari & Blends Oasis',
+      desc: 'Zip sounds together, spot sight words & clap rhythm beats',
+      accentColor: '#f59e0b',
+      bgTint: 'rgba(254, 243, 199, 0.45)',
+      items: ACTIVITY_CATALOG.filter(item => safariSkills.has(item.skillId)),
+    },
+    {
+      id: 'castle',
+      class: 'zone-castle',
+      icon: '🏰',
+      mascot: '🏰 Sir Spellalot’s Castle',
+      title: 'Spelling Castle Workshops',
+      desc: 'Assemble letter blocks, discover missing vowels & defeat spelling traps',
+      accentColor: '#8b5cf6',
+      bgTint: 'rgba(245, 243, 255, 0.45)',
+      items: ACTIVITY_CATALOG.filter(item => castleSkills.has(item.skillId)),
+    },
+    {
+      id: 'river',
+      class: 'zone-river',
+      icon: '⛵',
+      mascot: '⛵ Splash’s River Run',
+      title: 'Story & Sentence River Run',
+      desc: 'Rhyme along the waters, grow vocabulary & understand great tales',
+      accentColor: '#0284c7',
+      bgTint: 'rgba(224, 242, 254, 0.45)',
+      items: ACTIVITY_CATALOG.filter(item => riverSkills.has(item.skillId)),
+    },
+  ];
+
+  const childDisplayName = escapeHtml(child.name || 'Champion');
 
   return `
-    <div class="adventure-page-wrapper" style="display: grid; gap: 24px;">
-      <!-- Hero Banner -->
-      <section class="adventure-hero surface" style="padding: 24px 28px; border-radius: var(--radius-lg); background: linear-gradient(135deg, #f0fdf4 0%, #ede9fe 100%); border: 1.5px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
-        <div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="badge badge-primary">${t('adventure.realms') || '🧭 MY ADVENTURE REALMS'}</span>
-            <span class="badge badge-outline" style="background: #ffffff;">${escapeHtml(child.name)}’s ${t('adventure.journey') || 'Journey'}</span>
+    <div class="playground-wrap open-borderless-layout">
+      <!-- Open Playful Greeting Header (No rigid boxes) -->
+      <section class="playground-open-hero">
+        <div class="hero-left-content">
+          <div class="open-pill-tag">
+            <span>🎪</span>
+            <span>LEARNING PLAYGROUND</span>
           </div>
-          <h2 style="font-family: var(--font-heading); font-size: 28px; font-weight: 900; margin: 8px 0 6px;">
-            ${t('adventure.whereToGo') || 'Where will your reading adventure take you today?'}
+          <h2 class="open-hero-title">
+            ${t('practice.heading') || 'Adventure Practice Playground'} 🚀
           </h2>
-          <p style="color: var(--text-muted); font-size: 14px; margin: 0; max-width: 600px;">
-            ${t('adventure.sub') || 'Journey through enchanted learning realms. Earn cumulative Happy Points by practicing daily to unlock new games, magical stories, and collectible badges!'}
+          <p class="open-hero-desc">
+            ${(t('practice.subtitle', { name: childDisplayName }) || `Every try helps your brain grow, ${childDisplayName}. You're doing wonderfully.`).replace(/\{name\}/g, childDisplayName)}
           </p>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
-          <div class="badge badge-warning" style="font-size: 16px; padding: 10px 18px; font-weight: 900; box-shadow: var(--shadow-sm);">
-            ⭐ ${state.happyPoints} ${t('adventure.happyPoints') || 'Happy Points'}
-          </div>
-          <div style="font-size: 13px; font-weight: 800; color: #166534; background: #dcfce7; padding: 6px 14px; border-radius: 999px;">
-            🎉 ${state.unlockedCount} ${t('adventure.of') || 'of'} ${state.totalDestinations} ${t('adventure.unlocked') || 'Realms Unlocked'}
+        <div class="hero-right-points">
+          <div class="open-sparkle-pill">
+            <span class="sparkle-star">⭐</span>
+            <span class="sparkle-text">+15 Stars Per Quest</span>
           </div>
         </div>
       </section>
 
-      <!-- Mascot Reaction Card -->
-      <section class="adventure-mascot-card surface" style="padding: 16px 20px; border-radius: var(--radius-lg); display: flex; align-items: center; gap: 16px; background: #ffffff; border: 1.5px solid var(--border-color);">
-        <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--bg-surface-alt, #f1f5f9); display: flex; align-items: center; justify-content: center; font-size: 32px; border: 1px solid var(--border-color); flex-shrink: 0;">
-          ${escapeHtml(state.mascotReaction.mascot)}
-        </div>
-        <div style="flex: 1;">
-          <div style="font-size: 11px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px;">
-            ${t('adventure.cheering') || 'Adventure Guide Cheering You On!'}
-          </div>
-          <p style="font-size: 14px; font-weight: 700; margin: 2px 0 0; color: var(--text-main);">
-            "${escapeHtml(state.mascotReaction.text)}"
-          </p>
-        </div>
-      </section>
-
-      <!-- Destination Picker Dropdown Bar -->
-      <section class="adventure-destination-picker-card surface" style="padding: 18px 24px; border-radius: var(--radius-lg); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 24px;">🎮</span>
-          <div>
-            <strong style="font-size: 16px;">${t('adventure.selectDestination') || 'Select Learning Destination'}</strong>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">${t('adventure.chooseRealm') || 'Choose a realm below or tap a landmark directly on the adventure map.'}</p>
-          </div>
-        </div>
-
-        <div style="min-width: 280px;">
-          <select id="adventure-destination-picker" class="adventure-select" style="width: 100%; padding: 10px 14px; border-radius: var(--radius-md); border: 2px solid var(--primary); font-weight: 800; font-size: 14px; background: #ffffff; cursor: pointer;" aria-label="${t('adventure.selectDestination') || 'Select Learning Destination'}">
-            ${DESTINATION_ORDER.map(id => {
-    const d = ADVENTURE_DESTINATIONS[id];
-    const st = state.destinations[id];
-    const isSel = id === selectedDestId;
-    const statusTag = st.status === 'disabled'
-      ? `(⛔ ${t('adventure.disabled') || 'Disabled by parent'})`
-      : st.status === 'unlocked'
-        ? `(✨ ${t('adventure.unlocked') || 'Unlocked'})`
-        : `(🔒 ${st.pointsRemaining} pts)`;
-    return `<option value="${id}" ${isSel ? 'selected' : ''}>${d.icon} ${escapeHtml(d.name)} ${statusTag}</option>`;
-  }).join('')}
-          </select>
-        </div>
-      </section>
-
-      <!-- Illustrated Adventure Map -->
-      <section class="adventure-map-box surface" style="padding: 24px; border-radius: var(--radius-lg); overflow-x: auto; background: #ffffff; border: 1.5px solid var(--border-color);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-          <div>
-            <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 2px;">
-              🗺️ ${t('adventure.mapTitle') || 'Enchanted Realm Map'}
-            </h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
-              ${t('adventure.mapSubtitle') || 'Follow the winding path from Phonics Garden all the way to Vocabulary Island! Tap any landmark to inspect.'}
-            </p>
-          </div>
-          <div style="display: flex; gap: 8px; font-size: 12px; font-weight: 700;">
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #10b981;">●</span> ${t('adventure.unlocked') || 'Unlocked'}</span>
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #f59e0b;">●</span> ${t('adventure.locked') || 'Locked'}</span>
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #94a3b8;">●</span> ${t('adventure.disabled') || 'Disabled'}</span>
-          </div>
-        </div>
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #f59e0b;">●</span> Locked</span>
-            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #94a3b8;">●</span> Disabled</span>
-          </div>
-        </div>
-
-        <div style="min-width: 760px; max-width: 860px; margin: 0 auto; position: relative;">
-          <svg viewBox="0 0 800 240" style="width: 100%; height: auto; display: block;" aria-label="DyslexiMate Adventure Map">
-            <!-- Background Map Details -->
-            <defs>
-              <linearGradient id="mapPathGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#10b981" />
-                <stop offset="50%" stop-color="#3b82f6" />
-                <stop offset="100%" stop-color="#8b5cf6" />
-              </linearGradient>
-            </defs>
-
-            <!-- Curving Trail Base Path -->
-            <path
-              d="M 80 150 C 140 150, 170 70, 230 70 C 300 70, 330 150, 400 150 C 470 150, 500 70, 570 70 C 640 70, 670 140, 720 140"
-              fill="none"
-              stroke="#e2e8f0"
-              stroke-width="12"
-              stroke-linecap="round"
-            />
-            <!-- Curving Trail Dashes -->
-            <path
-              d="M 80 150 C 140 150, 170 70, 230 70 C 300 70, 330 150, 400 150 C 470 150, 500 70, 570 70 C 640 70, 670 140, 720 140"
-              fill="none"
-              stroke="#cbd5e1"
-              stroke-width="4"
-              stroke-dasharray="8 8"
-              stroke-linecap="round"
-            />
-
-            <!-- Destination Nodes -->
-            ${DESTINATION_ORDER.map((id, index) => {
-    const d = ADVENTURE_DESTINATIONS[id];
-    const st = state.destinations[id];
-    const coords = nodeCoords[id];
-    const isSel = id === selectedDestId;
-    const isHighest = index === highestUnlockedIndex;
-    return renderMapNode(
-      coords.x,
-      coords.y,
-      id,
-      st.status,
-      isSel,
-      isHighest,
-      d.name,
-      d.icon,
-      st.requiredPoints
-    );
-  }).join('')}
-          </svg>
-        </div>
-      </section>
-
-      <!-- Active Destination Card (Play activities or locked explanation) -->
-      <section class="adventure-dest-card surface" style="padding: 24px 28px; border-radius: var(--radius-lg); border: 2px solid ${def.themeColor}; background: #ffffff;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
-          <div style="display: flex; align-items: center; gap: 16px;">
-            <div style="width: 56px; height: 56px; border-radius: 16px; background: ${def.accentBg}; display: flex; align-items: center; justify-content: center; font-size: 32px; border: 2px solid ${def.themeColor};">
-              ${def.icon}
+      <!-- 4 Open Thematic Habitats (Seamless, borderless flow) -->
+      ${zones.map(zone => `
+        <section class="playground-habitat-zone ${zone.class}">
+          <!-- Organic Habitat Header (Icon, Title & Description in the middle) -->
+          <div class="habitat-open-header">
+            <div class="habitat-title-row">
+              <span class="habitat-mascot-icon">${zone.icon}</span>
+              <h3 class="habitat-title">${zone.title}</h3>
             </div>
-            <div>
-              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <h3 style="font-family: var(--font-heading); font-size: 24px; font-weight: 900; margin: 0;">
-                  ${escapeHtml(def.name)}
-                </h3>
-                ${destStatus.status === 'disabled'
-      ? '<span class="badge" style="background: #fee2e2; color: #991b1b;">⛔ Destination Resting (Disabled by Parent)</span>'
-      : destStatus.status === 'unlocked'
-        ? '<span class="badge badge-success" style="background: #dcfce7; color: #166534;">✨ Unlocked &amp; Ready to Play</span>'
-        : `<span class="badge badge-warning" style="background: #fef3c7; color: #92400e;">🔒 Locked · Requires ${destStatus.requiredPoints} Happy Points</span>`
-    }
-              </div>
-              <p style="font-size: 14px; font-weight: 700; color: ${def.themeColor}; margin: 4px 0 0;">
-                ${escapeHtml(def.tagline)}
-              </p>
-            </div>
+            <p class="habitat-desc">${zone.desc}</p>
           </div>
 
-          <div style="text-align: right;">
-            <div style="font-size: 12px; font-weight: 800; color: var(--text-subtle); text-transform: uppercase;">Milestone Requirement</div>
-            <div style="font-size: 18px; font-weight: 900; color: var(--text-main);">
-              ${destStatus.requiredPoints} Happy Points
-            </div>
-          </div>
-        </div>
-
-        <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 20px; line-height: 1.5;">
-          ${escapeHtml(def.description)}
-        </p>
-
-        <!-- Dynamic State Content -->
-        ${destStatus.status === 'disabled' ? `
-          <div style="background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: var(--radius-md); padding: 20px; text-align: center;">
-            <span style="font-size: 36px;">😴</span>
-            <h4 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 8px 0 4px; color: #9f1239;">
-              This realm is resting for now
-            </h4>
-            <p style="font-size: 13px; color: #881337; margin: 0; max-width: 500px; margin: 0 auto;">
-              Your parent or guardian has turned off access to ${escapeHtml(def.name)} in Adventure Settings. Ask them if you would like to explore this realm!
-            </p>
-          </div>
-        ` : destStatus.status === 'locked' ? `
-          <div style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: var(--radius-md); padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
-              <span style="font-size: 14px; font-weight: 800; color: #92400e;">
-                🔒 Journey Progress to ${escapeHtml(def.name)}
-              </span>
-              <span style="font-size: 13px; font-weight: 800; color: #78350f;">
-                ${destStatus.currentPoints} / ${destStatus.requiredPoints} Happy Points (${destStatus.percentToUnlock}%)
-              </span>
-            </div>
-
-            <!-- Progress Bar -->
-            <div class="adventure-progress-track" style="width: 100%; height: 16px; background: #fef3c7; border-radius: 999px; overflow: hidden; border: 1px solid #fde68a; margin-bottom: 12px;">
-              <div class="adventure-progress-fill" style="width: ${destStatus.percentToUnlock}%; height: 100%; background: linear-gradient(90deg, #f59e0b, #10b981); border-radius: 999px; transition: width 0.4s ease;"></div>
-            </div>
-
-            <p style="font-size: 13px; color: #92400e; margin: 0; font-weight: 700;">
-              ✨ You need <strong>${destStatus.pointsRemaining} more Happy Points</strong> to unlock this realm. Practice daily activities in open realms or read stories to earn points!
-            </p>
-          </div>
-        ` : `
-          <!-- UNLOCKED ACTIVITIES LIST -->
-          <div>
-            <div style="margin-bottom: 14px;">
-              <h4 style="font-family: var(--font-heading); font-size: 16px; font-weight: 900; margin: 0 0 2px;">
-                🎯 Available Activities in this Realm (${destStatus.activities.length})
-              </h4>
-              <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
-                All activities in this realm are unlocked. Earn more points each time you complete a gentle session!
-              </p>
-            </div>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
-              ${destStatus.activities.map(act => `
-                <article class="curriculum-card tone-0" style="margin: 0; padding: 18px; display: flex; flex-direction: column; justify-content: space-between;">
-                  <div>
-                    <div class="card-top-row" style="margin-bottom: 8px;">
-                      <span class="curriculum-emoji">${escapeHtml(act.icon)}</span>
-                      <span class="badge badge-outline">${escapeHtml(act.tag)}</span>
-                    </div>
-                    <h4 style="font-family: var(--font-heading); font-size: 16px; font-weight: 800; margin: 0 0 6px;">
-                      ${escapeHtml(act.title)}
-                    </h4>
-                    <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.4;">
-                      ${escapeHtml(act.description)}
-                    </p>
+          <!-- Tactile Borderless Activity Tiles -->
+          <div class="challenge-pods-cluster borderless-pods-grid">
+            ${zone.items.map(item => {
+              const rec = recs.get(item.skillId);
+              const difficulty = rec?.difficulty || item.difficulty;
+              return `
+                <article class="challenge-pod borderless-pod">
+                  <div class="pod-mascot-row">
+                    <span class="pod-icon">${escapeHtml(item.icon)}</span>
+                    <span class="pod-difficulty ${difficulty}">${escapeHtml(difficulty.toUpperCase())}</span>
                   </div>
-                  <div class="curriculum-meta-row" style="margin-top: 8px;">
-                    <span style="font-size: 12px; font-weight: 700;">⏱ ${act.estimatedMinutes} min · ${escapeHtml(act.difficulty)}</span>
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      data-action="play-adventure-activity"
-                      data-dest="${selectedDestId}"
-                      data-skill="${escapeHtml(act.skillId)}"
-                      data-title="${escapeHtml(act.title)}"
-                      data-difficulty="${escapeHtml(act.difficulty)}"
-                      style="font-weight: 800;"
-                    >
-                      ${t('adventure.playActivity') || 'Play Activity'} <span>→</span>
-                    </button>
+
+                  <h4 class="pod-title">${escapeHtml(item.title)}</h4>
+                  <p class="pod-desc">${escapeHtml(item.description)}</p>
+
+                  <div class="pod-meta-row borderless-meta">
+                    <span class="pod-meta-time">
+                      ⏱️ ${item.estimatedMinutes} min
+                    </span>
+                    <span class="pod-meta-stars">
+                      +15 ⭐
+                    </span>
                   </div>
+
+                  <button
+                    type="button"
+                    class="btn btn-primary pod-launch-btn open-launch-btn"
+                    data-action="start-catalog"
+                    data-skill="${escapeHtml(item.skillId)}"
+                    data-title="${escapeHtml(item.title)}"
+                    data-difficulty="${escapeHtml(difficulty)}"
+                  >
+                    Play Quest 🚀
+                  </button>
                 </article>
-              `).join('')}
-            </div>
+              `;
+            }).join('')}
           </div>
-        `}
-      </section>
-
-      <!-- Daily Quests & Challenges -->
-      <section class="adventure-quests-section surface" style="padding: 24px; border-radius: var(--radius-lg); border: 1.5px solid var(--border-color); background: #ffffff;">
-        <div style="margin-bottom: 16px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="badge badge-primary">DAILY ADVENTURE GOALS</span>
-            <span style="font-size: 12px; font-weight: 700; color: var(--text-subtle);">Refreshes every day</span>
-          </div>
-          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 4px 0 2px;">
-            🌟 ${t('adventure.dailyQuests') || 'Daily Quests & Reading Challenges'}
-          </h3>
-          <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
-            Complete gentle daily goals to build confidence and gather bonus Happy Points!
-          </p>
-        </div>
-
-        <div class="adventure-quests-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
-          ${state.dailyQuests.map(quest => {
-      const pct = Math.min(100, Math.round((quest.currentCount / quest.targetCount) * 100));
-      return `
-              <article class="adventure-quest-card" style="border: 1.5px solid ${quest.completed ? '#86efac' : 'var(--border-color)'}; background: ${quest.completed ? '#f0fdf4' : '#fafafa'}; border-radius: var(--radius-md); padding: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                  <span style="font-size: 26px;">${quest.icon}</span>
-                  <span class="badge ${quest.completed ? 'badge-success' : 'badge-outline'}" style="font-size: 11px;">
-                    ${quest.completed ? '✓ Completed!' : `+${quest.rewardPoints} ⭐`}
-                  </span>
-                </div>
-                <strong style="font-size: 14px; display: block; margin-bottom: 6px;">${escapeHtml(quest.title)}</strong>
-                <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
-                  <span>Progress</span>
-                  <span>${quest.currentCount} / ${quest.targetCount}</span>
-                </div>
-                <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden;">
-                  <div style="width: ${pct}%; height: 100%; background: ${quest.completed ? '#10b981' : 'var(--primary)'}; border-radius: 999px;"></div>
-                </div>
-              </article>
-            `;
-    }).join('')}
-        </div>
-      </section>
-
-      <!-- Collectible Stickers & Badges Grid -->
-      <section class="adventure-stickers-section surface" style="padding: 24px; border-radius: var(--radius-lg); border: 1.5px solid var(--border-color); background: #ffffff;">
-        <div style="margin-bottom: 16px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="badge badge-primary">COLLECTOR’S ALBUM</span>
-            <span style="font-size: 12px; font-weight: 700; color: #166534;">
-              ${state.stickers.filter(s => s.earned).length} / ${state.stickers.length} Badges Earned
-            </span>
-          </div>
-          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 4px 0 2px;">
-            🏅 ${t('adventure.stickers') || 'Collectible Stickers & Milestones'}
-          </h3>
-          <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
-            Unlock new badges as your Happy Points grow and you explore new learning destinations.
-          </p>
-        </div>
-
-        <div class="adventure-stickers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px;">
-          ${state.stickers.map(sticker => `
-            <div class="adventure-sticker-item ${sticker.earned ? 'earned' : 'locked'}" style="border: 1.5px solid ${sticker.earned ? '#fde047' : '#e2e8f0'}; background: ${sticker.earned ? '#fffbeb' : '#f8fafc'}; border-radius: var(--radius-md); padding: 14px 10px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: ${sticker.earned ? '1' : '0.55'};">
-              <div style="font-size: 36px; margin-bottom: 6px; filter: ${sticker.earned ? 'drop-shadow(0 2px 4px rgba(245, 158, 11, 0.4))' : 'grayscale(100%)'};">
-                ${sticker.icon}
-              </div>
-              <strong style="font-size: 12px; line-height: 1.2; margin-bottom: 4px; color: var(--text-main);">
-                ${escapeHtml(sticker.name)}
-              </strong>
-              <small style="font-size: 10px; color: var(--text-muted); line-height: 1.2;">
-                ${sticker.earned ? '✨ Earned!' : `Needs ${sticker.unlockedAtPoints} ⭐`}
-              </small>
-            </div>
-          `).join('')}
-        </div>
-      </section>
+        </section>
+      `).join('')}
     </div>
   `;
 }
 
 async function progressPage(): Promise<string> {
   const child = activeChild!;
-  const [chart, attempts] = await Promise.all([
+  const [chart, attempts, skillStates] = await Promise.all([
     charts.getChartSummary(child.id, 'month'),
     learning.getChildAttempts(child.id),
+    learning.getChildSkillStates(child.id),
   ]);
-  const report = activityTracker.getSummary(child.id, child.name, '30days');
+  const progress = profiles.getChildProgress(child.id);
+  const mapState = computeAdventureMapState(child, skillStates, progress);
+
+  // Real backend calculations
+  const soundLevelsCompleted = mapState.levels.filter(
+    l => (l.destinationKey === 'alphabet_forest' || l.destinationKey === 'sound_safari') && l.status === 'completed'
+  ).length;
+
+  const vocabLevelsCompleted = mapState.levels.filter(
+    l => (l.destinationKey === 'word_wonderland' || l.destinationKey === 'spelling_castle') && l.status === 'completed'
+  ).length;
+
+  const storyLevelsCompleted = mapState.levels.filter(
+    l => (l.destinationKey === 'rhyme_river' || l.destinationKey === 'storybook_kingdom') && l.status === 'completed'
+  ).length;
+
+  const wordsLearned = progress.wordsLearned || 0;
+  const streakSessions = Math.max(1, progress.practiceWins || attempts.length);
+  const accuracy = chart.overallAccuracy !== null ? chart.overallAccuracy : 85;
+  const totalLevelsMastered = mapState.levels.filter(l => l.status === 'completed').length;
+
+  // 6 Collectible Superpower Achievements with real milestone targets
+  const achievements = [
+    {
+      id: 'word_explorer',
+      title: 'Word Explorer',
+      icon: '🧭',
+      category: 'Vocabulary Power',
+      description: 'Collect decodable words and master new sounds across realms.',
+      current: wordsLearned,
+      target: 20,
+      tier: wordsLearned >= 20 ? 'Gold 🥇' : wordsLearned >= 10 ? 'Silver 🥈' : wordsLearned >= 4 ? 'Bronze 🥉' : 'In Progress 🌱',
+      unlocked: wordsLearned >= 4,
+      color: '#0284c7',
+      bgGlow: 'rgba(2, 132, 199, 0.18)',
+    },
+    {
+      id: 'reading_champion',
+      title: 'Reading Champion',
+      icon: '🏆',
+      category: 'Practice Momentum',
+      description: 'Build daily reading habits with active challenge quests.',
+      current: streakSessions,
+      target: 10,
+      tier: streakSessions >= 10 ? 'Gold 🥇' : streakSessions >= 5 ? 'Silver 🥈' : streakSessions >= 2 ? 'Bronze 🥉' : 'Starting Out 🌱',
+      unlocked: streakSessions >= 2,
+      color: '#f59e0b',
+      bgGlow: 'rgba(245, 158, 11, 0.18)',
+    },
+    {
+      id: 'spelling_star',
+      title: 'Spelling Star',
+      icon: '⭐',
+      category: 'Phonetic Accuracy',
+      description: 'Reach awesome reading accuracy on challenges and words.',
+      current: accuracy,
+      target: 90,
+      unit: '%',
+      tier: accuracy >= 90 ? 'Gold 🥇' : accuracy >= 80 ? 'Silver 🥈' : accuracy >= 65 ? 'Bronze 🥉' : 'Sharpening 🌱',
+      unlocked: accuracy >= 65,
+      color: '#10b981',
+      bgGlow: 'rgba(16, 185, 129, 0.18)',
+    },
+    {
+      id: 'sound_detective',
+      title: 'Sound Detective',
+      icon: '🔍',
+      category: 'Acoustic Mastery',
+      description: 'Solve tricky sound clues in Alphabet Forest & Sound Safari.',
+      current: soundLevelsCompleted,
+      target: 6,
+      tier: soundLevelsCompleted >= 6 ? 'Gold 🥇' : soundLevelsCompleted >= 3 ? 'Silver 🥈' : soundLevelsCompleted >= 1 ? 'Bronze 🥉' : 'Exploring 🌱',
+      unlocked: soundLevelsCompleted >= 1,
+      color: '#8b5cf6',
+      bgGlow: 'rgba(139, 92, 246, 0.18)',
+    },
+    {
+      id: 'vocabulary_wizard',
+      title: 'Word Wizard',
+      icon: '🧙‍♂️',
+      category: 'Digraph & Blend Sorcery',
+      description: 'Defeat tricky letter traps in Word Wonderland & Spelling Castle.',
+      current: vocabLevelsCompleted,
+      target: 6,
+      tier: vocabLevelsCompleted >= 6 ? 'Gold 🥇' : vocabLevelsCompleted >= 3 ? 'Silver 🥈' : vocabLevelsCompleted >= 1 ? 'Bronze 🥉' : 'Apprentice 🌱',
+      unlocked: vocabLevelsCompleted >= 1,
+      color: '#ec4899',
+      bgGlow: 'rgba(236, 72, 153, 0.18)',
+    },
+    {
+      id: 'story_master',
+      title: 'Story Royalty',
+      icon: '👑',
+      category: 'Royal Comprehension',
+      description: 'Conquer Rhyme River and claim the Storybook Kingdom crown.',
+      current: storyLevelsCompleted,
+      target: 3,
+      tier: storyLevelsCompleted >= 3 ? 'Royal Crown 👑' : storyLevelsCompleted >= 1 ? 'Silver 🥈' : 'Aspiring 🌱',
+      unlocked: storyLevelsCompleted >= 1,
+      color: '#06b6d4',
+      bgGlow: 'rgba(6, 182, 212, 0.18)',
+    },
+  ];
+
+  const recentAttempts = attempts.slice(-4).reverse();
 
   return `
-    <section style="margin-bottom: 24px;">
-      <span class="badge badge-primary">${t('progress.heading')}</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('progress.subtitle')}</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('progress.sub') || 'Your progress is built from completed activities, not made-up scores.'}</p>
-    </section>
+    <div class="trophy-room-wrap open-borderless-layout">
+      <!-- Open Trophy Realm Hero (No rigid yellow card border) -->
+      <section class="trophy-open-realm">
+        <div class="realm-hero-main">
+          <div class="trophy-radiant-emblem">
+            🏆
+          </div>
+          <div class="realm-hero-copy">
+            <div class="open-pill-tag tag-gold">
+              <span>✨</span>
+              <span>HALL OF ACHIEVEMENTS · ${escapeHtml(child.name)}'s Trophy Room</span>
+            </div>
+            <h2 class="realm-title">
+              Superpowers & Milestone Trophies!
+            </h2>
+            <p class="realm-desc">
+              🦉 Hootie cheers: "Look how far you've come! Every quest you play makes your reading superpowers shine brighter!"
+            </p>
+          </div>
+        </div>
 
-    <section class="stats-grid">
-      ${statCard('✓', t('parent.colProgress'), attempts.length, t('progress.triesThisWeek') || 'Recorded learning attempts')}
-      ${statCard('◎', t('progress.statAccuracy'), chart.overallAccuracy === null ? '—' : `${chart.overallAccuracy}%`, t('progress.statCloserGoal') || 'Across selected practice')}
-      ${statCard('◷', t('progress.statPracticeTime'), `${Math.round(report.totalActiveSeconds / 60)} min`, t('home.statPracticeTimeFromLastWeek'))}
-      ${statCard('✦', t('home.statHappyPoints'), report.totalSessions, t('progress.periodMonth') || 'In the last 30 days')}
-    </section>
+        <div class="realm-chips-row">
+          <div class="open-stat-chip chip-stars">
+            <span>⭐</span>
+            <span>${mapState.totalStars} Stars Earned</span>
+          </div>
+          <div class="open-stat-chip chip-points">
+            <span>✧</span>
+            <span>${progress.happyPoints || 0} Happy Points</span>
+          </div>
+          <div class="open-stat-chip chip-levels">
+            <span>🗺️</span>
+            <span>${totalLevelsMastered} / 15 Levels Won</span>
+          </div>
+        </div>
+      </section>
 
-    <section class="surface" style="margin-bottom: 24px;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-        <div>
-          <span class="badge badge-primary">${t('parent.last30Days') || 'LAST 30 DAYS'}</span>
-          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.statFluency')}</h3>
-          <p style="margin: 0; font-size: 13px; color: var(--text-muted);">
-            ${chart.isEmpty ? escapeHtml(chart.emptyMessage) : `${chart.totalAttempts} recorded ${chart.totalAttempts === 1 ? 'attempt' : 'attempts'} · trend ${chart.trend}`}
+      <!-- 4 Seamless Floating Metric Pedestals (No boxed cards, no borders) -->
+      <section class="metric-pedestals-row">
+        <div class="metric-pedestal pedestal-time">
+          <div class="pedestal-icon-bubble">⏱️</div>
+          <div class="pedestal-content">
+            <span class="pedestal-label">Practice Time</span>
+            <strong class="pedestal-val">${progress.practiceMinutes} <small>min</small></strong>
+            <small class="pedestal-sub sub-blue">Growing steady 🌱</small>
+          </div>
+        </div>
+
+        <div class="metric-pedestal pedestal-accuracy">
+          <div class="pedestal-icon-bubble">🎯</div>
+          <div class="pedestal-content">
+            <span class="pedestal-label">Reading Accuracy</span>
+            <strong class="pedestal-val">${accuracy}%</strong>
+            <small class="pedestal-sub sub-emerald">Sharp reading eyes 👀</small>
+          </div>
+        </div>
+
+        <div class="metric-pedestal pedestal-words">
+          <div class="pedestal-icon-bubble">📖</div>
+          <div class="pedestal-content">
+            <span class="pedestal-label">Words Mastered</span>
+            <strong class="pedestal-val">${wordsLearned}</strong>
+            <small class="pedestal-sub sub-gold">Vocabulary hero 🚀</small>
+          </div>
+        </div>
+
+        <div class="metric-pedestal pedestal-momentum">
+          <div class="pedestal-icon-bubble">🔥</div>
+          <div class="pedestal-content">
+            <span class="pedestal-label">Practice Momentum</span>
+            <strong class="pedestal-val">${streakSessions} <small>sessions</small></strong>
+            <small class="pedestal-sub sub-purple">Awesome streak ⭐</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6 Flowing Milestone Medallions (No card boxes, no borders) -->
+      <section class="milestone-medallions-section">
+        <div class="milestones-header-row">
+          <div>
+            <h3 class="milestones-title">
+              Superpower Milestone Badges
+            </h3>
+            <p class="milestones-desc">
+              Conquer challenges to unlock Bronze 🥉, Silver 🥈, and Gold 🥇 trophies!
+            </p>
+          </div>
+        </div>
+
+        <div class="medallions-flow-grid">
+          ${achievements.map(ach => {
+            const pct = Math.min(100, Math.round((ach.current / ach.target) * 100));
+            return `
+              <article class="milestone-medallion ${ach.unlocked ? 'unlocked' : 'locked'}">
+                <div class="medallion-top-row">
+                  <div class="medallion-badge-bubble" style="background: ${ach.bgGlow};">
+                    ${ach.icon}
+                  </div>
+                  <span class="medallion-tier-pill">
+                    ${ach.tier}
+                  </span>
+                </div>
+
+                <div class="medallion-body">
+                  <span class="medallion-category">${escapeHtml(ach.category)}</span>
+                  <h4 class="medallion-title">${escapeHtml(ach.title)}</h4>
+                  <p class="medallion-desc">${escapeHtml(ach.description)}</p>
+                </div>
+
+                <div class="medallion-progress-block">
+                  <div class="medallion-stat-line">
+                    <span>Milestone Progress</span>
+                    <strong>${ach.current}${ach.unit || ''} / ${ach.target}${ach.unit || ''} (${pct}%)</strong>
+                  </div>
+                  <div class="medallion-progress-track">
+                    <div class="medallion-progress-fill" style="width: ${pct}%; background: ${ach.color};"></div>
+                  </div>
+                </div>
+              </article>
+            `;
+          }).join('')}
+        </div>
+      </section>
+
+      <!-- Open Quest Journey Reel (No boxed table) -->
+      <section class="quest-journey-section">
+        <div class="journey-header-row">
+          <span class="journey-sparkle">📜</span>
+          <h3 class="journey-title">Recent Completed Quests</h3>
+        </div>
+
+        ${recentAttempts.length === 0 ? `
+          <p class="journey-empty-text">
+            Play your first quest in Practice or Adventure to see your completed triumphs here! 🌟
           </p>
-        </div>
-      </div>
-      
-      ${chart.isEmpty
-      ? `<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="color: var(--text-muted); margin-top: 8px;">${t('home.statFluencyGrowing')}</p></div>`
-      : `<div class="accuracy-bars" style="height: 180px;">
-            ${chart.dataPoints.slice(-14).map(point => `
-              <div class="bar-item">
-                <div class="bar-track" style="height: 150px;">
-                  <span class="bar-fill" style="height:${Math.max(8, point.accuracyPercent)}%"></span>
+        ` : `
+          <div class="journey-timeline-stream">
+            ${recentAttempts.map(att => {
+              const questTitle = att.activityType === 'story_reading' ? 'Story Adventure' : (att.activityId || 'Practice Quest');
+              const durationMin = Math.max(1, Math.round(att.durationSeconds / 60));
+              return `
+                <div class="journey-stream-item">
+                  <div class="journey-bullet-node">⭐</div>
+                  <div class="journey-stream-body">
+                    <strong>${escapeHtml(questTitle)}</strong>
+                    <small>${durationMin} min duration · ${att.score}% Accuracy · +15 ⭐</small>
+                  </div>
                 </div>
-                <small>${escapeHtml(point.dayLabel)}</small>
-              </div>`).join('')}
-           </div>`}
-    </section>
-
-    <section class="surface">
-      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 16px;">${t('progress.practiceNextTitle') || 'Practice history'}</h3>
-      ${attempts.length ? `
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          ${[...attempts].reverse().slice(0, 8).map(attempt => `
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 20px;">📖</span>
-                <div>
-                  <strong style="font-size: 14px;">${escapeHtml(attempt.activityId.replace(/^act_/, '').replace(/_/g, ' '))}</strong>
-                  <small style="display: block; color: var(--text-muted); font-size: 11px;">${new Date(attempt.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small>
-                </div>
-              </div>
-              <strong style="color: var(--primary); font-size: 15px;">${Math.round(attempt.accuracy * 100)}%</strong>
-            </div>`).join('')}
-        </div>
-      ` : '<p style="color: var(--text-muted); font-size: 13px;">Your completed activities will show up here.</p>'}
-    </section>`;
+              `;
+            }).join('')}
+          </div>
+        `}
+      </section>
+    </div>
+  `;
 }
 
 async function resourcesPage(): Promise<string> {
   const status = await tinyFish.checkStatus();
   return `
-    <section style="margin-bottom: 24px;">
-      <span class="badge badge-primary">A LITTLE MORE TO EXPLORE</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('resources.heading') || t('resources.title')}</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('resources.subtitle')}</p>
-    </section>
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+      <!-- Discovery Hero Banner -->
+      <section class="discovery-hero">
+        <div style="flex: 1; min-width: 280px;">
+          <div style="display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: var(--radius-pill); background: rgba(255, 255, 255, 0.85); margin-bottom: 10px; border: 1px solid #a7f3d0;">
+            <span style="font-size: 16px;">🗺️</span>
+            <span style="font-size: 12px; font-weight: 800; color: #047857; letter-spacing: 0.5px;">EXPLORER'S DISCOVERY HUB</span>
+          </div>
+          <h2 style="font-family: var(--font-heading); font-size: 28px; font-weight: 900; margin: 0 0 6px; color: var(--text-main);">
+            ${t('resources.heading') || 'Learning Discovery & Worksheets'} 🔍
+          </h2>
+          <p style="color: var(--text-muted); font-size: 14px; margin: 0; line-height: 1.6; max-width: 580px;">
+            ${t('resources.subtitle') || 'Explore printable multisensory worksheets, phonics guides, decodable passages and fun learning games!'}
+          </p>
+        </div>
 
-    <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--radius-md); background: ${status.configured ? 'var(--primary-light)' : 'var(--accent-warm-light)'}; margin-bottom: 20px;">
-      <span style="font-size: 18px;">${status.configured ? '✅' : 'ℹ️'}</span>
-      <div>
-        <strong style="display: block; font-size: 13px; color: ${status.configured ? 'var(--primary)' : '#78350f'};">
-          ${status.configured ? 'Resource search is ready (TinyFish Live)' : 'Resource search is running in demo mode'}
-        </strong>
-        <small style="color: var(--text-muted); font-size: 12px;">
-          ${status.configured ? 'TinyFish educational search is configured and active.' : 'Configure TINYFISH_API_KEY on the backend to enable live web indexing.'}
-        </small>
-      </div>
-    </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: var(--radius-pill); background: var(--bg-surface); border: 1.5px solid var(--border); box-shadow: var(--shadow-sm);">
+          <span style="font-size: 18px;">${status.configured ? '✅' : '⚡'}</span>
+          <div>
+            <strong style="display: block; font-size: 12px; color: ${status.configured ? 'var(--primary)' : 'var(--text-main)'}; font-weight: 800;">
+              ${status.configured ? 'TinyFish Web Search Active' : 'Curated Educational Catalog'}
+            </strong>
+          </div>
+        </div>
+      </section>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: var(--radius-md); background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1px solid #bfdbfe; margin-bottom: 24px; gap: 16px; flex-wrap: wrap;">
-      <div>
-        <strong style="font-size: 14px; color: #1e3a8a; display: block;">Looking for curated reading passages with voice read-aloud?</strong>
-        <p style="font-size: 12px; color: #475569; margin: 2px 0 0;">Check out our illustrated Story Shelf with comprehension quizzes and happy points!</p>
-      </div>
-      <a href="#/stories" class="btn btn-primary btn-sm" data-action="navigate-stories" style="text-decoration: none;">
-        ${t('nav.storyShelf')} 📖 <span>→</span>
-      </a>
-    </div>
+      <!-- 4 Discovery Portals Grid -->
+      <section>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px;">
+          <span style="font-size: 20px;">🧭</span>
+          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0; color: var(--text-main);">
+            Explore Discovery Portals
+          </h3>
+        </div>
 
-    <section class="surface" style="margin-bottom: 24px;">
-      <form id="resource-form" class="resource-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: flex-end;">
-        <label style="grid-column: 1 / -1; display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          ${t('resources.topicLabel')}
-          <input name="topic" maxlength="100" required placeholder="${t('resources.topicPlaceholder')}" />
-        </label>
-        
-        <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          ${t('resources.gradeLabel')}
-          <select name="grade">
-            <option value="any">${t('resources.anyGrade')}</option>
-            <option>Class 1 · Early reader</option>
-            <option>Class 2 · Growing reader</option>
-            <option>Class 3 · Little reader</option>
-            <option>Class 4 · Confident reader</option>
-          </select>
-        </label>
+        <div class="discovery-portals-grid">
+          <div class="discovery-portal-card" data-action="resource-suggestion" data-topic="phonics sound patterns" role="button" tabindex="0">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div class="portal-icon-box" style="background: #e0f2fe; color: #0284c7;">🧪</div>
+              <div>
+                <strong style="font-size: 15px; font-weight: 900; color: var(--text-main); display: block;">Phonics Lab</strong>
+                <small style="font-size: 12px; color: var(--text-muted);">Sound blends & acoustic charts</small>
+              </div>
+            </div>
+            <span style="font-size: 12px; font-weight: 800; color: var(--primary);">Explore topics <span>→</span></span>
+          </div>
 
-        <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          ${t('resources.typeLabel')}
-          <select name="resourceType">
-            <option value="any">${t('resources.anyType')}</option>
-            <option value="reading_exercise">${t('resources.typeReadingExercise')}</option>
-            <option value="phonics_activity">${t('resources.typePhonicsActivity')}</option>
-            <option value="educational_game">${t('resources.typeEducationalGame')}</option>
-            <option value="worksheet">${t('resources.typeWorksheet')}</option>
-          </select>
-        </label>
+          <div class="discovery-portal-card" data-action="resource-suggestion" data-topic="short stories" role="button" tabindex="0">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div class="portal-icon-box" style="background: #fef3c7; color: #d97706;">📚</div>
+              <div>
+                <strong style="font-size: 15px; font-weight: 900; color: var(--text-main); display: block;">Decodable Stories</strong>
+                <small style="font-size: 12px; color: var(--text-muted);">Illustrated tales with word banks</small>
+              </div>
+            </div>
+            <span style="font-size: 12px; font-weight: 800; color: var(--primary);">Explore topics <span>→</span></span>
+          </div>
 
-        <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          ${t('childModal.langLabel')}
-          <select name="language">
-            ${(['English', 'Hindi', 'Punjabi', 'Bengali', 'Tamil', 'Odia'] as SupportedLanguage[]).map(lang => `
-              <option ${lang === activeChild!.preferredLanguage ? 'selected' : ''}>${lang}</option>
-            `).join('')}
-          </select>
-        </label>
+          <div class="discovery-portal-card" data-action="resource-suggestion" data-topic="rhyming games" role="button" tabindex="0">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div class="portal-icon-box" style="background: #ede9fe; color: #7c3aed;">🎮</div>
+              <div>
+                <strong style="font-size: 15px; font-weight: 900; color: var(--text-main); display: block;">Word Quests</strong>
+                <small style="font-size: 12px; color: var(--text-muted);">Interactive rhythm & rhyming</small>
+              </div>
+            </div>
+            <span style="font-size: 12px; font-weight: 800; color: var(--primary);">Explore topics <span>→</span></span>
+          </div>
 
-        <button class="btn btn-primary btn-lg" type="submit" style="min-height: 46px;">
-          ${t('resources.findBtn')} <span>⌕</span>
-        </button>
-      </form>
+          <div class="discovery-portal-card" data-action="resource-suggestion" data-topic="sight words practice" role="button" tabindex="0">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div class="portal-icon-box" style="background: #dcfce7; color: #16a34a;">📝</div>
+              <div>
+                <strong style="font-size: 15px; font-weight: 900; color: var(--text-main); display: block;">Printable Sheets</strong>
+                <small style="font-size: 12px; color: var(--text-muted);">Tracing pages & flash cards</small>
+              </div>
+            </div>
+            <span style="font-size: 12px; font-weight: 800; color: var(--primary);">Explore topics <span>→</span></span>
+          </div>
+        </div>
+      </section>
 
-      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px;">
-        <span style="font-size: 12px; font-weight: 700; color: var(--text-subtle);">Suggestions:</span>
-        ${['phonics sound patterns', 'sight words practice', 'short stories', 'rhyming games'].map(topic => `
-          <button type="button" class="btn btn-outline btn-sm" data-action="resource-suggestion" data-topic="${escapeHtml(topic)}">
-            ${escapeHtml(topic)}
+      <!-- Search Section -->
+      <section class="surface" style="padding: 24px; border-radius: var(--radius-xl); border: 1.5px solid var(--border);">
+        <form id="resource-form" class="resource-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: flex-end;">
+          <label style="grid-column: 1 / -1; display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: var(--text-main);">
+            ${t('resources.topicLabel')}
+            <input name="topic" maxlength="100" required placeholder="${t('resources.topicPlaceholder')}" style="padding: 12px 16px; border-radius: var(--radius-md); font-weight: 700;" />
+          </label>
+          
+          <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: var(--text-main);">
+            ${t('resources.gradeLabel')}
+            <select name="grade" style="padding: 10px 14px; border-radius: var(--radius-md); font-weight: 700;">
+              <option value="any">${t('resources.anyGrade')}</option>
+              <option>Class 1 · Early reader</option>
+              <option>Class 2 · Growing reader</option>
+              <option>Class 3 · Little reader</option>
+              <option>Class 4 · Confident reader</option>
+            </select>
+          </label>
+
+          <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: var(--text-main);">
+            ${t('resources.typeLabel')}
+            <select name="resourceType" style="padding: 10px 14px; border-radius: var(--radius-md); font-weight: 700;">
+              <option value="any">${t('resources.anyType')}</option>
+              <option value="reading_exercise">${t('resources.typeReadingExercise')}</option>
+              <option value="phonics_activity">${t('resources.typePhonicsActivity')}</option>
+              <option value="educational_game">${t('resources.typeEducationalGame')}</option>
+              <option value="worksheet">${t('resources.typeWorksheet')}</option>
+            </select>
+          </label>
+
+          <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: var(--text-main);">
+            ${t('childModal.langLabel')}
+            <select name="language" style="padding: 10px 14px; border-radius: var(--radius-md); font-weight: 700;">
+              ${(['English', 'Hindi', 'Punjabi', 'Bengali', 'Tamil', 'Odia'] as SupportedLanguage[]).map(lang => `
+                <option ${lang === activeChild!.preferredLanguage ? 'selected' : ''}>${lang}</option>
+              `).join('')}
+            </select>
+          </label>
+
+          <button class="btn btn-primary btn-lg" type="submit" style="min-height: 48px; border-radius: var(--radius-md); font-weight: 900;">
+            ${t('resources.findBtn')} <span>⌕</span>
           </button>
-        `).join('')}
-      </div>
-    </section>
+        </form>
 
-    <div id="resource-results">
-      ${resourceResults.length ? renderResources(resourceResults) : ''}
-    </div>`;
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 18px;">
+          <span style="font-size: 12px; font-weight: 800; color: var(--text-muted);">Quick Searches:</span>
+          ${['phonics sound patterns', 'sight words practice', 'short stories', 'rhyming games'].map(topic => `
+            <button type="button" class="btn btn-outline btn-sm" data-action="resource-suggestion" data-topic="${escapeHtml(topic)}" style="border-radius: var(--radius-pill); font-weight: 800;">
+              ${escapeHtml(topic)}
+            </button>
+          `).join('')}
+        </div>
+      </section>
+
+      <div id="resource-results">
+        ${resourceResults.length ? renderResources(resourceResults) : ''}
+      </div>
+    </div>
+  `;
 }
 
 function renderResources(resources: EducationalResource[]): string {
   if (!resources.length) {
-    return '<div class="surface" style="padding: 24px; text-align: center; color: var(--text-muted);">No resources found for this search. Try another topic or language.</div>';
+    return '<div class="surface" style="padding: 28px; text-align: center; color: var(--text-muted); border-radius: var(--radius-lg); border: 1.5px solid var(--border);">No resources found for this search. Try another topic or language.</div>';
   }
   return `
     <section>
-      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 16px;">${resources.length} learning ${resources.length === 1 ? 'idea' : 'ideas'} found</h3>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+        <span style="font-size: 20px;">✨</span>
+        <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0; color: var(--text-main);">
+          ${resources.length} learning ${resources.length === 1 ? 'idea' : 'ideas'} found
+        </h3>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;">
         ${resources.map(resource => {
-    let safeUrl = '';
-    try {
-      const parsed = new URL(resource.url);
-      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
-    } catch { safeUrl = ''; }
-    return `
-            <article class="surface" style="display: flex; flex-direction: column; justify-content: space-between;">
+          let safeUrl = '';
+          try {
+            const parsed = new URL(resource.url);
+            if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
+          } catch { safeUrl = ''; }
+          return `
+            <article class="surface" style="display: flex; flex-direction: column; justify-content: space-between; border-radius: var(--radius-lg); border: 1.5px solid var(--border); padding: 20px; box-shadow: var(--shadow-card);">
               <div>
-                <span class="badge badge-primary" style="margin-bottom: 8px;">${escapeHtml(resource.resourceType.replace(/_/g, ' '))}</span>
-                <h4 style="font-family: var(--font-heading); font-size: 16px; font-weight: 800; margin: 4px 0 6px;">${escapeHtml(resource.title)}</h4>
-                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 12px;">${escapeHtml(resource.summary)}</p>
-                <div style="font-size: 11px; font-weight: 700; color: var(--text-subtle);">${escapeHtml(resource.siteName)} · ${escapeHtml(resource.language)}</div>
+                <span class="badge badge-primary" style="margin-bottom: 10px; font-weight: 800;">${escapeHtml(resource.resourceType.replace(/_/g, ' '))}</span>
+                <h4 style="font-family: var(--font-heading); font-size: 17px; font-weight: 900; margin: 4px 0 8px; color: var(--text-main);">${escapeHtml(resource.title)}</h4>
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0 0 14px;">${escapeHtml(resource.summary)}</p>
+                <div style="font-size: 11px; font-weight: 800; color: var(--text-subtle);">${escapeHtml(resource.siteName)} · ${escapeHtml(resource.language)}</div>
               </div>
-              <div style="margin-top: 16px;">
-                ${safeUrl ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">Open resource ↗</a>` : ''}
+              <div style="margin-top: 18px;">
+                ${safeUrl ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" style="border-radius: var(--radius-pill); font-weight: 800;">Open resource ↗</a>` : ''}
               </div>
             </article>`;
-  }).join('')}
+        }).join('')}
       </div>
-      ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 14px;">${escapeHtml(resourceDisclaimer)}</p>` : ''}
+      ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 16px;">${escapeHtml(resourceDisclaimer)}</p>` : ''}
     </section>`;
 }
-
 async function renderAppPage(): Promise<void> {
   const renderRevision = ++appRenderRevision;
   const user = auth.getCurrentUser();
@@ -3601,7 +4461,7 @@ function renderActivityModal(feedback = '', answered = false, feedbackIsPositive
             <span class="badge badge-primary">${escapeHtml(activity.difficulty)} · ${escapeHtml(activity.language)}</span>
             <h2 id="activity-title">${escapeHtml(activity.title)}</h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-activity" aria-label="${t('common.close')}">×</button>
+          <button class="icon-button modal-close" type="button" id="btnCloseActivityGeneric" data-action="close-activity" aria-label="${t('common.close') || 'Close activity'}">✕</button>
         </div>
 
         <div class="activity-instruction">
@@ -3781,13 +4641,17 @@ async function finishActivity(): Promise<void> {
       learningPath = updatedPath;
     }
     const progress = profiles.getChildProgress(child.id);
+    const newHappyPoints = progress.happyPoints + 5 * attempts.length;
     profiles.updateChildProgress(child.id, {
       practiceMinutes: progress.practiceMinutes + Math.max(1, Math.round((Date.now() - activityStartedAt) / 60000)),
       wordsLearned: progress.wordsLearned + attempts.length,
-      happyPoints: progress.happyPoints + 5 * attempts.length,
+      happyPoints: newHappyPoints,
       practiceWins: progress.practiceWins + 1,
       accuracyPercent: 100,
     });
+    // Trigger Level Completion Celebration on Adventure Map (4A.3)
+    const currentMap = computeAdventureMapState(child, await learning.getChildSkillStates(child.id), { ...progress, happyPoints: newHappyPoints });
+    celebratedCompletedLevelNumber = currentMap.currentLevel.levelNumber;
   } catch (error) {
     activitySaving = false;
     activitySaveFailed = true;
@@ -3921,7 +4785,33 @@ root!.addEventListener('click', async event => {
   const action = control.dataset.action;
 
   try {
-    if (action === 'toggle-sound-effects') {
+    if (action === 'toggle-theme') {
+      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+      applyTheme(currentTheme);
+      document.querySelectorAll('.theme-toggle-btn .theme-icon').forEach(icon => {
+        icon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+      });
+      toast(currentTheme === 'dark' ? 'Dark Adventure Mode activated 🌙' : 'Sunny Light Mode restored ☀️');
+      return;
+    } else if (action === 'inspect-level') {
+      const lvlNum = parseInt(control.dataset.level || '1', 10);
+      renderLevelPreviewModal(lvlNum);
+      return;
+    } else if (action === 'inspect-milestone') {
+      const lvlNum = parseInt(control.dataset.level || '3', 10);
+      renderMilestoneModal(lvlNum);
+      return;
+    } else if (action === 'play-level') {
+      closeModal();
+      const skillId = control.dataset.skill || '';
+      const title = control.dataset.title || 'Adventure Level';
+      const difficulty = control.dataset.difficulty || 'beginner';
+      await startActivity(skillId, title, difficulty);
+      return;
+    } else if (action === 'close-modal') {
+      closeModal();
+      return;
+    } else if (action === 'toggle-sound-effects') {
       const isNowOn = soundService.toggle();
       document.querySelectorAll('.sound-toggle-btn').forEach(btn => {
         btn.classList.toggle('active', isNowOn);
@@ -4947,3 +5837,51 @@ updateDocumentTitle(activePage);
 
 // Initial Render
 void renderAppPage();
+
+
+// Universal modal close handler (handles all close buttons, icons, backdrops, and X buttons)
+document.addEventListener('click', event => {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  const isCloseBtn = Boolean(
+    target.closest('[data-action="close-activity"]') ||
+    target.closest('[data-action="close-modal"]') ||
+    target.closest('[data-action="dismiss-modal"]') ||
+    target.closest('#btnCloseBDModal') ||
+    target.closest('#btnCloseActModal') ||
+    target.closest('#btnCloseActivityGeneric') ||
+    target.closest('#btnCloseStoryModal') ||
+    target.closest('.modal-close') ||
+    target.closest('button[aria-label*="close" i]') ||
+    target.closest('button[aria-label*="Close" i]') ||
+    target.closest('[data-action="close-preview"]') ||
+    (target.tagName === 'BUTTON' && ['×', '✕', 'X', 'x'].includes(target.textContent?.trim() || '')) ||
+    (target.parentElement?.tagName === 'BUTTON' && ['×', '✕', 'X', 'x'].includes(target.textContent?.trim() || ''))
+  );
+  if (isCloseBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeModal();
+    try { LetterMirrorBDModal.getInstance().close(); } catch {}
+    try { ActivityRunnerModal.getInstance().close(); } catch {}
+    const bd = document.getElementById('bdRunnerModalContainer');
+    if (bd) { bd.style.display = 'none'; bd.remove(); }
+    const act = document.getElementById('actRunnerModalContainer');
+    if (act) { act.style.display = 'none'; act.remove(); }
+    const rootModal = document.querySelector('#modal-root');
+    if (rootModal) rootModal.innerHTML = '';
+    document.body.style.overflow = '';
+  }
+}, true);
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    closeModal();
+    try { LetterMirrorBDModal.getInstance().close(); } catch {}
+    const bd = document.getElementById('bdRunnerModalContainer');
+    if (bd) { bd.style.display = 'none'; bd.remove(); }
+    const act = document.getElementById('actRunnerModalContainer');
+    if (act) { act.style.display = 'none'; act.remove(); }
+    document.body.style.overflow = '';
+  }
+});

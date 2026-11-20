@@ -61,6 +61,7 @@ export class ActivityRunnerModal {
 
     const modalEl = this.ensureModalElement();
     modalEl.classList.remove('hidden');
+    modalEl.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
     // Show loading state while fetching activity
@@ -509,6 +510,8 @@ export class ActivityRunnerModal {
     const modalEl = document.getElementById('actRunnerModalContainer');
     if (modalEl) {
       modalEl.classList.add('hidden');
+      modalEl.style.display = 'none';
+      modalEl.remove();
     }
     document.body.style.overflow = '';
   }

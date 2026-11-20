@@ -66,6 +66,7 @@ export class LetterMirrorBDModal {
 
     const modalEl = this.ensureModalElement();
     modalEl.classList.remove('hidden');
+    modalEl.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
     this.renderCurrentRound();
@@ -879,6 +880,8 @@ export class LetterMirrorBDModal {
     const modalEl = document.getElementById('bdRunnerModalContainer');
     if (modalEl) {
       modalEl.classList.add('hidden');
+      modalEl.style.display = 'none';
+      modalEl.remove();
     }
     document.body.style.overflow = '';
   }

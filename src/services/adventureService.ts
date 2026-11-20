@@ -8,7 +8,13 @@ export type DestinationId =
   | 'word_workshop'
   | 'reading_forest'
   | 'story_castle'
-  | 'vocabulary_island';
+  | 'vocabulary_island'
+  | 'alphabet_forest'
+  | 'sound_safari'
+  | 'word_wonderland'
+  | 'spelling_castle'
+  | 'rhyme_river'
+  | 'storybook_kingdom';
 
 export interface DestinationSetting {
   enabled: boolean;
@@ -135,9 +141,81 @@ export const ADVENTURE_DESTINATIONS: Record<DestinationId, DestinationDefinition
     defaultRequiredPoints: 200,
     activityIds: ['act_vocabulary_builder', 'act_spelling_practice'],
   },
+  alphabet_forest: {
+    id: 'alphabet_forest',
+    name: 'Alphabet Forest',
+    icon: '🌲',
+    tagline: 'Letter sounds & mirror discoveries',
+    description: 'Wander under singing canopy trees, match vibrant letter sounds, and conquer curious mirror b vs d riddles.',
+    themeColor: '#059669',
+    accentBg: '#ecfdf5',
+    defaultRequiredPoints: 0,
+    activityIds: ['act_letter_sound_match', 'act_bd_mirror', 'act_listening_practice'],
+  },
+  sound_safari: {
+    id: 'sound_safari',
+    name: 'Sound Safari',
+    icon: '🦁',
+    tagline: 'Phonemic awareness & sound blending',
+    description: 'Track acoustic footprints through golden grasslands and zip sounds together with friendly safari guides.',
+    themeColor: '#d97706',
+    accentBg: '#fffbeb',
+    defaultRequiredPoints: 50,
+    activityIds: ['act_sound_blending', 'act_missing_letter'],
+  },
+  word_wonderland: {
+    id: 'word_wonderland',
+    name: 'Word Wonderland',
+    icon: '🍭',
+    tagline: 'Digraphs, blends & sight words',
+    description: 'Spin through candy-colored clouds to spot twinkling sight words and solve word reversal puzzles.',
+    themeColor: '#db2777',
+    accentBg: '#fdf2f8',
+    defaultRequiredPoints: 100,
+    activityIds: ['act_word_building', 'act_word_recognition'],
+  },
+  spelling_castle: {
+    id: 'spelling_castle',
+    name: 'Spelling Castle',
+    icon: '🏰',
+    tagline: 'Syllables & phonetic construction',
+    description: 'Scale majestic towers by clapping out word rhythm beats and assembling royal spelling blocks.',
+    themeColor: '#7c3aed',
+    accentBg: '#f5f3ff',
+    defaultRequiredPoints: 150,
+    activityIds: ['act_syllable_splitting', 'act_spelling_practice'],
+  },
+  rhyme_river: {
+    id: 'rhyme_river',
+    name: 'Rhyme River',
+    icon: '🌊',
+    tagline: 'Rhyme patterns & rhythm reading',
+    description: 'Float downstream along crystal currents, hopping between rhyming lily pads and sailing reading ferries.',
+    themeColor: '#0284c7',
+    accentBg: '#f0f9ff',
+    defaultRequiredPoints: 200,
+    activityIds: ['act_rhyming_words', 'act_vocabulary_builder'],
+  },
+  storybook_kingdom: {
+    id: 'storybook_kingdom',
+    name: 'Storybook Kingdom',
+    icon: '👑',
+    tagline: 'Grand tale comprehension & crown quest',
+    description: 'Reach the pinnacle palace! Read glorious illustrated tales and wear the celebrated DyslexiMate crown.',
+    themeColor: '#ea580c',
+    accentBg: '#fff7ed',
+    defaultRequiredPoints: 250,
+    activityIds: ['act_reading_comprehension'],
+  },
 };
 
 export const DESTINATION_ORDER: DestinationId[] = [
+  'alphabet_forest',
+  'sound_safari',
+  'word_wonderland',
+  'spelling_castle',
+  'rhyme_river',
+  'storybook_kingdom',
   'phonics_garden',
   'word_workshop',
   'reading_forest',
@@ -146,6 +224,12 @@ export const DESTINATION_ORDER: DestinationId[] = [
 ];
 
 export const DEFAULT_DESTINATION_SETTINGS: Record<DestinationId, DestinationSetting> = {
+  alphabet_forest: { enabled: true, requiredPoints: 0 },
+  sound_safari: { enabled: true, requiredPoints: 50 },
+  word_wonderland: { enabled: true, requiredPoints: 100 },
+  spelling_castle: { enabled: true, requiredPoints: 150 },
+  rhyme_river: { enabled: true, requiredPoints: 200 },
+  storybook_kingdom: { enabled: true, requiredPoints: 250 },
   phonics_garden: { enabled: true, requiredPoints: 0 },
   word_workshop: { enabled: true, requiredPoints: 50 },
   reading_forest: { enabled: true, requiredPoints: 100 },
@@ -218,13 +302,7 @@ export class AdventureService {
   }
 
   public getFreshDefaults(): Record<DestinationId, DestinationSetting> {
-    return {
-      phonics_garden: { enabled: true, requiredPoints: 0 },
-      word_workshop: { enabled: true, requiredPoints: 50 },
-      reading_forest: { enabled: true, requiredPoints: 100 },
-      story_castle: { enabled: true, requiredPoints: 150 },
-      vocabulary_island: { enabled: true, requiredPoints: 200 },
-    };
+    return { ...DEFAULT_DESTINATION_SETTINGS };
   }
 
   /**
@@ -255,11 +333,8 @@ export class AdventureService {
 
     const current = await this.getChildSettings(childId);
     const sanitized: Record<DestinationId, DestinationSetting> = {
-      phonics_garden: { ...current.phonics_garden },
-      word_workshop: { ...current.word_workshop },
-      reading_forest: { ...current.reading_forest },
-      story_castle: { ...current.story_castle },
-      vocabulary_island: { ...current.vocabulary_island },
+      ...DEFAULT_DESTINATION_SETTINGS,
+      ...current,
     };
 
     for (const id of DESTINATION_ORDER) {
