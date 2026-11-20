@@ -2396,3 +2396,543 @@ a:hover .site-brand.brand-light,
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   MY ADVENTURE & GAMIFIED PROGRESSION STYLES
+   ========================================================================== */
+
+.adventure-hero {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 50%, #fef3c7 100%);
+  border: 1.5px solid #bfdbfe;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.adventure-mascot-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 14px 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-xs);
+}
+
+.adventure-mascot-avatar {
+  font-size: 38px;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+  border-radius: var(--radius-md);
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.adventure-mascot-speech {
+  font-size: 14px;
+  color: var(--text-main);
+  font-weight: 700;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.adventure-destination-picker-card {
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.adventure-select {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--primary);
+  background: var(--bg-surface);
+  cursor: pointer;
+  outline: none;
+  min-width: 260px;
+  max-width: 100%;
+}
+
+.adventure-map-box {
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 16px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+}
+
+.adventure-map-node {
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.adventure-map-node:hover {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 6px 12px rgba(8, 127, 120, 0.25));
+}
+
+.adventure-dest-card {
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.adventure-dest-card.status-unlocked {
+  border-color: #86efac;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 120px);
+}
+
+.adventure-dest-card.status-locked {
+  border-color: #fde68a;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 120px);
+}
+
+.adventure-dest-card.status-disabled {
+  border-color: #cbd5e1;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 120px);
+  opacity: 0.9;
+}
+
+.adventure-progress-track {
+  background: #e2e8f0;
+  border-radius: var(--radius-pill);
+  height: 12px;
+  width: 100%;
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+
+.adventure-progress-fill {
+  background: linear-gradient(90deg, #f59e0b, #10b981);
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width 0.4s ease;
+}
+
+.adventure-stickers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.adventure-sticker-item {
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+  border: 1.5px solid var(--border);
+  background: var(--bg-surface-alt);
+  transition: transform 0.2s ease;
+}
+
+.adventure-sticker-item.earned {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.15);
+}
+
+.adventure-sticker-item.locked {
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+
+.adventure-quests-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.adventure-quest-card {
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+
+/* ==========================================================================
+   REACT BITS SOUND LAB & FLUID UI ANIMATIONS UPGRADE
+   ========================================================================== */
+
+/* 1. Global Spring & Smooth Easing Variables */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.25, 1, 0.5, 1);
+  --shadow-hover-card: 0 14px 30px -4px rgba(15, 23, 42, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.04);
+  --shadow-hover-btn: 0 8px 20px -2px rgba(8, 127, 120, 0.28);
+}
+
+/* 2. Fluid Button Micro-Interactions */
+.btn {
+  transition: transform 0.22s var(--ease-smooth),
+              box-shadow 0.22s var(--ease-smooth),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              color 0.2s ease !important;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.015) !important;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.97) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: var(--shadow-hover-btn) !important;
+}
+
+.btn-warm:hover:not(:disabled) {
+  box-shadow: 0 8px 20px -2px rgba(245, 158, 11, 0.32) !important;
+}
+
+/* 3. Fluid Card Hover, Lift & Selection */
+.surface,
+.stat-card,
+.destination-card,
+.adventure-card,
+.adventure-quest-card,
+.story-card,
+.resource-card,
+.profile-card,
+.report-child-card,
+.act-card,
+.recommendation-card {
+  transition: transform 0.28s var(--ease-smooth),
+              box-shadow 0.28s var(--ease-smooth),
+              border-color 0.22s ease,
+              background-color 0.22s ease;
+}
+
+.stat-card:hover,
+.destination-card:hover,
+.adventure-quest-card:hover,
+.story-card:hover,
+.profile-card:hover,
+.report-child-card:hover,
+.act-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover-card);
+}
+
+/* Activity item selection bounce */
+.activity-choice,
+.story-comp-opt,
+.quiz-opt {
+  transition: transform 0.2s var(--ease-smooth),
+              border-color 0.2s ease,
+              background-color 0.2s ease,
+              box-shadow 0.2s var(--ease-smooth);
+}
+
+.activity-choice:hover:not(:disabled),
+.story-comp-opt:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 6px 16px -2px rgba(0, 0, 0, 0.06);
+}
+
+.activity-choice:active:not(:disabled),
+.story-comp-opt:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* 4. Fluid Modals & Popups */
+.modal-backdrop {
+  animation: modalBackdropFadeIn 0.28s var(--ease-smooth) forwards;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.modal-backdrop.closing {
+  animation: modalBackdropFadeOut 0.22s var(--ease-smooth) forwards;
+}
+
+.modal-card,
+.activity-modal {
+  animation: modalPopIn 0.32s var(--ease-smooth) forwards;
+  will-change: transform, opacity;
+}
+
+.modal-backdrop.closing .modal-card,
+.modal-backdrop.closing .activity-modal {
+  animation: modalPopOut 0.2s var(--ease-smooth) forwards;
+}
+
+@keyframes modalBackdropFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes modalBackdropFadeOut {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+}
+
+@keyframes modalPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) translateY(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalPopOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+}
+
+/* 5. Fluid Navigation & Page Transitions */
+#page-content {
+  animation: pageFadeSlide 0.32s var(--ease-smooth);
+}
+
+@keyframes pageFadeSlide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.side-nav a {
+  position: relative;
+  transition: all 0.24s var(--ease-smooth);
+  overflow: hidden;
+}
+
+.side-nav a:hover:not(.active) {
+  transform: translateX(4px);
+  background-color: var(--primary-subtle);
+  color: var(--primary);
+}
+
+.side-nav a.active {
+  box-shadow: 0 4px 14px rgba(8, 127, 120, 0.18);
+}
+
+.side-nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 4px;
+  background-color: var(--primary);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  animation: navIndicatorGlow 0.3s var(--ease-smooth);
+}
+
+@keyframes navIndicatorGlow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* 6. Smooth Progress & Learning Animation */
+.bar-fill,
+.adventure-progress-fill,
+.progress-fill {
+  transition: width 0.85s var(--ease-spring), height 0.85s var(--ease-spring) !important;
+  position: relative;
+}
+
+.adventure-progress-fill::after,
+.bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: progressShimmer 2.8s infinite linear;
+  pointer-events: none;
+}
+
+@keyframes progressShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Happy Points & Celebration Feedback */
+.celebrate-pop {
+  animation: celebratePop 0.45s var(--ease-spring);
+}
+
+@keyframes celebratePop {
+  0% {
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.celebrate-glow {
+  animation: celebrateGlow 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes celebrateGlow {
+  0% {
+    box-shadow: 0 0 0 rgba(245, 158, 11, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.5);
+  }
+}
+
+/* 7. Subtle Decorative Floating Elements */
+.gentle-float {
+  animation: floatSlow 3.8s ease-in-out infinite;
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* 8. Sound Toggle Button UI */
+.sound-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-smooth);
+  user-select: none;
+}
+
+.sound-toggle-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background-color: var(--primary-subtle);
+  transform: translateY(-1px);
+}
+
+.sound-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.sound-toggle-btn.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-subtle);
+}
+
+.sound-toggle-btn .indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #cbd5e1;
+  transition: background-color 0.2s ease, transform 0.2s var(--ease-spring);
+}
+
+.sound-toggle-btn.active .indicator-dot {
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  transform: scale(1.15);
+}
+
+/* 9. Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
+  }
+  .gentle-float,
+  .celebrate-pop,
+  .celebrate-glow,
+  .adventure-progress-fill::after,
+  .bar-fill::after {
+    animation: none !important;
+  }
+}

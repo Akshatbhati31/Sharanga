@@ -1,7 +1,7 @@
 // Types for DyslexiMate Authentication & Child Profile Management
 
 export type SupportedLanguage = 'English' | 'Hindi' | 'Odia' | 'Punjabi' | 'Tamil' | 'Bengali';
-export type AppLanguageCode = 'en' | 'hi' | 'or' | 'pa' | 'ta';
+export type AppLanguageCode = 'en' | 'hi' | 'or' | 'pa' | 'ta' | 'bn';
 
 export interface ReadingPreferences {
   readingSpeed: 'slow' | 'normal' | 'fast';
@@ -10,6 +10,7 @@ export interface ReadingPreferences {
   soundEffects: boolean;
   autoReadAloud: boolean;
   languages?: SupportedLanguage[];
+  adventureSettings?: Record<string, { enabled: boolean; requiredPoints: number }>;
 }
 
 export interface ChildProfile {

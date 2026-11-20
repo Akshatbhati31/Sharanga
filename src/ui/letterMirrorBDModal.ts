@@ -2,6 +2,7 @@ import { LearningPathService } from '../services/learningPathService';
 import { ProfileService } from '../services/profileService';
 import type { ChildProfile, AppLanguageCode } from '../types/auth';
 import { SpeechService } from '../services/speechService';
+import { soundService } from '../services/soundService';
 import { i18n } from '../i18n';
 
 interface BDRound {
@@ -61,6 +62,7 @@ export class LetterMirrorBDModal {
 
     const childLangCode = i18n.supportedLanguageToCode(child.preferredLanguage || 'English');
     this.rounds = this.generateRandomizedRounds(childLangCode);
+    soundService.modalOpen(child.preferences?.soundEffects !== false);
 
     const modalEl = this.ensureModalElement();
     modalEl.classList.remove('hidden');
@@ -415,6 +417,72 @@ export class LetterMirrorBDModal {
           ],
         },
       ],
+      bn: [
+        {
+          id: 'round_bn_spot_b',
+          type: 'spot_b',
+          prompt: 'বর্ণ <b>ব</b> (বই ও বাঘ) চিনুন:',
+          targetLetter: 'ব',
+          visualIcon: '📖',
+          audioPrompt: 'ব বর্ণটি স্পর্শ করুন',
+          options: [
+            { letter: 'ব', display: 'ব', isCorrect: true, explanation: 'একদম ঠিক! এটি হলো ব (বই/বাঘ)! 📖' },
+            { letter: 'র', display: 'র', isCorrect: false, explanation: 'এটি র। নিচে বিন্দু আছে। ব-এ কোনো বিন্দু থাকে না!' },
+          ],
+        },
+        {
+          id: 'round_bn_spot_r',
+          type: 'spot_d',
+          prompt: 'বিন্দুযুক্ত বর্ণ <b>র</b> (রথ ও রং) চিনুন:',
+          targetLetter: 'র',
+          visualIcon: '🚗',
+          audioPrompt: 'র বর্ণটি স্পর্শ করুন',
+          options: [
+            { letter: 'র', display: 'র', isCorrect: true, explanation: 'দারুণ! ব এর নিচে বিন্দু থাকলে তা র হয়! 🚗' },
+            { letter: 'ব', display: 'ব', isCorrect: false, explanation: 'এটি ব। র-এর নিচে একটি বিন্দু থাকে!' },
+          ],
+        },
+        {
+          id: 'round_bn_word_boi',
+          type: 'word_completion',
+          prompt: 'কোন বর্ণটি <b>_ই</b> (পড়ার বই 📖) শব্দ তৈরি করে?',
+          targetLetter: 'ব',
+          contextWord: '_ই',
+          contextHint: 'বই শব্দটি ব দিয়ে শুরু হয়',
+          visualIcon: '📖',
+          audioPrompt: 'বই শব্দটিতে কোন বর্ণ বসবে?',
+          options: [
+            { letter: 'ব', display: 'ব', isCorrect: true, explanation: 'চমৎকার! ব + ই = বই 📖!' },
+            { letter: 'র', display: 'র', isCorrect: false, explanation: 'র দিলে তা রই হয়ে যায়। আমাদের লাগবে বই!' },
+          ],
+        },
+        {
+          id: 'round_bn_word_rath',
+          type: 'word_completion',
+          prompt: 'কোন বর্ণটি <b>_থ</b> (উৎসবের রথ 🚗) শব্দ তৈরি করে?',
+          targetLetter: 'র',
+          contextWord: '_থ',
+          contextHint: 'রথ শব্দটি র দিয়ে শুরু হয়',
+          visualIcon: '🚗',
+          audioPrompt: 'রথ শব্দটিতে কোন বর্ণ বসবে?',
+          options: [
+            { letter: 'র', display: 'র', isCorrect: true, explanation: 'অসাধারণ! র + থ = রথ 🚗!' },
+            { letter: 'ব', display: 'ব', isCorrect: false, explanation: 'ব দিলে তা বথ হয়ে যায়। আমাদের লাগবে রথ!' },
+          ],
+        },
+        {
+          id: 'round_bn_feature',
+          type: 'feature_check',
+          prompt: 'কোন বর্ণের <b>নিচে একটি বিন্দু</b> থাকে?',
+          targetLetter: 'র',
+          visualIcon: '🎯',
+          audioPrompt: 'কোন বর্ণের নিচে বিন্দু থাকে?',
+          options: [
+            { letter: 'র', display: 'র', isCorrect: true, explanation: 'সঠিক উত্তর! র বর্ণের নিচে ফোটা বা বিন্দু থাকে!' },
+            { letter: 'ব', display: 'ব', isCorrect: false, explanation: 'ব বর্ণের নিচে কোনো বিন্দু থাকে না।' },
+          ],
+        },
+      ],
     };
 
     const selectedPool = questionPools[langCode] || questionPools.en;
@@ -472,6 +540,13 @@ export class LetterMirrorBDModal {
         card1: { letter: 'ர', icon: '🚆', title: 'இடையின ரகரம் (ரயில்)', desc: 'மேலிருந்து கீழ் வளைந்து வரும் எளிய வடிவம்' },
         card2: { letter: 'ற', icon: '🐦', title: 'வல்லின றகரம் (பறவை)', desc: 'மேல்நோக்கி சுழித்து மேலேறும் வடிவம்' },
         trick: '<strong>வேறுபாட்டுக் குறிப்பு:</strong> ர மென்மையான எளிய வளைவு, ற வன்மையுடன் மேல்நோக்கிச் சுழிக்கும்!',
+      },
+      bn: {
+        title: 'অক্ষর শনাক্তকরণ: ব এবং র 🔍',
+        desc: 'সহজ কৌশলের সাহায্যে একই রকম দেখতে বর্ণ <strong>ব</strong> এবং <strong>র</strong> এর পার্থক্য বুঝুন।',
+        card1: { letter: 'ব', icon: '📖', title: 'বই (ব)', desc: 'নিচে কোনো বিন্দু থাকে না' },
+        card2: { letter: 'র', icon: '🚗', title: 'রথ (র)', desc: 'ব এর নিচে একটি বিন্দু থাকে' },
+        trick: '<strong>চেনার সহজ কৌশল:</strong> ব এর নিচে একটি বিন্দু দিলে তা র হয়ে যায়!',
       },
     };
 
@@ -635,6 +710,7 @@ export class LetterMirrorBDModal {
         });
 
         if (isCorrect) {
+          soundService.correctAnswer(this.activeChild?.preferences?.soundEffects !== false);
           (btn as HTMLElement).style.borderColor = '#3b9b75';
           (btn as HTMLElement).style.background = '#eefbf4';
           (btn as HTMLElement).style.color = '#18794e';
@@ -662,6 +738,7 @@ export class LetterMirrorBDModal {
 
           this.speakText(fullSpokenFeedback);
         } else {
+          soundService.cardSelect(this.activeChild?.preferences?.soundEffects !== false);
           (btn as HTMLElement).style.borderColor = '#e03131';
           (btn as HTMLElement).style.background = '#fff5f5';
           (btn as HTMLElement).style.color = '#c92a2a';
@@ -755,6 +832,7 @@ export class LetterMirrorBDModal {
     const correctLabel = i18n.tForLang(childLangCode, 'progress.statAccuracy') || 'Accuracy';
     const pointsLabel = i18n.tForLang(childLangCode, 'profileSelect.pointsUnit') || 'Points';
     const returnBtn = `${i18n.t('activity.returnPracticeBtn')} →`;
+    soundService.activityComplete(this.activeChild.preferences?.soundEffects !== false);
 
     modalEl.innerHTML = `
       <div class="modal activity-runner-modal" style="max-width: 520px; text-align: center; padding: 36px 24px;" role="dialog" aria-modal="true">
@@ -796,6 +874,7 @@ export class LetterMirrorBDModal {
   }
 
   public close(): void {
+    soundService.modalClose(this.activeChild?.preferences?.soundEffects !== false);
     SpeechService.getInstance().stop();
     const modalEl = document.getElementById('bdRunnerModalContainer');
     if (modalEl) {
