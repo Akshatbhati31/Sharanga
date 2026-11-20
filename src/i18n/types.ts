@@ -37,6 +37,7 @@ export interface TranslationSchema {
     practice: string;
     myProgress: string;
     storyShelf: string;
+    myAdventure?: string;
     resourceFinder: string;
     switchLearner: string;
     grownups: string;
@@ -46,6 +47,11 @@ export interface TranslationSchema {
     littleEveryDay: string;
     tenMinGrow: string;
     logout: string;
+    backToWebsite?: string;
+    learningSpace?: string;
+    findStory?: string;
+    tipTitle?: string;
+    tipDesc?: string;
   };
   auth: {
     entry: {
@@ -551,5 +557,40 @@ export interface TranslationSchema {
     beginner: string;
     intermediate: string;
     advanced: string;
+  };
+  adventure?: {
+    title: string;
+    subtitle: string;
+    heroTitle: string;
+    pointsBadge: string;
+    realmsUnlocked: string;
+    guideCheering: string;
+    selectDestination: string;
+    selectDestinationSub: string;
+    mapTitle: string;
+    mapSubtitle: string;
+    unlocked: string;
+    locked: string;
+    disabled: string;
+    milestoneRequirement: string;
+    restingTitle: string;
+    restingDesc: string;
+    journeyProgress: string;
+    pointsRemaining: string;
+    availableActivities: string;
+    availableActivitiesSub: string;
+    playActivity: string;
+    dailyGoals: string;
+    dailyRefreshes: string;
+    dailyQuestsTitle: string;
+    dailyQuestsDesc: string;
+    completed: string;
+    progressLabel: string;
+    collectorAlbum: string;
+    badgesEarned: string;
+    badgesTitle: string;
+    badgesDesc: string;
+    earnedTag: string;
+    needsPoints: string;
   };
 }

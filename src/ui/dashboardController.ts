@@ -1617,9 +1617,7 @@ export class DashboardController {
     const modal = this.container.querySelector('#dashboardModal') as HTMLElement;
     modal?.classList.add('hidden');
     document.body.style.overflow = '';
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    this.speechService.stop();
   }
 
   public updateDailyChallengeUI(): void {

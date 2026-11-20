@@ -7,9 +7,19 @@ import { ProfileService } from '../src/services/profileService';
 import { ReadingChartService, type ReadingChartSummary } from '../src/services/readingChartService';
 import { StoryShelfService, type StoryPassage } from '../src/services/storyShelfService';
 import { TinyFishService } from '../src/services/tinyfishService';
+import { speechService } from '../src/services/speechService';
+import { soundService } from '../src/services/soundService';
+import {
+  AdventureService,
+  ADVENTURE_DESTINATIONS,
+  DEFAULT_DESTINATION_SETTINGS,
+  DESTINATION_ORDER,
+  type DestinationId,
+  type DestinationSetting,
+} from '../src/services/adventureService';
 import { LetterMirrorBDModal } from '../src/ui/letterMirrorBDModal';
 import { getSkillDefinition } from '../src/services/skillModel';
-import { i18n } from '../src/i18n';
+import { i18n, t, SUPPORTED_LANGUAGES } from '../src/i18n';
 import type { ActivityDifficulty, InteractiveActivityContent, LearningAttempt } from '../src/types/adaptive';
 import type { ChildProfile, SupportedLanguage, ParentUser } from '../src/types/auth';
 import type { EducationalResource, ResourceType } from '../src/types/tinyfish';
@@ -27,15 +37,7 @@ const activityTracker = ActivityTrackerService.getInstance();
 const ai = AiActivityService.getInstance();
 const tinyFish = TinyFishService.getInstance();
 const storyShelf = StoryShelfService.getInstance();
-
-const speechLocales: Record<SupportedLanguage, string> = {
-  English: 'en-IN',
-  Hindi: 'hi-IN',
-  Punjabi: 'pa-IN',
-  Bengali: 'bn-IN',
-  Tamil: 'ta-IN',
-  Odia: 'or-IN',
-};
+const adventure = AdventureService.getInstance();
 
 const htmlEntities: Record<string, string> = {
   '&': '&amp;',
@@ -46,11 +48,13 @@ const htmlEntities: Record<string, string> = {
 };
 
 // Application State
-export type AppPage = 'landing' | 'auth' | 'home' | 'practice' | 'progress' | 'resources' | 'profiles' | 'stories' | 'parent';
+export type AppPage = 'landing' | 'auth' | 'home' | 'practice' | 'progress' | 'resources' | 'profiles' | 'stories' | 'adventure' | 'parent';
 
-let parentActiveTab: 'overview' | 'child_records' | 'settings' = 'overview';
+let parentActiveTab: 'overview' | 'child_records' | 'settings' | 'adventure_settings' = 'overview';
 let parentSelectedChildId: string | null = null;
 let parentTelemetryPeriod: 'today' | '7days' | '30days' = '30days';
+
+let activeAdventureDestination: DestinationId = 'phonics_garden';
 
 let storyLanguage: SupportedLanguage | null = null;
 let storyRotationAdvance = false;
@@ -167,8 +171,11 @@ function closeModal(): void {
   activityQuestionSkills.clear();
   completedActivityAttempts = [];
   practiceResourceRequestId++;
-  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  speechService.stop();
   const modal = root!.querySelector<HTMLElement>('#modal-root');
+  if (modal && modal.innerHTML.trim() !== '') {
+    soundService.modalClose(activeChild?.preferences?.soundEffects !== false);
+  }
   if (modal) modal.innerHTML = '';
   document.body.style.overflow = '';
   if (wasRecoverySuccess && activePage === 'parent') {
@@ -197,6 +204,10 @@ function parseRouteFromUrl(): { page: AppPage; authMode?: 'login' | 'register' }
     if (m === 'register' || m === 'login') {
       mode = m;
     }
+    const dest = params.get('destination') as DestinationId | null;
+    if (dest && (DESTINATION_ORDER as readonly string[]).includes(dest)) {
+      activeAdventureDestination = dest;
+    }
   }
 
   switch (route) {
@@ -221,6 +232,10 @@ function parseRouteFromUrl(): { page: AppPage; authMode?: 'login' | 'register' }
     case 'books':
     case 'shelf':
       return { page: 'stories' };
+    case 'adventure':
+    case 'adventures':
+    case 'my-adventure':
+      return { page: 'adventure' };
     case 'profiles':
       return { page: 'profiles' };
     case 'parent':
@@ -243,6 +258,7 @@ function updateDocumentTitle(page: AppPage): void {
     progress: 'Reading Fluency & Progress — DyslexiMate',
     resources: 'Stories & Learning Resources — DyslexiMate',
     stories: 'Story Shelf & Comprehension — DyslexiMate',
+    adventure: 'My Adventure & Game Realms — DyslexiMate',
     profiles: 'Choose Learner Profile — DyslexiMate',
     parent: 'Parent Dashboard & Family Learning — DyslexiMate',
   };
@@ -263,6 +279,7 @@ function navigateTo(
   }
   activePage = page;
   updateDocumentTitle(page);
+  soundService.pageTransition(activeChild?.preferences?.soundEffects !== false);
 
   // Close any open modal dialogs when moving across layers
   closeModal();
@@ -341,6 +358,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
             <span class="indicator-dot" aria-hidden="true"></span>
             <span class="dyslexia-label">Aa</span>
           </button>
+          <button type="button" class="sound-toggle-btn ${soundService.isEnabled() ? 'active' : ''}" data-action="toggle-sound-effects" title="${soundService.isEnabled() ? 'Sound Effects: ON (Click to Mute)' : 'Sound Effects: MUTED (Click to Enable)'}" aria-label="${soundService.isEnabled() ? 'Mute Sound Effects' : 'Enable Sound Effects'}">
+            <span class="indicator-dot" aria-hidden="true"></span>
+            <span class="sound-icon" aria-hidden="true">${soundService.isEnabled() ? '🔊' : '🔇'}</span>
+          </button>
           
           ${isDemoSignedIn ? `
             <a href="#/parent" class="btn btn-outline btn-sm" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
@@ -376,6 +397,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
           <button type="button" class="dyslexia-toggle-btn ${dyslexiaMode ? 'active' : ''}" data-action="toggle-dyslexia-font" title="Toggle Dyslexia-Friendly Font (Aa)" aria-label="Toggle Dyslexia Font (Aa)">
             <span class="indicator-dot" aria-hidden="true"></span>
             <span class="dyslexia-label">Aa</span>
+          </button>
+          <button type="button" class="sound-toggle-btn ${soundService.isEnabled() ? 'active' : ''}" data-action="toggle-sound-effects" title="${soundService.isEnabled() ? 'Sound Effects: ON (Click to Mute)' : 'Sound Effects: MUTED (Click to Enable)'}" aria-label="${soundService.isEnabled() ? 'Mute Sound Effects' : 'Enable Sound Effects'}">
+            <span class="indicator-dot" aria-hidden="true"></span>
+            <span class="sound-icon" aria-hidden="true">${soundService.isEnabled() ? '🔊' : '🔇'}</span>
           </button>
           ${isDemoSignedIn ? `
             <a href="#/parent" class="btn btn-primary btn-sm" data-action="navigate-parent" style="text-decoration: none;">
@@ -841,30 +866,30 @@ function renderAuth(): void {
             <span class="badge badge-primary">Parent Portal</span>
           </div>
 
-          <h2>${registering ? 'Create your parent account' : 'Welcome back'}</h2>
-          <p class="muted">${registering ? 'Start a reading journey made just for your family.' : 'Sign in to review your learner’s progress and resume practice.'}</p>
+          <h2>${registering ? t('auth.register.title') : t('auth.login.title')}</h2>
+          <p class="muted">${registering ? t('auth.register.subtitle') : t('auth.login.subtitle')}</p>
           
           <form id="auth-form" class="form-stack">
-            ${registering ? `<label>Full name<input name="fullName" autocomplete="name" required minlength="2" placeholder="Your full name" /></label>` : ''}
-            <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="parent@example.com" /></label>
-            <label>Password<input name="password" type="password" autocomplete="${registering ? 'new-password' : 'current-password'}" required minlength="${registering ? '6' : '1'}" placeholder="${registering ? 'At least 6 characters' : 'Your password'}" /></label>
+            ${registering ? `<label>${t('auth.register.fullNameLabel')}<input name="fullName" autocomplete="name" required minlength="2" placeholder="${t('auth.register.fullNamePlaceholder')}" /></label>` : ''}
+            <label>${t('auth.login.emailLabel')}<input name="email" type="email" autocomplete="email" required placeholder="${t('auth.login.emailPlaceholder')}" /></label>
+            <label>${t('auth.login.passwordLabel')}<input name="password" type="password" autocomplete="${registering ? 'new-password' : 'current-password'}" required minlength="${registering ? '6' : '1'}" placeholder="${registering ? t('auth.register.passwordPlaceholder') : t('auth.login.passwordPlaceholder')}" /></label>
             ${registering ? `
-              <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="6" placeholder="Enter your password again" /></label>
-              <label class="check-row"><input name="acceptTerms" type="checkbox" required /><span>I agree to the terms and child privacy notice.</span></label>
+              <label>${t('auth.register.confirmPasswordLabel')}<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="6" placeholder="${t('auth.register.confirmPasswordPlaceholder')}" /></label>
+              <label class="check-row"><input name="acceptTerms" type="checkbox" required /><span>${t('auth.register.termsAgree')}</span></label>
             ` : ''}
             
             <button class="btn btn-primary btn-lg" style="width: 100%; margin-top: 8px;" type="submit">
-              ${registering ? 'Create Account' : 'Sign In to Learning Space'} <span aria-hidden="true">→</span>
+              ${registering ? t('auth.register.submitBtn') : t('auth.login.submitBtn')} <span aria-hidden="true">→</span>
             </button>
             <p id="auth-message" class="form-message" aria-live="polite"></p>
           </form>
 
-          ${!registering ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top: 8px;" data-action="reset-password">Forgot your password?</button>` : ''}
+          ${!registering ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top: 8px;" data-action="reset-password">${t('auth.login.forgotPasswordLink')}</button>` : ''}
           
           <p class="auth-switch" style="text-align: center; margin-top: 18px; font-size: 13px;">
-            ${registering ? 'Already have an account?' : 'New to DyslexiMate?'}
+            ${registering ? (t('auth.register.hasAccount') || 'Already have an account?') : (t('auth.login.noAccount') || 'New to DyslexiMate?')}
             <button type="button" class="btn btn-ghost btn-sm" style="color: var(--primary); font-weight: 800;" data-action="toggle-auth">
-              ${registering ? 'Sign in instead' : 'Create a free account'}
+              ${registering ? t('auth.login.title') : t('auth.register.title')}
             </button>
           </p>
         </div>
@@ -897,9 +922,9 @@ function renderProfiles(children: ChildProfile[], editing?: ChildProfile): void 
       </header>
 
       <section class="profile-intro">
-        <span class="badge badge-primary">FAMILY LEARNING SPACE</span>
-        <h1>${editing ? 'Update learner profile' : 'Who’s ready for a reading win?'}</h1>
-        <p class="muted">${editing ? 'Keep their reading journey up to date.' : 'Choose a learner to continue, or create a new profile for your family.'}</p>
+        <span class="badge badge-primary">${t('nav.learningSpace') || 'FAMILY LEARNING SPACE'}</span>
+        <h1>${editing ? t('childModal.editTitle') : t('profileSelect.whoLearning')}</h1>
+        <p class="muted">${editing ? t('childModal.editSubtitle') : t('profileSelect.welcomeMsg')}</p>
       </section>
 
       <div class="profile-grid">
@@ -910,19 +935,19 @@ function renderProfiles(children: ChildProfile[], editing?: ChildProfile): void 
               <strong>${escapeHtml(child.name)}</strong>
               <small>${escapeHtml(child.grade)} · ${escapeHtml(child.preferredLanguage)}</small>
               <span style="display: inline-block; margin-top: 12px; color: var(--primary); font-weight: 800; font-size: 13px;">
-                Open Learning Space →
+                ${t('profileSelect.startReadingBtn')} →
               </span>
             </button>
             <div class="profile-card-actions">
-              <button type="button" class="mini-button" data-action="edit-child" data-id="${escapeHtml(child.id)}">Edit</button>
-              <button type="button" class="mini-button mini-danger" data-action="delete-child" data-id="${escapeHtml(child.id)}">Remove</button>
+              <button type="button" class="mini-button" data-action="edit-child" data-id="${escapeHtml(child.id)}">${t('common.edit')}</button>
+              <button type="button" class="mini-button mini-danger" data-action="delete-child" data-id="${escapeHtml(child.id)}">${t('common.delete')}</button>
             </div>
           </article>`).join('')}
 
         <button class="profile-card add-profile" type="button" data-action="add-child">
           <span class="add-icon">＋</span>
-          <strong>Add a learner</strong>
-          <small>Create a personalized profile</small>
+          <strong>${t('profileSelect.addChildBtn')}</strong>
+          <small>${t('childModal.addSub') || 'Create a personalized profile'}</small>
         </button>
       </div>
 
@@ -1009,9 +1034,9 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
             </h2>
             <p style="font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5;">
               ${hasPin
-                ? `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Enter your 4-digit PIN to access the Parent Dashboard.`
-                : `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Please create a 4-digit PIN to protect parent settings.`
-              }
+      ? `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Enter your 4-digit PIN to access the Parent Dashboard.`
+      : `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Please create a 4-digit PIN to protect parent settings.`
+    }
             </p>
           </div>
 
@@ -1135,12 +1160,14 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
   let path = null;
   let summary = null;
   let chartSummary: ReadingChartSummary | null = null;
+  let childAdventureSettings: Record<DestinationId, DestinationSetting> | null = null;
 
   if (selectedChild) {
-    [attempts, path, chartSummary] = await Promise.all([
+    [attempts, path, chartSummary, childAdventureSettings] = await Promise.all([
       learning.getChildAttempts(selectedChild.id),
       learning.getOrGeneratePath(selectedChild),
       charts.getChartSummary(selectedChild.id, 'all'),
+      adventure.getChildSettings(selectedChild.id),
     ]);
     summary = activityTracker.getSummary(selectedChild.id, selectedChild.name, parentTelemetryPeriod);
   }
@@ -1221,22 +1248,29 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
           </a>
           <span class="badge badge-primary">PARENT &amp; GUARDIAN PORTAL 🛡️</span>
           ${isLive
-            ? '<span class="badge badge-outline" style="border-color: #86efac; color: #166534; background: #f0fdf4;">🟢 Supabase PostgreSQL &amp; RLS Active</span>'
-            : '<span class="badge badge-outline" style="border-color: #fde047; color: #854d0e; background: #fefce8;">⚡ Local Sandbox</span>'}
+      ? '<span class="badge badge-outline" style="border-color: #86efac; color: #166534; background: #f0fdf4;">🟢 Supabase PostgreSQL &amp; RLS Active</span>'
+      : '<span class="badge badge-outline" style="border-color: #fde047; color: #854d0e; background: #fefce8;">⚡ Local Sandbox</span>'}
         </div>
 
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <select class="parent-lang-select" style="padding: 6px 10px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700; font-size: 13px; background: #ffffff;" aria-label="Interface Language">
+            ${SUPPORTED_LANGUAGES.map(meta => `
+              <option value="${meta.code}" ${meta.code === i18n.getCurrentLanguage() ? 'selected' : ''}>
+                ${meta.flag} ${meta.nativeName} (${meta.englishName})
+              </option>
+            `).join('')}
+          </select>
           <a href="#/landing" class="btn btn-outline btn-sm" data-action="open-website" style="text-decoration: none;">
-            🌐 View Website
+            🌐 ${t('nav.backToWebsite') || 'View Website'}
           </a>
           <a href="#/profiles" class="btn btn-primary btn-sm" data-action="profiles" style="text-decoration: none;">
-            👧🏽 Learner Profiles (${children.length}) →
+            👧🏽 ${t('profileSelect.title') || 'Learner Profiles'} (${children.length}) →
           </a>
           <button type="button" class="btn btn-outline btn-sm" data-action="lock-parent-portal" title="Lock the parent dashboard">
-            🔒 Lock Portal
+            🔒 ${t('parent.securityPinTitle') || 'Lock Portal'}
           </button>
           <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color: #dc2626;">
-            Sign Out
+            ${t('parent.logoutBtn') || 'Sign Out'}
           </button>
         </div>
       </header>
@@ -1246,17 +1280,17 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
         <section style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
           <div>
             <span style="font-size: 12px; font-weight: 800; color: var(--primary); letter-spacing: 0.5px; text-transform: uppercase;">
-              FAMILY LEARNING MANAGEMENT
+              ${t('nav.learningSpace') || 'FAMILY LEARNING MANAGEMENT'}
             </span>
             <h1 style="font-family: var(--font-heading); font-size: 28px; font-weight: 900; margin: 4px 0 6px;">
-              Welcome, ${escapeHtml(user.fullName)}
+              ${t('home.welcomeBack', { name: escapeHtml(user.fullName) })}
             </h1>
             <p style="font-size: 14px; color: var(--text-muted); margin: 0;">
-              Review your children’s reading practice records, track progress telemetry, and manage your account credentials.
+              ${t('parent.hubSubtitle')}
             </p>
           </div>
           <button type="button" class="btn btn-primary btn-sm" data-action="add-child">
-            ＋ Add Another Child
+            ＋ ${t('parent.addChildBtn')}
           </button>
         </section>
 
@@ -1271,7 +1305,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             aria-selected="${parentActiveTab === 'overview'}"
             style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
           >
-            👥 Family Overview &amp; Children
+            👥 ${t('parent.linkedProfiles') || 'Family Overview & Children'}
           </button>
           <button
             type="button"
@@ -1282,7 +1316,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             aria-selected="${parentActiveTab === 'child_records'}"
             style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
           >
-            📊 Detailed Learning Records
+            📊 ${t('parent.activityUsage') || 'Detailed Learning Records'}
           </button>
           <button
             type="button"
@@ -1293,17 +1327,28 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             aria-selected="${parentActiveTab === 'settings'}"
             style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
           >
-            ⚙️ Account &amp; Security Settings
+            ⚙️ ${t('parent.securityPinTitle') || 'Account & Security Settings'}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm ${parentActiveTab === 'adventure_settings' ? 'btn-primary' : 'btn-ghost'}"
+            data-action="parent-tab"
+            data-tab="adventure_settings"
+            role="tab"
+            aria-selected="${parentActiveTab === 'adventure_settings'}"
+            style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; font-weight: 800; padding: 10px 18px;"
+          >
+            🧭 ${t('adventure.title') || 'Adventure Settings'}
           </button>
         </nav>
 
         <!-- TAB 1: OVERVIEW & CHILDREN LIST -->
         ${parentActiveTab === 'overview' ? `
           <section class="stats-grid" style="margin-bottom: 28px;">
-            ${statCard('👥', 'Linked learners', children.length, 'Registered children')}
-            ${statCard('⏱', 'Combined practice', `${totalPracticeMinutes} min`, 'Across all learning sessions')}
-            ${statCard('📖', 'Total words', totalWordsPracticed, 'Practiced and mastered')}
-            ${statCard('✦', 'Happy points', `${totalHappyPoints} ⭐`, 'Little wins celebrated')}
+            ${statCard('👥', t('parent.linkedChildrenTitle'), children.length, t('parent.linkedProfiles'))}
+            ${statCard('⏱', t('parent.totalPracticeTime'), `${totalPracticeMinutes} min`, t('home.statPracticeTimeFromLastWeek'))}
+            ${statCard('📖', t('parent.totalWordsPracticed'), totalWordsPracticed, t('home.statWordsLearnedNew'))}
+            ${statCard('✦', t('home.statHappyPoints'), `${totalHappyPoints} ⭐`, t('home.statHappyPointsBadgeSoon'))}
           </section>
 
           <section class="surface" style="padding: 24px; border-radius: var(--radius-lg); margin-bottom: 28px;">
@@ -1328,8 +1373,8 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             ` : `
               <div style="display: flex; flex-direction: column; gap: 14px;">
                 ${children.map(c => {
-                  const p = profiles.getChildProgress(c.id);
-                  return `
+        const p = profiles.getChildProgress(c.id);
+        return `
                     <article class="surface" style="background: var(--bg-surface-alt); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                       <div style="display: flex; align-items: center; gap: 14px; min-width: 240px;">
                         <span style="font-size: 38px; width: 56px; height: 56px; display: grid; place-items: center; background: #ffffff; border-radius: 14px; border: 1px solid var(--border-color);">
@@ -1367,7 +1412,7 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
                       </div>
                     </article>
                   `;
-                }).join('')}
+      }).join('')}
               </div>
             `}
           </section>
@@ -1753,8 +1798,8 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
                     </strong>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                       ${path.demonstratedSkills.length > 0
-                        ? path.demonstratedSkills.map(sid => `<span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
-                        : '<span style="font-size: 12px; color: var(--text-muted);">Practicing foundational skills.</span>'}
+          ? path.demonstratedSkills.map(sid => `<span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
+          : '<span style="font-size: 12px; color: var(--text-muted);">Practicing foundational skills.</span>'}
                     </div>
                   </div>
 
@@ -1764,8 +1809,8 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
                     </strong>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                       ${path.prioritySkills.length > 0
-                        ? path.prioritySkills.map(sid => `<span class="badge" style="background: #fef3c7; color: #92400e; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
-                        : '<span style="font-size: 12px; color: var(--text-muted);">No persistent struggle patterns observed.</span>'}
+          ? path.prioritySkills.map(sid => `<span class="badge" style="background: #fef3c7; color: #92400e; font-size: 11px;">${escapeHtml(getSkillDefinition(sid)?.name || sid)}</span>`).join('')
+          : '<span style="font-size: 12px; color: var(--text-muted);">No persistent struggle patterns observed.</span>'}
                     </div>
                   </div>
                 </div>
@@ -1865,6 +1910,53 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
               </div>
             </section>
 
+            <!-- Interface Audio & Sound Lab Card -->
+            <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
+              <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 4px;">
+                🎵 Interface Sound Effects (Sound Lab)
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px;">
+                Tactile micro-sounds designed for young readers. Master volume and sound preferences.
+              </p>
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <strong>Master Sound Effects</strong>
+                    <small style="display: block; color: var(--text-muted);">Subtle button, card, and celebration feedback</small>
+                  </div>
+                  <button
+                    type="button"
+                    class="sound-toggle-btn ${soundService.isEnabled() ? 'active' : ''}"
+                    data-action="toggle-sound-effects"
+                  >
+                    <span class="indicator-dot"></span>
+                    <span class="sound-icon">${soundService.isEnabled() ? '🔊 Enabled' : '🔇 Muted'}</span>
+                  </button>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                    <span>Volume</span>
+                    <span id="sound-vol-label">${Math.round(soundService.getVolume() * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="${Math.round(soundService.getVolume() * 100)}"
+                    data-action="change-sound-volume"
+                    style="width: 100%; accent-color: var(--primary);"
+                  />
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                  <button type="button" class="btn btn-outline btn-sm" data-action="test-sound" data-sound="pebble">Pebble</button>
+                  <button type="button" class="btn btn-outline btn-sm" data-action="test-sound" data-sound="pluck">Pluck</button>
+                  <button type="button" class="btn btn-outline btn-sm" data-action="test-sound" data-sound="bloom">Bloom</button>
+                  <button type="button" class="btn btn-outline btn-sm" data-action="test-sound" data-sound="confetti">Confetti</button>
+                  <button type="button" class="btn btn-outline btn-sm" data-action="test-sound" data-sound="treasure">Treasure</button>
+                </div>
+              </div>
+            </section>
+
             <!-- Change Password Form -->
             <section class="surface" style="padding: 22px; border-radius: var(--radius-lg);">
               <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 4px;">
@@ -1928,6 +2020,134 @@ async function renderParentDashboard(children: ChildProfile[], user: ParentUser)
             </section>
           </div>
         ` : ''}
+
+        <!-- TAB 4: ADVENTURE & GAME ACCESS SETTINGS -->
+        ${parentActiveTab === 'adventure_settings' ? `
+          ${!selectedChild ? `
+            <div class="surface" style="text-align: center; padding: 40px 20px; border-radius: var(--radius-lg);">
+              <span style="font-size: 40px;">🌱</span>
+              <p style="color: var(--text-muted); margin-top: 8px;">No child profile selected. Add a child profile first to customize adventure settings.</p>
+            </div>
+          ` : `
+            <div style="display: grid; gap: 24px;">
+              <!-- Child Selector & Points Summary -->
+              <div class="surface" style="padding: 20px 24px; border-radius: var(--radius-lg); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                  <span class="profile-avatar" style="width: 48px; height: 48px; font-size: 24px; border-radius: 12px; margin: 0;">
+                    ${escapeHtml(selectedChild.avatar)}
+                  </span>
+                  <div>
+                    <div style="font-size: 12px; font-weight: 800; color: var(--primary); text-transform: uppercase;">Configuring Adventure For</div>
+                    <h2 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 2px 0;">
+                      ${escapeHtml(selectedChild.name)} (${escapeHtml(selectedChild.grade)})
+                    </h2>
+                  </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                  ${children.length > 1 ? `
+                    <label style="font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                      <span>Switch child:</span>
+                      <select id="parent-adventure-child-picker" style="padding: 6px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700;">
+                        ${children.map(c => `
+                          <option value="${c.id}" ${c.id === selectedChild.id ? 'selected' : ''}>
+                            ${escapeHtml(c.avatar)} ${escapeHtml(c.name)}
+                          </option>
+                        `).join('')}
+                      </select>
+                    </label>
+                  ` : ''}
+                  <span class="badge badge-warning" style="font-size: 14px; padding: 8px 14px;">
+                    ⭐ ${profiles.getChildProgress(selectedChild.id).happyPoints} Happy Points
+                  </span>
+                </div>
+              </div>
+
+              <!-- Adventure Settings Form -->
+              <section class="surface" style="padding: 24px; border-radius: var(--radius-lg);">
+                <div style="margin-bottom: 20px;">
+                  <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 6px;">
+                    🧭 Destination Game Access &amp; Happy Points Progression
+                  </h3>
+                  <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                    Control which learning destinations ${escapeHtml(selectedChild.name)} can access and adjust the cumulative Happy Points milestone required for each. Points are cumulative milestones—unlocking does not deduct points.
+                  </p>
+                </div>
+
+                <form id="adventure-settings-form" data-child-id="${selectedChild.id}" class="form-stack">
+                  <div style="display: grid; gap: 16px;">
+                    ${DESTINATION_ORDER.map(destId => {
+            const def = ADVENTURE_DESTINATIONS[destId];
+            const setting = (childAdventureSettings && childAdventureSettings[destId]) || DEFAULT_DESTINATION_SETTINGS[destId];
+            const childPoints = profiles.getChildProgress(selectedChild.id).happyPoints;
+            const isUnlocked = setting.enabled && childPoints >= setting.requiredPoints;
+            const isDisabled = !setting.enabled;
+
+            return `
+                        <article class="adventure-dest-config-card" style="border: 1.5px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; background: #fafafa; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                          <div style="display: flex; align-items: center; gap: 16px; min-width: 260px; flex: 1;">
+                            <div style="width: 48px; height: 48px; border-radius: 12px; background: ${def.accentBg}; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 1px solid var(--border-color);">
+                              ${def.icon}
+                            </div>
+                            <div>
+                              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <strong style="font-size: 16px;">${escapeHtml(def.name)}</strong>
+                                ${isDisabled
+                ? '<span class="badge" style="background: #fee2e2; color: #991b1b;">⛔ Disabled by Parent</span>'
+                : isUnlocked
+                  ? '<span class="badge badge-success" style="background: #dcfce7; color: #166534;">✨ Unlocked</span>'
+                  : `<span class="badge badge-warning" style="background: #fef3c7; color: #92400e;">🔒 Locked (Needs ${setting.requiredPoints - childPoints} pts)</span>`
+              }
+                              </div>
+                              <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0;">
+                                ${escapeHtml(def.description)}
+                              </p>
+                              <small style="color: var(--text-subtle); display: block; margin-top: 4px;">
+                                Default milestone: ${def.defaultRequiredPoints} pts · Connected activities: ${def.activityIds.length}
+                              </small>
+                            </div>
+                          </div>
+
+                          <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; cursor: pointer; user-select: none;">
+                              <input
+                                type="checkbox"
+                                name="${destId}_enabled"
+                                ${setting.enabled ? 'checked' : ''}
+                                style="width: 18px; height: 18px; accent-color: var(--primary);"
+                              />
+                              <span>Enabled</span>
+                            </label>
+
+                            <label style="display: grid; gap: 4px; font-size: 12px; font-weight: 700;">
+                              <span>Required Happy Points</span>
+                              <input
+                                type="number"
+                                name="${destId}_points"
+                                min="0"
+                                step="1"
+                                required
+                                value="${setting.requiredPoints}"
+                                style="width: 120px; padding: 6px 10px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 800;"
+                              />
+                            </label>
+                          </div>
+                        </article>
+                      `;
+          }).join('')}
+                  </div>
+
+                  <div style="margin-top: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                    <button type="submit" class="btn btn-primary" id="save-adventure-settings-btn" style="padding: 10px 24px; font-weight: 800;">
+                      💾 Save Adventure Settings
+                    </button>
+                  </div>
+                  <div id="adventure-settings-message" class="form-message" aria-live="polite" style="margin-top: 14px; font-size: 14px; font-weight: 700;"></div>
+                </form>
+              </section>
+            </div>
+          `}
+        ` : ''}
       </div>
 
       <div id="modal-root"></div>
@@ -1943,11 +2163,12 @@ function renderShell(userName: string): string {
   const child = activeChild!;
   const learnerLanguages = getLearnerLanguages(child);
   const nav = [
-    ['home', '⌂', 'Overview'],
-    ['practice', '✳', 'Practice'],
-    ['stories', '📖', 'Story Shelf'],
-    ['progress', '↗', 'Progress'],
-    ['resources', '⌕', 'Resources'],
+    ['home', '⌂', t('nav.myHome')],
+    ['practice', '✳', t('nav.practice')],
+    ['stories', '📖', t('nav.storyShelf')],
+    ['adventure', '🧭', t('nav.myAdventure') || 'My Adventure'],
+    ['progress', '↗', t('nav.myProgress')],
+    ['resources', '⌕', t('nav.resourceFinder')],
   ];
 
   return `
@@ -1958,11 +2179,11 @@ function renderShell(userName: string): string {
         </a>
 
         <a href="#/landing" class="btn btn-outline btn-sm" data-action="open-website" style="margin-bottom: 12px; width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          🌐 Back to Website
+          🌐 ${t('nav.backToWebsite') || 'Back to Website'}
         </a>
 
         <span style="font-size: 11px; font-weight: 800; color: var(--text-subtle); letter-spacing: 1px; text-transform: uppercase;">
-          LEARNING SPACE
+          ${t('nav.learningSpace') || 'LEARNING SPACE'}
         </span>
         
         <nav class="side-nav" aria-label="Main App Navigation">
@@ -1976,10 +2197,10 @@ function renderShell(userName: string): string {
 
         <div class="sidebar-tip">
           <span style="font-size: 24px;">🌱</span>
-          <strong>Every little step counts.</strong>
-          <p>10 minutes of daily playful reading can make a massive difference in fluency.</p>
+          <strong>${t('nav.tipTitle') || 'Every little step counts.'}</strong>
+          <p>${t('nav.tipDesc') || '10 minutes of daily playful reading can make a massive difference in fluency.'}</p>
           <a href="#/stories" class="btn btn-warm btn-sm" style="width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center;" data-action="navigate-stories">
-            Find a Story
+            ${t('nav.findStory') || 'Find a Story'}
           </a>
         </div>
 
@@ -1998,7 +2219,7 @@ function renderShell(userName: string): string {
       <main class="main-content">
         <header class="topbar">
           <div>
-            <span class="breadcrumb">Learning space <span>›</span> <strong>${escapeHtml(activePage === 'home' ? 'Overview' : activePage[0]!.toUpperCase() + activePage.slice(1))}</strong></span>
+            <span class="breadcrumb">${t('nav.learningSpace') || 'Learning space'} <span>›</span> <strong>${escapeHtml(activePage === 'home' ? t('nav.myHome') : activePage[0]!.toUpperCase() + activePage.slice(1))}</strong></span>
             <h1 class="page-title">${escapeHtml(pageTitle())}</h1>
           </div>
           <div class="topbar-controls">
@@ -2018,9 +2239,11 @@ function renderShell(userName: string): string {
                 <span class="custom-lang-chevron" aria-hidden="true">▾</span>
               </button>
               <div class="custom-lang-menu" role="listbox" aria-label="Learner languages">
-                <div class="custom-lang-menu-header">My Languages (${learnerLanguages.length})</div>
+                <div class="custom-lang-menu-header">${t('childModal.langLabel') || 'My Languages'} (${learnerLanguages.length})</div>
                 ${learnerLanguages.map(lang => {
     const isSelected = lang === child.preferredLanguage;
+    const langMeta = SUPPORTED_LANGUAGES.find(m => m.supportedLanguageName === lang);
+    const nativeText = langMeta ? `${langMeta.nativeName} (${langMeta.englishName})` : lang;
     return `
                     <button
                       type="button"
@@ -2032,7 +2255,7 @@ function renderShell(userName: string): string {
                     >
                       <span class="custom-lang-option-text">
                         <span>${languageFlags[lang] || '🌐'}</span>
-                        <span>${escapeHtml(lang)}</span>
+                        <span>${escapeHtml(nativeText)}</span>
                       </span>
                       ${isSelected ? '<span class="custom-lang-checkmark" aria-hidden="true">✓</span>' : ''}
                     </button>
@@ -2047,17 +2270,29 @@ function renderShell(userName: string): string {
               <span class="dyslexia-label">Aa</span>
             </button>
 
+            <!-- Sound Effects Toggle Button -->
+            <button
+              type="button"
+              class="sound-toggle-btn ${soundService.isEnabled() ? 'active' : ''}"
+              data-action="toggle-sound-effects"
+              title="${soundService.isEnabled() ? 'Sound Effects: ON (Click to Mute)' : 'Sound Effects: MUTED (Click to Enable)'}"
+              aria-label="${soundService.isEnabled() ? 'Mute Sound Effects' : 'Enable Sound Effects'}"
+            >
+              <span class="indicator-dot" aria-hidden="true"></span>
+              <span class="sound-icon" aria-hidden="true">${soundService.isEnabled() ? '🔊' : '🔇'}</span>
+            </button>
+
             <span class="badge badge-outline today-badge">
               ${new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
             <a href="#/parent" class="btn btn-outline btn-sm user-settings-chip" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;" title="Open Parent Dashboard for ${escapeHtml(userName)}">
-              <span>🛡️</span> <span>Parent Dashboard</span>
+              <span>🛡️</span> <span>${t('profileSelect.parentDash') || 'Parent Dashboard'}</span>
             </a>
           </div>
         </header>
 
         <div id="page-content" aria-live="polite">
-          <div class="loading-state" style="padding: 40px; text-align: center;">Preparing your learning space…</div>
+          <div class="loading-state" style="padding: 40px; text-align: center;">${t('common.loading')}</div>
         </div>
         ${rightsFooter()}
       </main>
@@ -2066,11 +2301,12 @@ function renderShell(userName: string): string {
 }
 
 function pageTitle(): string {
-  if (activePage === 'practice') return 'Choose a gentle adventure';
-  if (activePage === 'stories') return 'Story Shelf & Reading Adventures';
-  if (activePage === 'progress') return 'Look how far you’ve come';
-  if (activePage === 'resources') return 'Stories and learning ideas';
-  return `Good things grow, ${activeChild?.name || 'reader'}!`;
+  if (activePage === 'practice') return t('practice.heading');
+  if (activePage === 'stories') return t('stories.heading');
+  if (activePage === 'adventure') return t('adventure.title') || 'My Adventure & Game Realms';
+  if (activePage === 'progress') return t('progress.heading');
+  if (activePage === 'resources') return t('resources.heading') || t('resources.title');
+  return t('home.heroGreeting', { name: activeChild?.name || 'reader' });
 }
 
 function statCard(icon: string, label: string, value: string | number, foot: string): string {
@@ -2108,29 +2344,29 @@ async function homePage(): Promise<string> {
   return `
     <section class="welcome-banner">
       <div class="welcome-copy">
-        <span class="badge badge-warm" style="margin-bottom: 8px;">YOUR NEXT LITTLE WIN</span>
-        <h2>Ready to grow, ${escapeHtml(child.name)}?</h2>
-        <p>${escapeHtml(rec?.reason || 'Pick a friendly activity and learn at your own pace.')}</p>
+        <span class="badge badge-warm" style="margin-bottom: 8px;">${t('home.madeForYouTag')}</span>
+        <h2>${t('home.heroGreeting', { name: escapeHtml(child.name) })}</h2>
+        <p>${escapeHtml(rec?.reason || t('home.heroSubtitle'))}</p>
         <button class="btn btn-warm btn-lg" type="button" data-action="${rec ? 'start-recommendation' : 'navigate'}" ${rec ? `data-skill="${escapeHtml(rec.targetSkillId)}" data-title="${escapeHtml(rec.title)}" data-difficulty="${rec.difficulty}"` : 'data-page="practice"'}>
-          Start Practice Adventure <span>→</span>
+          ${t('home.startChallengeBtn')} <span>→</span>
         </button>
       </div>
     </section>
 
     <section class="stats-grid">
-      ${statCard('⏱', 'Practice minutes', progress.practiceMinutes, 'Time spent learning')}
-      ${statCard('✦', 'Happy points', progress.happyPoints, 'Little wins add up')}
-      ${statCard('📖', 'Words learned', progress.wordsLearned, 'Words on your journey')}
-      ${statCard('↗', 'Recent accuracy', actualAccuracy === null ? '—' : `${actualAccuracy}%`, chart.isEmpty ? 'Complete an activity to begin' : 'From recorded practice')}
+      ${statCard('⏱', t('home.statPracticeTime'), progress.practiceMinutes, t('home.statPracticeTimeFromLastWeek'))}
+      ${statCard('✦', t('home.statHappyPoints'), progress.happyPoints, t('home.statHappyPointsBadgeSoon'))}
+      ${statCard('📖', t('home.statWordsLearned'), progress.wordsLearned, t('home.statWordsLearnedNew'))}
+      ${statCard('↗', t('progress.statAccuracy'), actualAccuracy === null ? '—' : `${actualAccuracy}%`, chart.isEmpty ? t('home.statFluencyGrowing') : t('home.statFluency'))}
     </section>
 
     <div class="dashboard-grid">
       <section class="surface">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <span class="badge badge-primary">WEEKLY METRICS</span>
-            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">Reading confidence</h3>
-            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Accuracy from completed activities this week.</p>
+            <span class="badge badge-primary">${t('home.snapshotTitle')}</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.statFluency')}</h3>
+            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">${t('home.snapshotSubtitle')}</p>
           </div>
           <span class="badge badge-outline">${chart.totalSessions} ${chart.totalSessions === 1 ? 'session' : 'sessions'}</span>
         </div>
@@ -2140,19 +2376,19 @@ async function homePage(): Promise<string> {
       <section class="surface">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <span class="badge badge-warm">RECOMMENDED NEXT</span>
-            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">Picked for ${escapeHtml(child.name)}</h3>
+            <span class="badge badge-warm">${t('home.madeForYouTag')}</span>
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.recommendedTitle')}</h3>
           </div>
           <span style="font-size: 24px;">${escapeHtml(rec?.actionIcon || '🌱')}</span>
         </div>
-        <h4 style="font-family: var(--font-heading); font-size: 17px; margin: 8px 0 4px;">${escapeHtml(rec?.title || 'Choose a first activity')}</h4>
-        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px;">${escapeHtml(rec?.description || 'Start with a short, friendly practice activity.')}</p>
+        <h4 style="font-family: var(--font-heading); font-size: 17px; margin: 8px 0 4px;">${escapeHtml(rec?.title || t('home.wordsToPracticeTitle'))}</h4>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px;">${escapeHtml(rec?.description || t('home.wordsToPracticeSubtitle'))}</p>
         
         ${rec ? `
           <button class="btn btn-primary btn-lg" style="width: 100%;" type="button" data-action="start-recommendation" data-skill="${escapeHtml(rec.targetSkillId)}" data-title="${escapeHtml(rec.title)}" data-difficulty="${rec.difficulty}">
-            Try this activity <span>→</span>
+            ${t('practice.tryItBtn')} <span>→</span>
           </button>
-        ` : button('Browse activities', 'navigate-practice', 'btn btn-primary btn-lg')}
+        ` : button(t('home.exploreStoriesBtn'), 'navigate-practice', 'btn btn-primary btn-lg')}
       </section>
     </div>
 
@@ -2160,7 +2396,7 @@ async function homePage(): Promise<string> {
     <section class="surface" style="margin-top: 24px; background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%); border: 1.5px solid #bbf7d0; padding: 22px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 260px;">
-          <span class="badge badge-primary">STORY OF THE DAY 📖</span>
+          <span class="badge badge-primary">${t('stories.storyOfDayTag')} 📖</span>
           <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 900; margin: 8px 0 4px;">
             ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).emoji)} ${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).title)}
           </h3>
@@ -2169,10 +2405,10 @@ async function homePage(): Promise<string> {
           </p>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <button type="button" class="btn btn-primary btn-sm" data-action="open-story" data-id="${escapeHtml(storyShelf.getStoryOfTheDay(child.preferredLanguage).id)}">
-              Read Story &amp; Quiz <span>→</span>
+              ${t('stories.readStoryBtn')} <span>→</span>
             </button>
             <a href="#/stories" class="btn btn-ghost btn-sm" data-action="navigate-stories" style="text-decoration: none;">
-              Browse all stories (${storyShelf.getStories(child.preferredLanguage).length})
+              ${t('stories.moreStories')} (${storyShelf.getStories(child.preferredLanguage).length})
             </a>
           </div>
         </div>
@@ -2195,17 +2431,17 @@ function storiesPage(): string {
     <section style="margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
         <div>
-          <span class="badge badge-primary">READ, ENJOY, UNDERSTAND</span>
+          <span class="badge badge-primary">${t('stories.shelfTitle') || 'READ, ENJOY, UNDERSTAND'}</span>
           <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">
-            Story Shelf &amp; Comprehension
+            ${t('stories.heading')}
           </h2>
           <p style="color: var(--text-muted); font-size: 14px; margin: 0;">
-            Illustrated reading passages with read-aloud voice support, dyslexia-friendly spacing, and gentle comprehension quizzes.
+            ${t('stories.subtitle')}
           </p>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
           <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
-            Language:
+            ${t('childModal.langLabel')}:
             <select class="story-lang-select" style="padding: 6px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); font-weight: 700;">
               ${supportedLangs.map((l: SupportedLanguage) => `<option value="${l}" ${l === currentLang ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
@@ -2221,7 +2457,7 @@ function storiesPage(): string {
     <section class="surface" style="margin-bottom: 28px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #bfdbfe; padding: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 260px;">
-          <span class="badge badge-warm">FEATURED PASSAGE</span>
+          <span class="badge badge-warm">${t('stories.storyOfDayTag')}</span>
           <h3 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 8px 0 6px;">
             ${escapeHtml(storyOfTheDay.emoji)} ${escapeHtml(storyOfTheDay.title)}
           </h3>
@@ -2230,7 +2466,7 @@ function storiesPage(): string {
           </p>
           <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
             <button type="button" class="btn btn-primary" data-action="open-story" data-id="${escapeHtml(storyOfTheDay.id)}">
-              Read This Story <span>→</span>
+              ${t('stories.readStoryBtn')} <span>→</span>
             </button>
             <span style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
               ⏱️ ${storyOfTheDay.estimatedMinutes} min · Level: ${escapeHtml(storyOfTheDay.readingLevel)}
@@ -2246,7 +2482,7 @@ function storiesPage(): string {
     <!-- Grid of All Stories in Selected Language -->
     <section>
       <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 16px;">
-        All Stories in ${escapeHtml(currentLang)} (${allStories.length})
+        ${t('stories.moreStories')} (${allStories.length})
       </h3>
       <div class="curriculum-grid">
         ${allStories.map((s, idx) => `
@@ -2260,7 +2496,7 @@ function storiesPage(): string {
             <div class="curriculum-meta-row">
               <span>⏱ ${s.estimatedMinutes} min · ${s.comprehensionQuestions.length} questions</span>
               <button type="button" class="btn btn-outline btn-sm" data-action="open-story" data-id="${escapeHtml(s.id)}">
-                Read <span>→</span>
+                ${t('stories.readStory')} <span>→</span>
               </button>
             </div>
           </article>
@@ -2315,7 +2551,7 @@ function renderStoryReaderModal(): void {
 
         <div class="story-controls-bar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px; background: var(--bg-surface-alt); border-radius: var(--radius-md);">
           <button type="button" class="btn btn-outline btn-sm" data-action="speak-story">
-            🔊 <span id="story-tts-label">Read aloud</span>
+            🔊 <span id="story-tts-label">${t('stories.listenBtn')}</span>
           </button>
           <div style="display: flex; align-items: center; gap: 4px;">
             <span style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">Text size:</span>
@@ -2324,7 +2560,7 @@ function renderStoryReaderModal(): void {
           </div>
           <span style="flex: 1;"></span>
           <button type="button" class="btn btn-primary btn-sm" data-action="finish-story-reading">
-            Finish Reading ✓
+            ${t('stories.finishReadingBtn')} ✓
           </button>
         </div>
 
@@ -2346,8 +2582,8 @@ function renderStoryReaderModal(): void {
 
             <div style="display: flex; flex-direction: column; gap: 14px;">
               ${story.comprehensionQuestions.map((q, qIdx) => {
-                const isAnswered = storyAnsweredQids.has(q.id);
-                return `
+    const isAnswered = storyAnsweredQids.has(q.id);
+    return `
                   <article class="surface" style="background: var(--bg-surface-alt); padding: 14px;" data-qid="${escapeHtml(q.id)}">
                     <p style="font-weight: 800; font-size: 14px; margin: 0 0 10px;">${qIdx + 1}. ${escapeHtml(q.question)}</p>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
@@ -2368,7 +2604,7 @@ function renderStoryReaderModal(): void {
                     <div id="feedback_${escapeHtml(q.id)}" class="comp-feedback-msg" style="margin-top: 8px; font-size: 13px; font-weight: 700; display: none;"></div>
                   </article>
                 `;
-              }).join('')}
+  }).join('')}
             </div>
           </section>
         ` : ''}
@@ -2380,9 +2616,9 @@ function practicePage(): string {
   const recs = new Map((learningPath?.recommendations || []).map(rec => [rec.targetSkillId, rec]));
   return `
     <section style="margin-bottom: 24px;">
-      <span class="badge badge-primary">PICK WHAT FEELS FUN</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">Every activity is a fresh chance to grow.</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Choose an activity. There’s no rush, no penalties, and you can always ask for a hint.</p>
+      <span class="badge badge-primary">${t('practice.dailyChallenge')}</span>
+      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('practice.heading')}</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('practice.subtitle')}</p>
     </section>
 
     <div class="curriculum-grid">
@@ -2399,12 +2635,421 @@ function practicePage(): string {
             <div class="curriculum-meta-row">
               <span>⏱ ${item.estimatedMinutes} min · ${escapeHtml(rec?.difficulty || item.difficulty)}</span>
               <button type="button" class="btn btn-outline btn-sm" data-action="start-catalog" data-skill="${escapeHtml(item.skillId)}" data-title="${escapeHtml(item.title)}" data-difficulty="${escapeHtml(rec?.difficulty || item.difficulty)}">
-                Try it <span>→</span>
+                ${t('practice.tryItBtn')} <span>→</span>
               </button>
             </div>
           </article>`;
   }).join('')}
     </div>`;
+}
+
+function renderMapNode(
+  x: number,
+  y: number,
+  destId: DestinationId,
+  status: 'unlocked' | 'locked' | 'disabled',
+  isSelected: boolean,
+  isHighest: boolean,
+  name: string,
+  icon: string,
+  requiredPoints: number
+): string {
+  const isUnlocked = status === 'unlocked';
+  const isDisabled = status === 'disabled';
+  const fillColor = isDisabled ? '#94a3b8' : isUnlocked ? '#10b981' : '#f59e0b';
+  const strokeColor = isSelected ? '#3b82f6' : isUnlocked ? '#059669' : '#d97706';
+  const strokeWidth = isSelected ? 4 : 2;
+
+  return `
+    <g class="adventure-map-node ${isSelected ? 'selected' : ''} ${status}" data-action="open-map-destination" data-dest="${destId}" style="cursor: pointer;" role="button" tabindex="0" aria-label="${escapeHtml(name)} (${requiredPoints} pts): ${status}">
+      <title>${escapeHtml(name)}: ${status} (${requiredPoints} Happy Points)</title>
+      <!-- Node Outer Glow / Highlight if Selected or Highest -->
+      ${isSelected ? `<circle cx="${x}" cy="${y}" r="36" fill="rgba(59, 130, 246, 0.2)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 2" />` : ''}
+      ${isHighest && isUnlocked ? `<circle cx="${x}" cy="${y}" r="32" fill="none" stroke="#10b981" stroke-width="2" opacity="0.6" class="map-pulse-ring" />` : ''}
+
+      <!-- Main Node Circle -->
+      <circle cx="${x}" cy="${y}" r="26" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />
+
+      <!-- Center Icon -->
+      <text x="${x}" y="${y + 7}" font-size="20" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
+        ${icon}
+      </text>
+
+      <!-- Status Badge Mini Icon (bottom right of node) -->
+      <circle cx="${x + 18}" cy="${y + 18}" r="10" fill="#ffffff" stroke="${strokeColor}" stroke-width="1.5" />
+      <text x="${x + 18}" y="${y + 22}" font-size="11" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
+        ${isDisabled ? '⛔' : isUnlocked ? '✓' : '🔒'}
+      </text>
+
+      <!-- Label Text Below Node -->
+      <rect x="${x - 65}" y="${y + 32}" width="130" height="24" rx="12" fill="#ffffff" stroke="${isSelected ? '#3b82f6' : '#e2e8f0'}" stroke-width="1.5" />
+      <text x="${x}" y="${y + 48}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="middle" dominant-baseline="middle" pointer-events="none">
+        ${escapeHtml(name)}
+      </text>
+    </g>
+  `;
+}
+
+async function adventurePage(): Promise<string> {
+  const child = activeChild!;
+  const state = await adventure.getAdventureState(child);
+  const selectedDestId = (DESTINATION_ORDER as readonly string[]).includes(activeAdventureDestination)
+    ? activeAdventureDestination
+    : 'phonics_garden';
+  const destStatus = state.destinations[selectedDestId] || state.destinations.phonics_garden;
+  const def = ADVENTURE_DESTINATIONS[selectedDestId] || ADVENTURE_DESTINATIONS.phonics_garden;
+
+  // Find the highest unlocked destination index for map marker
+  let highestUnlockedIndex = 0;
+  DESTINATION_ORDER.forEach((id, idx) => {
+    if (state.destinations[id]?.status === 'unlocked') {
+      highestUnlockedIndex = idx;
+    }
+  });
+
+  const nodeCoords: Record<DestinationId, { x: number; y: number }> = {
+    phonics_garden: { x: 80, y: 150 },
+    word_workshop: { x: 230, y: 70 },
+    reading_forest: { x: 400, y: 150 },
+    story_castle: { x: 570, y: 70 },
+    vocabulary_island: { x: 720, y: 140 },
+  };
+
+  return `
+    <div class="adventure-page-wrapper" style="display: grid; gap: 24px;">
+      <!-- Hero Banner -->
+      <section class="adventure-hero surface" style="padding: 24px 28px; border-radius: var(--radius-lg); background: linear-gradient(135deg, #f0fdf4 0%, #ede9fe 100%); border: 1.5px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge badge-primary">${t('adventure.realms') || '🧭 MY ADVENTURE REALMS'}</span>
+            <span class="badge badge-outline" style="background: #ffffff;">${escapeHtml(child.name)}’s ${t('adventure.journey') || 'Journey'}</span>
+          </div>
+          <h2 style="font-family: var(--font-heading); font-size: 28px; font-weight: 900; margin: 8px 0 6px;">
+            ${t('adventure.whereToGo') || 'Where will your reading adventure take you today?'}
+          </h2>
+          <p style="color: var(--text-muted); font-size: 14px; margin: 0; max-width: 600px;">
+            ${t('adventure.sub') || 'Journey through enchanted learning realms. Earn cumulative Happy Points by practicing daily to unlock new games, magical stories, and collectible badges!'}
+          </p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
+          <div class="badge badge-warning" style="font-size: 16px; padding: 10px 18px; font-weight: 900; box-shadow: var(--shadow-sm);">
+            ⭐ ${state.happyPoints} ${t('adventure.happyPoints') || 'Happy Points'}
+          </div>
+          <div style="font-size: 13px; font-weight: 800; color: #166534; background: #dcfce7; padding: 6px 14px; border-radius: 999px;">
+            🎉 ${state.unlockedCount} ${t('adventure.of') || 'of'} ${state.totalDestinations} ${t('adventure.unlocked') || 'Realms Unlocked'}
+          </div>
+        </div>
+      </section>
+
+      <!-- Mascot Reaction Card -->
+      <section class="adventure-mascot-card surface" style="padding: 16px 20px; border-radius: var(--radius-lg); display: flex; align-items: center; gap: 16px; background: #ffffff; border: 1.5px solid var(--border-color);">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--bg-surface-alt, #f1f5f9); display: flex; align-items: center; justify-content: center; font-size: 32px; border: 1px solid var(--border-color); flex-shrink: 0;">
+          ${escapeHtml(state.mascotReaction.mascot)}
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 11px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px;">
+            ${t('adventure.cheering') || 'Adventure Guide Cheering You On!'}
+          </div>
+          <p style="font-size: 14px; font-weight: 700; margin: 2px 0 0; color: var(--text-main);">
+            "${escapeHtml(state.mascotReaction.text)}"
+          </p>
+        </div>
+      </section>
+
+      <!-- Destination Picker Dropdown Bar -->
+      <section class="adventure-destination-picker-card surface" style="padding: 18px 24px; border-radius: var(--radius-lg); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 24px;">🎮</span>
+          <div>
+            <strong style="font-size: 16px;">${t('adventure.selectDestination') || 'Select Learning Destination'}</strong>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">${t('adventure.chooseRealm') || 'Choose a realm below or tap a landmark directly on the adventure map.'}</p>
+          </div>
+        </div>
+
+        <div style="min-width: 280px;">
+          <select id="adventure-destination-picker" class="adventure-select" style="width: 100%; padding: 10px 14px; border-radius: var(--radius-md); border: 2px solid var(--primary); font-weight: 800; font-size: 14px; background: #ffffff; cursor: pointer;" aria-label="${t('adventure.selectDestination') || 'Select Learning Destination'}">
+            ${DESTINATION_ORDER.map(id => {
+    const d = ADVENTURE_DESTINATIONS[id];
+    const st = state.destinations[id];
+    const isSel = id === selectedDestId;
+    const statusTag = st.status === 'disabled'
+      ? `(⛔ ${t('adventure.disabled') || 'Disabled by parent'})`
+      : st.status === 'unlocked'
+        ? `(✨ ${t('adventure.unlocked') || 'Unlocked'})`
+        : `(🔒 ${st.pointsRemaining} pts)`;
+    return `<option value="${id}" ${isSel ? 'selected' : ''}>${d.icon} ${escapeHtml(d.name)} ${statusTag}</option>`;
+  }).join('')}
+          </select>
+        </div>
+      </section>
+
+      <!-- Illustrated Adventure Map -->
+      <section class="adventure-map-box surface" style="padding: 24px; border-radius: var(--radius-lg); overflow-x: auto; background: #ffffff; border: 1.5px solid var(--border-color);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 0 0 2px;">
+              🗺️ ${t('adventure.mapTitle') || 'Enchanted Realm Map'}
+            </h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+              ${t('adventure.mapSubtitle') || 'Follow the winding path from Phonics Garden all the way to Vocabulary Island! Tap any landmark to inspect.'}
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; font-size: 12px; font-weight: 700;">
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #10b981;">●</span> ${t('adventure.unlocked') || 'Unlocked'}</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #f59e0b;">●</span> ${t('adventure.locked') || 'Locked'}</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #94a3b8;">●</span> ${t('adventure.disabled') || 'Disabled'}</span>
+          </div>
+        </div>
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #f59e0b;">●</span> Locked</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="color: #94a3b8;">●</span> Disabled</span>
+          </div>
+        </div>
+
+        <div style="min-width: 760px; max-width: 860px; margin: 0 auto; position: relative;">
+          <svg viewBox="0 0 800 240" style="width: 100%; height: auto; display: block;" aria-label="DyslexiMate Adventure Map">
+            <!-- Background Map Details -->
+            <defs>
+              <linearGradient id="mapPathGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#10b981" />
+                <stop offset="50%" stop-color="#3b82f6" />
+                <stop offset="100%" stop-color="#8b5cf6" />
+              </linearGradient>
+            </defs>
+
+            <!-- Curving Trail Base Path -->
+            <path
+              d="M 80 150 C 140 150, 170 70, 230 70 C 300 70, 330 150, 400 150 C 470 150, 500 70, 570 70 C 640 70, 670 140, 720 140"
+              fill="none"
+              stroke="#e2e8f0"
+              stroke-width="12"
+              stroke-linecap="round"
+            />
+            <!-- Curving Trail Dashes -->
+            <path
+              d="M 80 150 C 140 150, 170 70, 230 70 C 300 70, 330 150, 400 150 C 470 150, 500 70, 570 70 C 640 70, 670 140, 720 140"
+              fill="none"
+              stroke="#cbd5e1"
+              stroke-width="4"
+              stroke-dasharray="8 8"
+              stroke-linecap="round"
+            />
+
+            <!-- Destination Nodes -->
+            ${DESTINATION_ORDER.map((id, index) => {
+    const d = ADVENTURE_DESTINATIONS[id];
+    const st = state.destinations[id];
+    const coords = nodeCoords[id];
+    const isSel = id === selectedDestId;
+    const isHighest = index === highestUnlockedIndex;
+    return renderMapNode(
+      coords.x,
+      coords.y,
+      id,
+      st.status,
+      isSel,
+      isHighest,
+      d.name,
+      d.icon,
+      st.requiredPoints
+    );
+  }).join('')}
+          </svg>
+        </div>
+      </section>
+
+      <!-- Active Destination Card (Play activities or locked explanation) -->
+      <section class="adventure-dest-card surface" style="padding: 24px 28px; border-radius: var(--radius-lg); border: 2px solid ${def.themeColor}; background: #ffffff;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="width: 56px; height: 56px; border-radius: 16px; background: ${def.accentBg}; display: flex; align-items: center; justify-content: center; font-size: 32px; border: 2px solid ${def.themeColor};">
+              ${def.icon}
+            </div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <h3 style="font-family: var(--font-heading); font-size: 24px; font-weight: 900; margin: 0;">
+                  ${escapeHtml(def.name)}
+                </h3>
+                ${destStatus.status === 'disabled'
+      ? '<span class="badge" style="background: #fee2e2; color: #991b1b;">⛔ Destination Resting (Disabled by Parent)</span>'
+      : destStatus.status === 'unlocked'
+        ? '<span class="badge badge-success" style="background: #dcfce7; color: #166534;">✨ Unlocked &amp; Ready to Play</span>'
+        : `<span class="badge badge-warning" style="background: #fef3c7; color: #92400e;">🔒 Locked · Requires ${destStatus.requiredPoints} Happy Points</span>`
+    }
+              </div>
+              <p style="font-size: 14px; font-weight: 700; color: ${def.themeColor}; margin: 4px 0 0;">
+                ${escapeHtml(def.tagline)}
+              </p>
+            </div>
+          </div>
+
+          <div style="text-align: right;">
+            <div style="font-size: 12px; font-weight: 800; color: var(--text-subtle); text-transform: uppercase;">Milestone Requirement</div>
+            <div style="font-size: 18px; font-weight: 900; color: var(--text-main);">
+              ${destStatus.requiredPoints} Happy Points
+            </div>
+          </div>
+        </div>
+
+        <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 20px; line-height: 1.5;">
+          ${escapeHtml(def.description)}
+        </p>
+
+        <!-- Dynamic State Content -->
+        ${destStatus.status === 'disabled' ? `
+          <div style="background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: var(--radius-md); padding: 20px; text-align: center;">
+            <span style="font-size: 36px;">😴</span>
+            <h4 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 8px 0 4px; color: #9f1239;">
+              This realm is resting for now
+            </h4>
+            <p style="font-size: 13px; color: #881337; margin: 0; max-width: 500px; margin: 0 auto;">
+              Your parent or guardian has turned off access to ${escapeHtml(def.name)} in Adventure Settings. Ask them if you would like to explore this realm!
+            </p>
+          </div>
+        ` : destStatus.status === 'locked' ? `
+          <div style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: var(--radius-md); padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+              <span style="font-size: 14px; font-weight: 800; color: #92400e;">
+                🔒 Journey Progress to ${escapeHtml(def.name)}
+              </span>
+              <span style="font-size: 13px; font-weight: 800; color: #78350f;">
+                ${destStatus.currentPoints} / ${destStatus.requiredPoints} Happy Points (${destStatus.percentToUnlock}%)
+              </span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="adventure-progress-track" style="width: 100%; height: 16px; background: #fef3c7; border-radius: 999px; overflow: hidden; border: 1px solid #fde68a; margin-bottom: 12px;">
+              <div class="adventure-progress-fill" style="width: ${destStatus.percentToUnlock}%; height: 100%; background: linear-gradient(90deg, #f59e0b, #10b981); border-radius: 999px; transition: width 0.4s ease;"></div>
+            </div>
+
+            <p style="font-size: 13px; color: #92400e; margin: 0; font-weight: 700;">
+              ✨ You need <strong>${destStatus.pointsRemaining} more Happy Points</strong> to unlock this realm. Practice daily activities in open realms or read stories to earn points!
+            </p>
+          </div>
+        ` : `
+          <!-- UNLOCKED ACTIVITIES LIST -->
+          <div>
+            <div style="margin-bottom: 14px;">
+              <h4 style="font-family: var(--font-heading); font-size: 16px; font-weight: 900; margin: 0 0 2px;">
+                🎯 Available Activities in this Realm (${destStatus.activities.length})
+              </h4>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+                All activities in this realm are unlocked. Earn more points each time you complete a gentle session!
+              </p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+              ${destStatus.activities.map(act => `
+                <article class="curriculum-card tone-0" style="margin: 0; padding: 18px; display: flex; flex-direction: column; justify-content: space-between;">
+                  <div>
+                    <div class="card-top-row" style="margin-bottom: 8px;">
+                      <span class="curriculum-emoji">${escapeHtml(act.icon)}</span>
+                      <span class="badge badge-outline">${escapeHtml(act.tag)}</span>
+                    </div>
+                    <h4 style="font-family: var(--font-heading); font-size: 16px; font-weight: 800; margin: 0 0 6px;">
+                      ${escapeHtml(act.title)}
+                    </h4>
+                    <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.4;">
+                      ${escapeHtml(act.description)}
+                    </p>
+                  </div>
+                  <div class="curriculum-meta-row" style="margin-top: 8px;">
+                    <span style="font-size: 12px; font-weight: 700;">⏱ ${act.estimatedMinutes} min · ${escapeHtml(act.difficulty)}</span>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      data-action="play-adventure-activity"
+                      data-dest="${selectedDestId}"
+                      data-skill="${escapeHtml(act.skillId)}"
+                      data-title="${escapeHtml(act.title)}"
+                      data-difficulty="${escapeHtml(act.difficulty)}"
+                      style="font-weight: 800;"
+                    >
+                      ${t('adventure.playActivity') || 'Play Activity'} <span>→</span>
+                    </button>
+                  </div>
+                </article>
+              `).join('')}
+            </div>
+          </div>
+        `}
+      </section>
+
+      <!-- Daily Quests & Challenges -->
+      <section class="adventure-quests-section surface" style="padding: 24px; border-radius: var(--radius-lg); border: 1.5px solid var(--border-color); background: #ffffff;">
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge badge-primary">DAILY ADVENTURE GOALS</span>
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-subtle);">Refreshes every day</span>
+          </div>
+          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 4px 0 2px;">
+            🌟 ${t('adventure.dailyQuests') || 'Daily Quests & Reading Challenges'}
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+            Complete gentle daily goals to build confidence and gather bonus Happy Points!
+          </p>
+        </div>
+
+        <div class="adventure-quests-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+          ${state.dailyQuests.map(quest => {
+      const pct = Math.min(100, Math.round((quest.currentCount / quest.targetCount) * 100));
+      return `
+              <article class="adventure-quest-card" style="border: 1.5px solid ${quest.completed ? '#86efac' : 'var(--border-color)'}; background: ${quest.completed ? '#f0fdf4' : '#fafafa'}; border-radius: var(--radius-md); padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <span style="font-size: 26px;">${quest.icon}</span>
+                  <span class="badge ${quest.completed ? 'badge-success' : 'badge-outline'}" style="font-size: 11px;">
+                    ${quest.completed ? '✓ Completed!' : `+${quest.rewardPoints} ⭐`}
+                  </span>
+                </div>
+                <strong style="font-size: 14px; display: block; margin-bottom: 6px;">${escapeHtml(quest.title)}</strong>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+                  <span>Progress</span>
+                  <span>${quest.currentCount} / ${quest.targetCount}</span>
+                </div>
+                <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden;">
+                  <div style="width: ${pct}%; height: 100%; background: ${quest.completed ? '#10b981' : 'var(--primary)'}; border-radius: 999px;"></div>
+                </div>
+              </article>
+            `;
+    }).join('')}
+        </div>
+      </section>
+
+      <!-- Collectible Stickers & Badges Grid -->
+      <section class="adventure-stickers-section surface" style="padding: 24px; border-radius: var(--radius-lg); border: 1.5px solid var(--border-color); background: #ffffff;">
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge badge-primary">COLLECTOR’S ALBUM</span>
+            <span style="font-size: 12px; font-weight: 700; color: #166534;">
+              ${state.stickers.filter(s => s.earned).length} / ${state.stickers.length} Badges Earned
+            </span>
+          </div>
+          <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 900; margin: 4px 0 2px;">
+            🏅 ${t('adventure.stickers') || 'Collectible Stickers & Milestones'}
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+            Unlock new badges as your Happy Points grow and you explore new learning destinations.
+          </p>
+        </div>
+
+        <div class="adventure-stickers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px;">
+          ${state.stickers.map(sticker => `
+            <div class="adventure-sticker-item ${sticker.earned ? 'earned' : 'locked'}" style="border: 1.5px solid ${sticker.earned ? '#fde047' : '#e2e8f0'}; background: ${sticker.earned ? '#fffbeb' : '#f8fafc'}; border-radius: var(--radius-md); padding: 14px 10px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: ${sticker.earned ? '1' : '0.55'};">
+              <div style="font-size: 36px; margin-bottom: 6px; filter: ${sticker.earned ? 'drop-shadow(0 2px 4px rgba(245, 158, 11, 0.4))' : 'grayscale(100%)'};">
+                ${sticker.icon}
+              </div>
+              <strong style="font-size: 12px; line-height: 1.2; margin-bottom: 4px; color: var(--text-main);">
+                ${escapeHtml(sticker.name)}
+              </strong>
+              <small style="font-size: 10px; color: var(--text-muted); line-height: 1.2;">
+                ${sticker.earned ? '✨ Earned!' : `Needs ${sticker.unlockedAtPoints} ⭐`}
+              </small>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 async function progressPage(): Promise<string> {
@@ -2417,23 +3062,23 @@ async function progressPage(): Promise<string> {
 
   return `
     <section style="margin-bottom: 24px;">
-      <span class="badge badge-primary">REAL PRACTICE, REAL PROGRESS</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">Celebrate the steps you’ve taken.</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Your progress is built from completed activities, not made-up scores.</p>
+      <span class="badge badge-primary">${t('progress.heading')}</span>
+      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('progress.subtitle')}</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('progress.sub') || 'Your progress is built from completed activities, not made-up scores.'}</p>
     </section>
 
     <section class="stats-grid">
-      ${statCard('✓', 'Completed activities', attempts.length, 'Recorded learning attempts')}
-      ${statCard('◎', 'Accuracy', chart.overallAccuracy === null ? '—' : `${chart.overallAccuracy}%`, 'Across selected practice')}
-      ${statCard('◷', 'Practice time', `${Math.round(report.totalActiveSeconds / 60)} min`, 'Tracked active sessions')}
-      ${statCard('✦', 'Sessions', report.totalSessions, 'In the last 30 days')}
+      ${statCard('✓', t('parent.colProgress'), attempts.length, t('progress.triesThisWeek') || 'Recorded learning attempts')}
+      ${statCard('◎', t('progress.statAccuracy'), chart.overallAccuracy === null ? '—' : `${chart.overallAccuracy}%`, t('progress.statCloserGoal') || 'Across selected practice')}
+      ${statCard('◷', t('progress.statPracticeTime'), `${Math.round(report.totalActiveSeconds / 60)} min`, t('home.statPracticeTimeFromLastWeek'))}
+      ${statCard('✦', t('home.statHappyPoints'), report.totalSessions, t('progress.periodMonth') || 'In the last 30 days')}
     </section>
 
     <section class="surface" style="margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
         <div>
-          <span class="badge badge-primary">LAST 30 DAYS</span>
-          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">Reading confidence</h3>
+          <span class="badge badge-primary">${t('parent.last30Days') || 'LAST 30 DAYS'}</span>
+          <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 6px 0 2px;">${t('home.statFluency')}</h3>
           <p style="margin: 0; font-size: 13px; color: var(--text-muted);">
             ${chart.isEmpty ? escapeHtml(chart.emptyMessage) : `${chart.totalAttempts} recorded ${chart.totalAttempts === 1 ? 'attempt' : 'attempts'} · trend ${chart.trend}`}
           </p>
@@ -2441,7 +3086,7 @@ async function progressPage(): Promise<string> {
       </div>
       
       ${chart.isEmpty
-      ? '<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="color: var(--text-muted); margin-top: 8px;">Complete a practice adventure to start your chart.</p></div>'
+      ? `<div class="chart-empty" style="padding: 30px; text-align: center;"><span style="font-size: 32px;">🌱</span><p style="color: var(--text-muted); margin-top: 8px;">${t('home.statFluencyGrowing')}</p></div>`
       : `<div class="accuracy-bars" style="height: 180px;">
             ${chart.dataPoints.slice(-14).map(point => `
               <div class="bar-item">
@@ -2454,7 +3099,7 @@ async function progressPage(): Promise<string> {
     </section>
 
     <section class="surface">
-      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 16px;">Practice history</h3>
+      <h3 style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0 0 16px;">${t('progress.practiceNextTitle') || 'Practice history'}</h3>
       ${attempts.length ? `
         <div style="display: flex; flex-direction: column; gap: 8px;">
           ${[...attempts].reverse().slice(0, 8).map(attempt => `
@@ -2478,8 +3123,8 @@ async function resourcesPage(): Promise<string> {
   return `
     <section style="margin-bottom: 24px;">
       <span class="badge badge-primary">A LITTLE MORE TO EXPLORE</span>
-      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">Find something fun to read or try.</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Search public educational resources by topic, level, language, and type.</p>
+      <h2 style="font-family: var(--font-heading); font-size: 26px; font-weight: 900; margin: 6px 0 4px;">${t('resources.heading') || t('resources.title')}</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin: 0;">${t('resources.subtitle')}</p>
     </section>
 
     <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--radius-md); background: ${status.configured ? 'var(--primary-light)' : 'var(--accent-warm-light)'}; margin-bottom: 20px;">
@@ -2500,21 +3145,21 @@ async function resourcesPage(): Promise<string> {
         <p style="font-size: 12px; color: #475569; margin: 2px 0 0;">Check out our illustrated Story Shelf with comprehension quizzes and happy points!</p>
       </div>
       <a href="#/stories" class="btn btn-primary btn-sm" data-action="navigate-stories" style="text-decoration: none;">
-        Open Story Shelf 📖 <span>→</span>
+        ${t('nav.storyShelf')} 📖 <span>→</span>
       </a>
     </div>
 
     <section class="surface" style="margin-bottom: 24px;">
       <form id="resource-form" class="resource-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: flex-end;">
         <label style="grid-column: 1 / -1; display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          What would you like to learn about?
-          <input name="topic" maxlength="100" required placeholder="Try 'phonics sounds' or 'rhyming words'" />
+          ${t('resources.topicLabel')}
+          <input name="topic" maxlength="100" required placeholder="${t('resources.topicPlaceholder')}" />
         </label>
         
         <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          Reading level
+          ${t('resources.gradeLabel')}
           <select name="grade">
-            <option value="any">Any level</option>
+            <option value="any">${t('resources.anyGrade')}</option>
             <option>Class 1 · Early reader</option>
             <option>Class 2 · Growing reader</option>
             <option>Class 3 · Little reader</option>
@@ -2523,18 +3168,18 @@ async function resourcesPage(): Promise<string> {
         </label>
 
         <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          Resource type
+          ${t('resources.typeLabel')}
           <select name="resourceType">
-            <option value="any">Any type</option>
-            <option value="reading_exercise">Reading exercise</option>
-            <option value="phonics_activity">Phonics activity</option>
-            <option value="educational_game">Educational game</option>
-            <option value="worksheet">Worksheet</option>
+            <option value="any">${t('resources.anyType')}</option>
+            <option value="reading_exercise">${t('resources.typeReadingExercise')}</option>
+            <option value="phonics_activity">${t('resources.typePhonicsActivity')}</option>
+            <option value="educational_game">${t('resources.typeEducationalGame')}</option>
+            <option value="worksheet">${t('resources.typeWorksheet')}</option>
           </select>
         </label>
 
         <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-          Language
+          ${t('childModal.langLabel')}
           <select name="language">
             ${(['English', 'Hindi', 'Punjabi', 'Bengali', 'Tamil', 'Odia'] as SupportedLanguage[]).map(lang => `
               <option ${lang === activeChild!.preferredLanguage ? 'selected' : ''}>${lang}</option>
@@ -2543,7 +3188,7 @@ async function resourcesPage(): Promise<string> {
         </label>
 
         <button class="btn btn-primary btn-lg" type="submit" style="min-height: 46px;">
-          Search Resources <span>⌕</span>
+          ${t('resources.findBtn')} <span>⌕</span>
         </button>
       </form>
 
@@ -2642,6 +3287,10 @@ async function renderAppPage(): Promise<void> {
   }
 
   profiles.setActiveChild(activeChild);
+  const targetChildLang = i18n.supportedLanguageToCode(activeChild.preferredLanguage || 'English');
+  if (i18n.getCurrentLanguage() !== targetChildLang) {
+    await i18n.setLanguage(targetChildLang);
+  }
   if (!syncedChildIds.has(activeChild.id)) {
     await activityTracker.syncSessionsFromDatabase(activeChild.id);
     syncedChildIds.add(activeChild.id);
@@ -2661,11 +3310,13 @@ async function renderAppPage(): Promise<void> {
       ? practicePage()
       : activePage === 'stories'
         ? storiesPage()
-        : activePage === 'progress'
-          ? await progressPage()
-          : activePage === 'resources'
-            ? await resourcesPage()
-            : await homePage();
+        : activePage === 'adventure'
+          ? await adventurePage()
+          : activePage === 'progress'
+            ? await progressPage()
+            : activePage === 'resources'
+              ? await resourcesPage()
+              : await homePage();
 
     if (renderRevision === appRenderRevision) content.innerHTML = pageContent;
   } catch (error) {
@@ -2809,15 +3460,15 @@ function showProfileForm(child?: ChildProfile): void {
       <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
         <div class="modal-heading">
           <div>
-            <span class="badge badge-primary">LEARNER PROFILE</span>
-            <h2 id="profile-modal-title">${child ? 'Update learner' : 'Add a learner'}</h2>
+            <span class="badge badge-primary">${t('profileSelect.title') || 'LEARNER PROFILE'}</span>
+            <h2 id="profile-modal-title">${child ? t('childModal.editTitle') : t('childModal.addTitle')}</h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-modal" aria-label="Close">×</button>
+          <button class="icon-button" type="button" data-action="close-modal" aria-label="${t('common.close')}">×</button>
         </div>
         <form id="child-form" class="form-stack">
           <input type="hidden" name="childId" value="${escapeHtml(child?.id || '')}" />
-          <label>Learner’s name<input name="name" required maxlength="60" value="${escapeHtml(child?.name || '')}" placeholder="First name" /></label>
-          <label>Reading level
+          <label>${t('childModal.nameLabel')}<input name="name" required maxlength="60" value="${escapeHtml(child?.name || '')}" placeholder="${t('childModal.namePlaceholder')}" /></label>
+          <label>${t('resources.gradeLabel')}
             <select name="grade">
               <option ${child?.grade.includes('2') ? 'selected' : ''}>Class 2 · Early reader</option>
               <option ${child?.grade.includes('3') ? 'selected' : ''}>Class 3 · Growing reader</option>
@@ -2827,7 +3478,7 @@ function showProfileForm(child?: ChildProfile): void {
           </label>
           <div>
             <span style="display: block; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">
-              Configured learning languages
+              ${t('childModal.optionsTitle') || 'Configured learning languages'}
             </span>
             <span style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
               Select all languages for this learner. The dashboard dropdown will display exactly these languages.
@@ -2849,14 +3500,14 @@ function showProfileForm(child?: ChildProfile): void {
   }).join('')}
             </div>
           </div>
-          <label>Active starting language
+          <label>${t('childModal.langLabel')}
             <select name="language" id="profilePrimaryLanguage">
               ${allSupportedLangs.map(lang => `
                 <option value="${lang}" ${lang === (child?.preferredLanguage || 'English') ? 'selected' : ''}>${lang}</option>
               `).join('')}
             </select>
           </label>
-          <label>Avatar
+          <label>${t('childModal.avatarLabel')}
             <select name="avatar">
               ${['👧🏽', '👦🏻', '🧒🏽', '🦊', '🐼', '🦉'].map(avatar => `
                 <option ${avatar === (child?.avatar || '👧🏽') ? 'selected' : ''}>${avatar}</option>
@@ -2864,7 +3515,7 @@ function showProfileForm(child?: ChildProfile): void {
             </select>
           </label>
           <p class="form-message" id="child-message" aria-live="polite"></p>
-          <button class="btn btn-primary btn-lg" style="width: 100%;" type="submit">${child ? 'Save changes' : 'Create learner profile'}</button>
+          <button class="btn btn-primary btn-lg" style="width: 100%;" type="submit">${child ? t('childModal.saveChangesBtn') : t('childModal.saveBtn')}</button>
         </form>
       </section>
     </div>`;
@@ -2940,7 +3591,7 @@ async function startActivity(skillId: string, title: string, difficulty: string)
 function renderActivityModal(feedback = '', answered = false, feedbackIsPositive = false): void {
   const modal = root!.querySelector<HTMLElement>('#modal-root');
   if (!modal || !activity) return;
-  const languageCode = activity.language === 'Hindi' ? 'hi' : 'en';
+  const languageCode = i18n.supportedLanguageToCode(activity.language);
 
   modal.innerHTML = `
     <div class="modal-backdrop" data-action="dismiss-modal">
@@ -2950,7 +3601,7 @@ function renderActivityModal(feedback = '', answered = false, feedbackIsPositive
             <span class="badge badge-primary">${escapeHtml(activity.difficulty)} · ${escapeHtml(activity.language)}</span>
             <h2 id="activity-title">${escapeHtml(activity.title)}</h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-activity" aria-label="Close activity">×</button>
+          <button class="icon-button" type="button" data-action="close-activity" aria-label="${t('common.close')}">×</button>
         </div>
 
         <div class="activity-instruction">
@@ -2962,7 +3613,7 @@ function renderActivityModal(feedback = '', answered = false, feedbackIsPositive
           <h3>${escapeHtml(activity.prompt)}</h3>
           ${activity.audioPrompt ? `
             <button class="btn btn-ghost btn-sm" type="button" data-action="speak-prompt">
-              🔊 Hear the question aloud
+              🔊 ${t('practice.hearWordBtn') || 'Hear the question aloud'}
             </button>
           ` : ''}
         </div>
@@ -2986,21 +3637,21 @@ function renderActivityModal(feedback = '', answered = false, feedbackIsPositive
 
         <div class="activity-controls">
           <button type="button" class="btn btn-outline btn-sm" data-action="activity-hint" ${answered ? 'disabled' : ''}>
-            💡 Get a hint
+            💡 ${t('activity.hintBtn')}
           </button>
           ${activity.workedExample ? `
             <button type="button" class="btn btn-outline btn-sm" data-action="activity-example" ${answered ? 'disabled' : ''}>
-              👀 Show example
+              👀 ${t('activity.exampleBtn')}
             </button>
           ` : ''}
           ${answered ? (
       activitySaveFailed
-        ? `<button type="button" class="btn btn-outline btn-sm" data-action="close-activity">Close activity</button>`
+        ? `<button type="button" class="btn btn-outline btn-sm" data-action="close-activity">${t('common.close')}</button>`
         : activityQuestionNumber < activityQuestionLimit
-          ? `<button type="button" class="btn btn-outline btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>Finish now</button>
-                   <button type="button" class="btn btn-primary btn-sm" data-action="next-question" ${activitySaving ? 'disabled' : ''}>Next question →</button>`
+          ? `<button type="button" class="btn btn-outline btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>${t('activity.finishBtn')}</button>
+                   <button type="button" class="btn btn-primary btn-sm" data-action="next-question" ${activitySaving ? 'disabled' : ''}>${t('common.next')} →</button>`
           : `<button type="button" class="btn btn-primary btn-sm" data-action="finish-activity" ${activitySaving ? 'disabled' : ''}>
-                    ${activitySaving ? 'Saving progress…' : 'Finish &amp; celebrate 🎉'}
+                    ${activitySaving ? t('common.loading') : `${t('common.finished')} 🎉`}
                    </button>`
     ) : ''}
         </div>
@@ -3199,6 +3850,67 @@ async function submitResourceSearch(form: HTMLFormElement): Promise<void> {
   }
 }
 
+async function submitAdventureSettings(form: HTMLFormElement): Promise<void> {
+  const childId = form.dataset.childId;
+  const currentUser = auth.getCurrentUser();
+  const messageEl = root!.querySelector<HTMLElement>('#adventure-settings-message');
+
+  if (!currentUser) {
+    if (messageEl) {
+      messageEl.style.color = '#b91c1c';
+      messageEl.textContent = 'Please sign in to update adventure settings.';
+    }
+    return;
+  }
+
+  if (!childId) {
+    if (messageEl) {
+      messageEl.style.color = '#b91c1c';
+      messageEl.textContent = 'No child profile selected.';
+    }
+    return;
+  }
+
+  const data = new FormData(form);
+  const newSettings: Partial<Record<DestinationId, DestinationSetting>> = {};
+
+  for (const destId of DESTINATION_ORDER) {
+    const isEnabled = data.get(`${destId}_enabled`) === 'on';
+    const rawPoints = String(data.get(`${destId}_points`) || '').trim();
+    const pointsNum = Number(rawPoints);
+
+    if (!rawPoints || isNaN(pointsNum) || !Number.isInteger(pointsNum) || pointsNum < 0) {
+      if (messageEl) {
+        messageEl.style.color = '#b91c1c';
+        messageEl.textContent = `Invalid required points for ${ADVENTURE_DESTINATIONS[destId].name}: must be a whole non-negative number (0 or higher).`;
+      }
+      return;
+    }
+
+    newSettings[destId] = {
+      enabled: isEnabled,
+      requiredPoints: pointsNum,
+    };
+  }
+
+  try {
+    await adventure.saveChildSettings(currentUser.id, childId, newSettings);
+    if (messageEl) {
+      messageEl.style.color = '#15803d';
+      messageEl.textContent = '✨ Adventure settings saved successfully! Access permissions updated immediately.';
+    }
+    toast('Adventure settings saved! 🧭');
+    setTimeout(() => {
+      void renderAppPage();
+    }, 500);
+  } catch (err) {
+    if (messageEl) {
+      messageEl.style.color = '#b91c1c';
+      messageEl.textContent = err instanceof Error ? err.message : 'Could not save adventure settings.';
+    }
+  }
+}
+
 // ----------------------------------------------------
 // EVENT LISTENERS & ACTION ROUTING
 // ----------------------------------------------------
@@ -3209,7 +3921,23 @@ root!.addEventListener('click', async event => {
   const action = control.dataset.action;
 
   try {
-    if (action === 'toggle-dyslexia-font') {
+    if (action === 'toggle-sound-effects') {
+      const isNowOn = soundService.toggle();
+      document.querySelectorAll('.sound-toggle-btn').forEach(btn => {
+        btn.classList.toggle('active', isNowOn);
+        const icon = btn.querySelector('.sound-icon');
+        if (icon) icon.textContent = isNowOn ? (btn.textContent?.includes('Enabled') ? '🔊 Enabled' : '🔊') : (btn.textContent?.includes('Muted') ? '🔇 Muted' : '🔇');
+        btn.setAttribute('title', isNowOn ? 'Sound Effects: ON (Click to Mute)' : 'Sound Effects: MUTED (Click to Enable)');
+        btn.setAttribute('aria-label', isNowOn ? 'Mute Sound Effects' : 'Enable Sound Effects');
+      });
+      toast(isNowOn ? 'Sound effects enabled 🔊' : 'Sound effects muted 🔇');
+      return;
+    } else if (action === 'test-sound') {
+      const snd = control.dataset.sound as any;
+      if (snd) soundService.play(snd);
+      return;
+    } else if (action === 'toggle-dyslexia-font') {
+      soundService.toggleSwitch(activeChild?.preferences?.soundEffects !== false);
       dyslexiaMode = !dyslexiaMode;
       localStorage.setItem('dyslexiaFont', String(dyslexiaMode));
       document.body.classList.toggle('dyslexia-font-mode', dyslexiaMode);
@@ -3303,40 +4031,36 @@ root!.addEventListener('click', async event => {
           ? '💡 Tap letter "b": /b/ as in book & bat'
           : '💡 Tap letter "d": /d/ as in door & duck';
       }
-      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(heroActiveLetter === 'b' ? 'Letter b says buh, as in bat.' : 'Letter d says duh, as in door.');
-        utterance.rate = 0.9;
-        window.speechSynthesis.speak(utterance);
-      }
+      speechService.speak(
+        heroActiveLetter === 'b' ? 'Letter b says buh, as in bat.' : 'Letter d says duh, as in door.',
+        { mode: 'pronunciation', langCode: 'en' }
+      );
     } else if (action === 'speak-hero-letter') {
-      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(heroActiveLetter === 'b' ? 'Letter b says buh, as in bat.' : 'Letter d says duh, as in door.');
-        utterance.rate = 0.85;
-        window.speechSynthesis.speak(utterance);
-      }
+      speechService.speak(
+        heroActiveLetter === 'b' ? 'Letter b says buh, as in bat.' : 'Letter d says duh, as in door.',
+        { mode: 'pronunciation', langCode: 'en' }
+      );
     } else if (action === 'test-playground-voice') {
-      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
-          const label = root!.querySelector<HTMLElement>('#playground-voice-label');
-          if (label) label.textContent = 'Read Aloud';
-          return;
-        }
-        const text = root!.querySelector<HTMLElement>('#playground-text')?.textContent || '';
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = playgroundReadingSpeed;
-        utterance.onend = () => {
-          const label = root!.querySelector<HTMLElement>('#playground-voice-label');
-          if (label) label.textContent = 'Read Aloud';
-        };
-        const label = root!.querySelector<HTMLElement>('#playground-voice-label');
-        if (label) label.textContent = 'Stop Reading';
-        window.speechSynthesis.speak(utterance);
-      } else {
-        toast('Speech synthesis is not supported in this browser.');
+      const label = root!.querySelector<HTMLElement>('#playground-voice-label');
+      if (speechService.isSpeaking()) {
+        speechService.stop();
+        if (label) label.textContent = 'Read Aloud';
+        return;
       }
+      const text = root!.querySelector<HTMLElement>('#playground-text')?.textContent || '';
+      if (label) label.textContent = 'Stop Reading';
+      speechService.speak(text, {
+        mode: 'story',
+        rate: playgroundReadingSpeed,
+        onEnd: () => {
+          const l = root!.querySelector<HTMLElement>('#playground-voice-label');
+          if (l) l.textContent = 'Read Aloud';
+        },
+        onError: () => {
+          const l = root!.querySelector<HTMLElement>('#playground-voice-label');
+          if (l) l.textContent = 'Read Aloud';
+        },
+      });
     } else if (action === 'test-playground-ruler') {
       playgroundRulerActive = !playgroundRulerActive;
       control.classList.toggle('active', playgroundRulerActive);
@@ -3358,12 +4082,23 @@ root!.addEventListener('click', async event => {
       root!.querySelectorAll('[data-action="set-playground-speed"]').forEach(btn => {
         btn.classList.toggle('active', btn === control);
       });
-      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
+      if (speechService.isSpeaking()) {
+        speechService.stop();
         const text = root!.querySelector<HTMLElement>('#playground-text')?.textContent || '';
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = playgroundReadingSpeed;
-        window.speechSynthesis.speak(utterance);
+        const label = root!.querySelector<HTMLElement>('#playground-voice-label');
+        if (label) label.textContent = 'Stop Reading';
+        speechService.speak(text, {
+          mode: 'story',
+          rate: playgroundReadingSpeed,
+          onEnd: () => {
+            const l = root!.querySelector<HTMLElement>('#playground-voice-label');
+            if (l) l.textContent = 'Read Aloud';
+          },
+          onError: () => {
+            const l = root!.querySelector<HTMLElement>('#playground-voice-label');
+            if (l) l.textContent = 'Read Aloud';
+          },
+        });
       }
     } else if (action === 'launch-demo') {
       await quickDemoLogin('parent@dysleximate.demo');
@@ -3417,8 +4152,45 @@ root!.addEventListener('click', async event => {
               : (control.dataset.page as AppPage) || 'home';
       navigateTo(targetPage);
     } else if (action === 'parent-tab') {
-      parentActiveTab = (control.dataset.tab as 'overview' | 'child_records' | 'settings') || 'overview';
+      parentActiveTab = (control.dataset.tab as 'overview' | 'child_records' | 'settings' | 'adventure_settings') || 'overview';
       await renderAppPage();
+    } else if (action === 'open-map-destination') {
+      const dest = control.dataset.dest as DestinationId;
+      if (dest && (DESTINATION_ORDER as readonly string[]).includes(dest)) {
+        activeAdventureDestination = dest;
+        await renderAppPage();
+      }
+    } else if (action === 'reset-adventure-defaults') {
+      const form = root!.querySelector<HTMLFormElement>('#adventure-settings-form');
+      if (form) {
+        for (const id of DESTINATION_ORDER) {
+          const enabledInput = form.querySelector<HTMLInputElement>(`input[name="${id}_enabled"]`);
+          const pointsInput = form.querySelector<HTMLInputElement>(`input[name="${id}_points"]`);
+          if (enabledInput) enabledInput.checked = true;
+          if (pointsInput) pointsInput.value = String(ADVENTURE_DESTINATIONS[id].defaultRequiredPoints);
+        }
+        toast('Default milestones restored in form. Click Save to persist.');
+      }
+    } else if (action === 'play-adventure-activity') {
+      if (!activeChild) {
+        toast('Please select a learner profile first.', true);
+      } else {
+        const destId = control.dataset.dest as DestinationId;
+        const skillId = control.dataset.skill;
+        const title = control.dataset.title;
+        const difficulty = (control.dataset.difficulty as ActivityDifficulty) || 'beginner';
+
+        if (destId && skillId && title) {
+          // Authoritative access check (enforces parent enable toggle + genuine Happy Points threshold)
+          const access = await adventure.checkDestinationAccess(activeChild.id, destId);
+          if (!access.allowed) {
+            toast(access.message || 'This destination is currently locked or resting.', true);
+            await renderAppPage();
+          } else {
+            await startActivity(skillId, title, difficulty);
+          }
+        }
+      }
     } else if (action === 'parent-telemetry-period') {
       parentTelemetryPeriod = (control.dataset.period as 'today' | '7days' | '30days') || '30days';
       await renderAppPage();
@@ -3448,6 +4220,8 @@ root!.addEventListener('click', async event => {
       activeChild = children.find(child => child.id === control.dataset.id) || null;
       if (!activeChild) throw new Error('That learner profile is no longer available.');
       profiles.setActiveChild(activeChild);
+      const childLangCode = i18n.supportedLanguageToCode(activeChild.preferredLanguage || 'English');
+      await i18n.setLanguage(childLangCode);
       learningPath = await learning.getOrGeneratePath(activeChild);
       navigateTo('home');
     } else if (action === 'add-child') {
@@ -3508,8 +4282,10 @@ root!.addEventListener('click', async event => {
     } else if (action === 'settings') {
       showSettings();
     } else if (action === 'start-recommendation' || action === 'start-catalog') {
+      soundService.modalOpen(activeChild?.preferences?.soundEffects !== false);
       await startActivity(control.dataset.skill || '', control.dataset.title || 'Reading adventure', control.dataset.difficulty || 'beginner');
     } else if (action === 'close-activity') {
+      soundService.modalClose(activeChild?.preferences?.soundEffects !== false);
       closeModal();
     } else if (action === 'answer') {
       if (!activity) return;
@@ -3517,12 +4293,15 @@ root!.addEventListener('click', async event => {
       if (!selected) return;
       activityAttempts++;
       if (selected.isCorrect) {
+        soundService.correctAnswer(activeChild?.preferences?.soundEffects !== false);
         renderActivityModal(selected.feedbackHint || 'Great work! You found it! 🌟', true, true);
       } else {
+        soundService.cardSelect(activeChild?.preferences?.soundEffects !== false);
         if (!activityMissedItems.includes(selected.text)) activityMissedItems.push(selected.text);
         renderActivityModal(selected.feedbackHint || 'Nice try! Take another gentle look.', false);
       }
     } else if (action === 'next-question') {
+      soundService.progressUpdate(activeChild?.preferences?.soundEffects !== false);
       await nextActivityQuestion();
     } else if (action === 'activity-hint' && activity) {
       activityHints++;
@@ -3530,44 +4309,44 @@ root!.addEventListener('click', async event => {
     } else if (action === 'activity-example' && activity?.workedExample) {
       renderActivityModal(`${activity.workedExample.demonstration} ${activity.workedExample.explanation}`);
     } else if (action === 'speak-prompt' && activity?.audioPrompt) {
-      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        const utterance = new SpeechSynthesisUtterance(activity.audioPrompt);
-        const language = activeChild?.preferredLanguage || 'English';
-        utterance.lang = speechLocales[language] || 'en-IN';
-        utterance.rate = 0.85;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-      } else toast('Read-aloud is not available in this browser.');
+      const language: SupportedLanguage = activeChild?.preferredLanguage || 'English';
+      const langCode = i18n.supportedLanguageToCode(language);
+      speechService.speak(activity.audioPrompt, {
+        mode: 'question',
+        langCode,
+      });
     } else if (action === 'finish-activity') {
+      soundService.activityComplete(activeChild?.preferences?.soundEffects !== false);
       await finishActivity();
     } else if (action === 'open-story') {
+      soundService.modalOpen(activeChild?.preferences?.soundEffects !== false);
       openStoryReader(control.dataset.id || '');
     } else if (action === 'shuffle-stories') {
       storyRotationAdvance = !storyRotationAdvance;
       await renderAppPage();
       toast('Stories shuffled! 🎲');
     } else if (action === 'speak-story') {
-      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
-          const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
-          if (lbl) lbl.textContent = 'Read aloud';
-        } else {
-          const text = activeStory?.paragraphs.join(' ') || '';
-          const utterance = new SpeechSynthesisUtterance(text);
-          const lang: SupportedLanguage = activeStory?.language || activeChild?.preferredLanguage || 'English';
-          utterance.lang = speechLocales[lang] || 'en-IN';
-          utterance.rate = 0.85;
-          utterance.onend = () => {
-            const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
-            if (lbl) lbl.textContent = 'Read aloud';
-          };
-          const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
-          if (lbl) lbl.textContent = 'Pause voice';
-          window.speechSynthesis.speak(utterance);
-        }
+      const lbl = root!.querySelector<HTMLElement>('#story-tts-label');
+      if (speechService.isSpeaking()) {
+        speechService.stop();
+        if (lbl) lbl.textContent = 'Read aloud';
       } else {
-        toast('Speech synthesis is not supported in this browser.');
+        const text = activeStory?.paragraphs.join('\n\n') || '';
+        const lang: SupportedLanguage = activeStory?.language || activeChild?.preferredLanguage || 'English';
+        const langCode = i18n.supportedLanguageToCode(lang);
+        if (lbl) lbl.textContent = 'Pause voice';
+        speechService.speak(text, {
+          mode: 'story',
+          langCode,
+          onEnd: () => {
+            const l = root!.querySelector<HTMLElement>('#story-tts-label');
+            if (l) l.textContent = 'Read aloud';
+          },
+          onError: () => {
+            const l = root!.querySelector<HTMLElement>('#story-tts-label');
+            if (l) l.textContent = 'Read aloud';
+          },
+        });
       }
     } else if (action === 'story-font-smaller') {
       activeStoryFontSize = Math.max(14, activeStoryFontSize - 2);
@@ -3590,6 +4369,7 @@ root!.addEventListener('click', async event => {
       const scoreTag = root!.querySelector<HTMLElement>('#storyCompScoreTag');
 
       if (idx === q.correctIndex) {
+        soundService.correctAnswer(activeChild?.preferences?.soundEffects !== false);
         storyComprehensionScore++;
         control.classList.remove('btn-outline');
         control.classList.add('btn-primary');
@@ -3627,6 +4407,7 @@ root!.addEventListener('click', async event => {
         }
         toast('+5 Happy Points earned! ⭐');
       } else {
+        soundService.cardSelect(activeChild?.preferences?.soundEffects !== false);
         control.classList.remove('btn-outline');
         control.style.borderColor = '#dc2626';
         control.style.color = '#dc2626';
@@ -3669,9 +4450,8 @@ root!.addEventListener('click', async event => {
         scoreTag.textContent = `${storyComprehensionScore} / ${activeStory.comprehensionQuestions.length} Correct ⭐`;
       }
     } else if (action === 'finish-story-reading') {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      soundService.achievement(activeChild?.preferences?.soundEffects !== false);
+      speechService.stop();
       if (activeStory && activeChild) {
         activityTracker.stopActivity();
         const currentProg = profiles.getChildProgress(activeChild.id);
@@ -3978,10 +4758,12 @@ root!.addEventListener('submit', async event => {
       }
     } else if (form.id === 'resource-form') {
       await submitResourceSearch(form);
+    } else if (form.id === 'adventure-settings-form') {
+      await submitAdventureSettings(form);
     }
   } catch (error) {
     console.error('Form submission failed:', error);
-    const message = root!.querySelector<HTMLElement>('#child-message, #pin-message, #auth-message, #password-message, #recovery-message, #gate-pin-message');
+    const message = root!.querySelector<HTMLElement>('#child-message, #pin-message, #auth-message, #password-message, #recovery-message, #gate-pin-message, #adventure-settings-message');
     if (message) message.textContent = error instanceof Error ? error.message : 'Please try again.';
     else toast(error instanceof Error ? error.message : 'Please try again.', true);
   }
@@ -3990,9 +4772,35 @@ root!.addEventListener('submit', async event => {
 // ----------------------------------------------------
 // LANGUAGE SELECTION ROUTING & FORM INTERACTIONS
 // ----------------------------------------------------
+root!.addEventListener('input', event => {
+  const target = event.target as HTMLElement;
+  if (!target) return;
+  if (target.dataset?.action === 'change-sound-volume') {
+    const val = parseInt((target as HTMLInputElement).value, 10);
+    const vol = Math.max(0, Math.min(1, val / 100));
+    soundService.setVolume(vol);
+    const label = root!.querySelector<HTMLElement>('#sound-vol-label');
+    if (label) label.textContent = `${val}%`;
+  }
+});
+
 root!.addEventListener('change', async event => {
   const target = event.target as HTMLElement;
   if (!target) return;
+
+  if (target.id === 'adventure-destination-picker') {
+    const select = target as HTMLSelectElement;
+    activeAdventureDestination = (select.value as DestinationId) || 'phonics_garden';
+    await renderAppPage();
+    return;
+  }
+
+  if (target.id === 'parent-adventure-child-picker') {
+    const select = target as HTMLSelectElement;
+    parentSelectedChildId = select.value;
+    await renderAppPage();
+    return;
+  }
 
   if (target.classList.contains('story-lang-select')) {
     const select = target as HTMLSelectElement;
@@ -4007,6 +4815,25 @@ root!.addEventListener('change', async event => {
     const pill = checkbox.closest('.lang-checkbox-pill');
     if (pill) {
       pill.classList.toggle('checked', checkbox.checked);
+    }
+    return;
+  }
+
+  // Parent portal interface language selector (does not overwrite child's learning language)
+  if (target.classList?.contains('parent-lang-select')) {
+    const select = target as HTMLSelectElement;
+    const newLangCode = select.value as any;
+    try {
+      await i18n.setLanguage(newLangCode);
+      const user = auth.getCurrentUser();
+      if (user) {
+        await auth.updateInterfaceLanguage(newLangCode);
+      }
+      toast(`Interface language updated 🌐`);
+      await renderAppPage();
+    } catch (err) {
+      console.error('Failed to update interface language:', err);
+      toast('Unable to update language.', true);
     }
     return;
   }

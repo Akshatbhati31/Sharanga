@@ -3,6 +3,7 @@ import { LearningPathService } from '../services/learningPathService';
 import { ProfileService } from '../services/profileService';
 import { SpeechService } from '../services/speechService';
 import { StorageService } from '../services/storageService';
+import { soundService } from '../services/soundService';
 import { i18n } from '../i18n';
 import type { AdaptiveRecommendation, InteractiveActivityContent } from '../types/adaptive';
 import type { ChildProfile } from '../types/auth';
@@ -52,6 +53,7 @@ export class ActivityRunnerModal {
       this.variantIndex = (this.variantIndex + 1) % 4;
     }
     this.startTime = Date.now();
+    soundService.modalOpen(child.preferences?.soundEffects !== false);
     this.hintsRequested = 0;
     this.attemptsRequired = 1;
     this.correctedAfterHint = 0;
@@ -339,6 +341,7 @@ export class ActivityRunnerModal {
         const fbBox = modalEl.querySelector('#actFeedbackBox') as HTMLElement;
 
         if (isCorrect) {
+          soundService.correctAnswer(this.activeChild?.preferences?.soundEffects !== false);
           btn.classList.add('correct');
           if (this.hintsRequested > 0) {
             this.correctedAfterHint = 1;
@@ -376,6 +379,7 @@ export class ActivityRunnerModal {
           // Disable further option clicks once correct
           optionBtns.forEach(b => ((b as HTMLElement).style.pointerEvents = 'none'));
         } else {
+          soundService.cardSelect(this.activeChild?.preferences?.soundEffects !== false);
           btn.classList.add('wrong');
           this.attemptsRequired += 1;
           if (itemObj?.text) {
@@ -458,6 +462,7 @@ export class ActivityRunnerModal {
     });
 
     // Render completion and replay screen allowing repeated replays without reload
+    soundService.activityComplete(this.activeChild.preferences?.soundEffects !== false);
     const modalEl = this.ensureModalElement();
     const childLangCode = i18n.supportedLanguageToCode(this.activeChild.preferredLanguage || 'English');
     const winTitle = i18n.tForLang(childLangCode, 'activity.winTitle') || 'Wonderful job! 🌟';
@@ -499,6 +504,7 @@ export class ActivityRunnerModal {
   }
 
   public close(): void {
+    soundService.modalClose(this.activeChild?.preferences?.soundEffects !== false);
     SpeechService.getInstance().stop();
     const modalEl = document.getElementById('actRunnerModalContainer');
     if (modalEl) {

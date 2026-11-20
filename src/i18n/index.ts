@@ -5,6 +5,7 @@ import { hi } from './locales/hi';
 import { or } from './locales/or';
 import { pa } from './locales/pa';
 import { ta } from './locales/ta';
+import { bn } from './locales/bn';
 
 export const SUPPORTED_LANGUAGES: LanguageMeta[] = [
   {
@@ -52,6 +53,15 @@ export const SUPPORTED_LANGUAGES: LanguageMeta[] = [
     speechLocale: 'ta-IN',
     flag: '🇮🇳',
   },
+  {
+    code: 'bn',
+    prefix: 'BN',
+    nativeName: 'বাংলা',
+    englishName: 'Bengali',
+    supportedLanguageName: 'Bengali',
+    speechLocale: 'bn-IN',
+    flag: '🇮🇳',
+  },
 ];
 
 const TRANSLATIONS: Record<AppLanguageCode, TranslationSchema> = {
@@ -60,6 +70,7 @@ const TRANSLATIONS: Record<AppLanguageCode, TranslationSchema> = {
   or,
   pa,
   ta,
+  bn,
 };
 
 const STORAGE_KEY = 'dysleximate_interface_lang_v1';
@@ -117,6 +128,7 @@ export class I18nService {
     if (normalized.startsWith('or') || normalized.includes('odia') || normalized.includes('oriya')) return 'or';
     if (normalized.startsWith('pa') || normalized.includes('punjabi') || normalized.includes('gurmukhi')) return 'pa';
     if (normalized.startsWith('ta') || normalized.includes('tamil')) return 'ta';
+    if (normalized.startsWith('bn') || normalized.includes('bengali') || normalized.includes('bangla')) return 'bn';
     return 'en';
   }
 
@@ -263,9 +275,20 @@ export class I18nService {
     }
 
     if (typeof val !== 'string') {
-      // Missing translation detection - do not silently produce English UI
-      console.warn(`[i18n] Missing translation key for '${this.currentLanguage}': ${path}`);
-      return `[MISSING: ${path}]`;
+      let fallbackVal: any = TRANSLATIONS.en;
+      for (const k of keys) {
+        if (fallbackVal && typeof fallbackVal === 'object' && k in fallbackVal) {
+          fallbackVal = fallbackVal[k];
+        } else {
+          fallbackVal = undefined;
+          break;
+        }
+      }
+      if (typeof fallbackVal === 'string') {
+        val = fallbackVal;
+      } else {
+        return `[MISSING: ${path}]`;
+      }
     }
 
     if (params) {
@@ -298,7 +321,20 @@ export class I18nService {
     }
 
     if (typeof val !== 'string') {
-      return `[MISSING: ${path}]`;
+      let fallbackVal: any = TRANSLATIONS.en;
+      for (const k of keys) {
+        if (fallbackVal && typeof fallbackVal === 'object' && k in fallbackVal) {
+          fallbackVal = fallbackVal[k];
+        } else {
+          fallbackVal = undefined;
+          break;
+        }
+      }
+      if (typeof fallbackVal === 'string') {
+        val = fallbackVal;
+      } else {
+        return `[MISSING: ${path}]`;
+      }
     }
 
     if (params) {

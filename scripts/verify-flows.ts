@@ -31,15 +31,32 @@ import vercelStatusHandler from '../api/tinyfish/status';
 import vercelSearchHandler from '../api/tinyfish/search';
 import vercelResourcesHandler from '../api/resources/search';
 import vercelAiHandler from '../api/ai/generate-activity';
+import vercelVoiceHandler from '../api/voice/synthesize';
+import {
+  handleSynthesizeSpeech,
+  buildSsml,
+  CALM_FEMALE_VOICE_DIRECTION,
+  GOOGLE_CLOUD_FEMALE_VOICES,
+  MODE_AUDIO_SETTINGS as TTS_MODE_AUDIO_SETTINGS,
+  normalizeLanguageToCode,
+} from '../src/worker/ttsHandler';
 import { TinyFishService } from '../src/services/tinyfishService';
 import { i18n, SUPPORTED_LANGUAGES } from '../src/i18n/index';
 import { SpeechService } from '../src/services/speechService';
+import { soundService, SoundService, type SoundEffectName } from '../src/services/soundService';
 import { ActivityRunnerModal } from '../src/ui/activityRunnerModal';
 import { LearningJourneyView } from '../src/ui/learningJourneyView';
 import { ChildModalView } from '../src/ui/childModalView';
 import { DashboardController } from '../src/ui/dashboardController';
 import type { SupportedLanguage, AppLanguageCode, ChildProfile } from '../src/types/auth';
 import { StoryShelfService } from '../src/services/storyShelfService';
+import {
+  AdventureService,
+  ADVENTURE_DESTINATIONS,
+  DEFAULT_DESTINATION_SETTINGS,
+  DESTINATION_ORDER,
+  type DestinationId,
+} from '../src/services/adventureService';
 import {
   seedSiyaHistoricalData,
   SIYA_PARENT_ID,
@@ -1520,10 +1537,10 @@ async function runTests() {
 
   // 12.1: Supported Languages & Native Scripts
   const supportedLangs = i18n.getSupportedLanguages();
-  assert(supportedLangs.length === 5, 'All five required languages are supported');
+  assert(supportedLangs.length === 6, 'All six required languages are supported');
   const langCodes = supportedLangs.map(l => l.code);
-  assert(langCodes.includes('en') && langCodes.includes('hi') && langCodes.includes('or') && langCodes.includes('pa') && langCodes.includes('ta'),
-    'Language codes [en, hi, or, pa, ta] are present');
+  assert(langCodes.includes('en') && langCodes.includes('hi') && langCodes.includes('or') && langCodes.includes('pa') && langCodes.includes('ta') && langCodes.includes('bn'),
+    'Language codes [en, hi, or, pa, ta, bn] are present');
 
   const langMap = Object.fromEntries(supportedLangs.map(l => [l.code, l.nativeName]));
   assert(langMap.en === 'English', 'English native name displayed as English');
@@ -1531,6 +1548,7 @@ async function runTests() {
   assert(langMap.or === 'ଓଡ଼ିଆ', 'Odia native name displayed in Odia script (ଓଡ଼ିଆ)');
   assert(langMap.pa === 'ਪੰਜਾਬੀ', 'Punjabi native name displayed in Gurmukhi script (ਪੰਜਾਬੀ)');
   assert(langMap.ta === 'தமிழ்', 'Tamil native name displayed in Tamil script (தமிழ்)');
+  assert(langMap.bn === 'বাংলা', 'Bengali native name displayed in Bengali script (বাংলা)');
 
   // 12.2: Language Selector UI Rendering with exact prefixes
   const authSelectHtml = i18n.renderLanguageSelect({ id: 'authLangSelect', current: 'hi' });
@@ -1541,13 +1559,14 @@ async function runTests() {
   assert(authSelectHtml.includes('OD ଓଡ଼ିଆ'), 'auth dropdown contains exact prefix "OD ଓଡ଼ିଆ"');
   assert(authSelectHtml.includes('PB ਪੰਜਾਬੀ'), 'auth dropdown contains exact prefix "PB ਪੰਜਾਬੀ"');
   assert(authSelectHtml.includes('TM தமிழ்'), 'auth dropdown contains exact prefix "TM தமிழ்"');
+  assert(authSelectHtml.includes('BN বাংলা'), 'auth dropdown contains exact prefix "BN বাংলা"');
 
   const topSelectHtml = i18n.renderLanguageSelect({ id: 'topLangSelect', current: 'or' });
   assert(topSelectHtml.includes('id="topLangSelect"'), 'renderLanguageSelect renders topbar selector id');
   assert(topSelectHtml.includes('value="or" selected'), 'renderLanguageSelect marks Odia as selected in topbar');
   assert(topSelectHtml.includes('OD ଓଡ଼ିଆ'), 'topbar dropdown displays prefix and native name "OD ଓଡ଼ିଆ"');
-  assert(topSelectHtml.includes('EG English') && topSelectHtml.includes('HN हिन्दी') && topSelectHtml.includes('PB ਪੰਜਾਬੀ') && topSelectHtml.includes('TM தமிழ்'),
-    'topbar dropdown contains all 5 exact prefixed options consistently');
+  assert(topSelectHtml.includes('EG English') && topSelectHtml.includes('HN हिन्दी') && topSelectHtml.includes('PB ਪੰਜਾਬੀ') && topSelectHtml.includes('TM தமிழ்') && topSelectHtml.includes('BN বাংলা'),
+    'topbar dropdown contains all 6 exact prefixed options consistently');
 
   // 12.3: Scenario 1 - Pre-login / Auth Language Selection & Instant UI Updates
   await i18n.setLanguage('hi');
@@ -1625,7 +1644,7 @@ async function runTests() {
   // 12.6: Separation of Parent Interface Language & Learner Preferred Language
   const profileService = ProfileService.getInstance();
   const currentParent = authService.getCurrentUser()!;
-  
+
   // Create child with Hindi learning preference
   const childHindi = await profileService.createChild(currentParent.id, {
     name: 'Aarav',
@@ -1790,7 +1809,7 @@ async function runTests() {
     'voice.noNativeVoice',
   ];
 
-  for (const code of ['en', 'hi', 'or', 'pa', 'ta'] as AppLanguageCode[]) {
+  for (const code of ['en', 'hi', 'or', 'pa', 'ta', 'bn'] as AppLanguageCode[]) {
     await i18n.setLanguage(code);
     for (const key of testNamespaces) {
       const val = i18n.t(key);
@@ -1871,8 +1890,8 @@ async function runTests() {
     }
   }
 
-  // 12.13: Language Selector Two-Letter Prefixes Verification (EG, HN, OD, PB, TM)
-  assert(SUPPORTED_LANGUAGES.length === 5, 'Exactly 5 languages configured in SUPPORTED_LANGUAGES');
+  // 12.13: Language Selector Two-Letter Prefixes Verification (EG, HN, OD, PB, TM, BN)
+  assert(SUPPORTED_LANGUAGES.length === 6, 'Exactly 6 languages configured in SUPPORTED_LANGUAGES');
 
   const expectedPrefixes: Record<AppLanguageCode, { prefix: string; nativeName: string; combined: string }> = {
     en: { prefix: 'EG', nativeName: 'English', combined: 'EG English' },
@@ -1880,6 +1899,7 @@ async function runTests() {
     or: { prefix: 'OD', nativeName: 'ଓଡ଼ିଆ', combined: 'OD ଓଡ଼ିଆ' },
     pa: { prefix: 'PB', nativeName: 'ਪੰਜਾਬੀ', combined: 'PB ਪੰਜਾਬੀ' },
     ta: { prefix: 'TM', nativeName: 'தமிழ்', combined: 'TM தமிழ்' },
+    bn: { prefix: 'BN', nativeName: 'বাংলা', combined: 'BN বাংলা' },
   };
 
   for (const [code, meta] of Object.entries(expectedPrefixes)) {
@@ -1890,7 +1910,7 @@ async function runTests() {
   }
 
   // Verify renderLanguageSelect produces exact prefixes for all options
-  for (const code of ['en', 'hi', 'or', 'pa', 'ta'] as AppLanguageCode[]) {
+  for (const code of ['en', 'hi', 'or', 'pa', 'ta', 'bn'] as AppLanguageCode[]) {
     const html = i18n.renderLanguageSelect({ id: 'testLangDropdown', current: code });
     for (const [c, expected] of Object.entries(expectedPrefixes)) {
       const optionSnippet = `<option value="${c}" ${c === code ? 'selected' : ''}>${expected.combined}</option>`;
@@ -1902,11 +1922,11 @@ async function runTests() {
       `Selected language (${code}) displays prefix and native-language name: "${activeMeta.combined}"`);
   }
 
-  // Verify internal codes remain unchanged (en, hi, or, pa, ta)
+  // Verify internal codes remain unchanged (en, hi, or, pa, ta, bn)
   const actualCodes = SUPPORTED_LANGUAGES.map(l => l.code).sort();
-  const expectedCodes = ['en', 'hi', 'or', 'pa', 'ta'].sort();
+  const expectedCodes = ['en', 'hi', 'or', 'pa', 'ta', 'bn'].sort();
   assert(JSON.stringify(actualCodes) === JSON.stringify(expectedCodes),
-    'Internal language codes strictly preserved as [en, hi, or, pa, ta]');
+    'Internal language codes strictly preserved as [en, hi, or, pa, ta, bn]');
 
   // =========================================================================
   // Test Group 13: Multilingual Learning Activities & Phonics Verification
@@ -3326,6 +3346,598 @@ async function runTests() {
   assert(!demoChildren.some(c => c.id === SIYA_CHILD_ID), 'Demo parent does not have access to Siya profile');
   const aanyaAttempts = await learningPathService.getChildAttempts(demoChildren[0].id);
   assert(!aanyaAttempts.some(a => a.childId === SIYA_CHILD_ID), 'Siya attempts are completely isolated from Aanya');
+
+  // =========================================================================
+  // Test Group 22: Gamified Adventure & Game Unlock Progression System
+  // =========================================================================
+  console.log(`\n--- Test Group 22: Gamified Adventure & Game Unlock Progression System ---`);
+  const adventureService = AdventureService.getInstance();
+
+  // 22.1 Destination Definitions and Initial Defaults
+  assert(DESTINATION_ORDER.length === 5, 'Exactly 5 learning destinations defined in order');
+  assert(ADVENTURE_DESTINATIONS.phonics_garden.defaultRequiredPoints === 0, 'Phonics Garden default requirement is 0 pts');
+  assert(ADVENTURE_DESTINATIONS.word_workshop.defaultRequiredPoints === 50, 'Word Workshop default requirement is 50 pts');
+  assert(ADVENTURE_DESTINATIONS.reading_forest.defaultRequiredPoints === 100, 'Reading Forest default requirement is 100 pts');
+  assert(ADVENTURE_DESTINATIONS.story_castle.defaultRequiredPoints === 150, 'Story Castle default requirement is 150 pts');
+  assert(ADVENTURE_DESTINATIONS.vocabulary_island.defaultRequiredPoints === 200, 'Vocabulary Island default requirement is 200 pts');
+
+  // Verify all destinations have connected activities from the catalog
+  for (const id of DESTINATION_ORDER) {
+    const dest = ADVENTURE_DESTINATIONS[id];
+    assert(dest.activityIds.length > 0, `${dest.name} connects to at least 1 learning activity`);
+    dest.activityIds.forEach(actId => {
+      assert(ACTIVITY_CATALOG.some(c => c.id === actId), `Activity ${actId} exists in catalog`);
+    });
+  }
+
+  // 22.2 Access Evaluation for a New Learner (0 Happy Points)
+  const freshChild = await ps.createChild('parent-demo-1', {
+    name: 'Zoya',
+    grade: 'Class 1',
+    primaryGoal: 'fun',
+    interests: ['Animals'],
+    dailyGoalMinutes: 10,
+    preferredLanguage: 'English',
+    configuredLanguages: ['English'],
+    avatar: '🦊',
+  });
+
+  const zoyaPhonics = await adventureService.checkDestinationAccess(freshChild.id, 'phonics_garden');
+  assert(zoyaPhonics.allowed && zoyaPhonics.status === 'unlocked', 'Phonics Garden unlocked immediately (0 pts)');
+
+  const zoyaWorkshop = await adventureService.checkDestinationAccess(freshChild.id, 'word_workshop');
+  assert(!zoyaWorkshop.allowed && zoyaWorkshop.status === 'locked', 'Word Workshop is locked for 0-point learner');
+  assert(zoyaWorkshop.pointsRemaining === 50, 'Word Workshop requires 50 more points');
+  assert(zoyaWorkshop.percentToUnlock === 0, 'Word Workshop percentToUnlock is 0%');
+
+  const zoyaIsland = await adventureService.checkDestinationAccess(freshChild.id, 'vocabulary_island');
+  assert(!zoyaIsland.allowed && zoyaIsland.status === 'locked', 'Vocabulary Island is locked for 0-point learner');
+  assert(zoyaIsland.pointsRemaining === 200, 'Vocabulary Island requires 200 more points');
+
+  // 22.3 Access Evaluation for High-Milestone Learner (Siya with 405 Happy Points)
+  const siyaPhonics = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'phonics_garden');
+  assert(siyaPhonics.allowed && siyaPhonics.status === 'unlocked', 'Siya has Phonics Garden unlocked');
+
+  const siyaWorkshop = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'word_workshop');
+  assert(siyaWorkshop.allowed && siyaWorkshop.status === 'unlocked', 'Siya has Word Workshop unlocked (405 >= 50)');
+
+  const siyaForest = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'reading_forest');
+  assert(siyaForest.allowed && siyaForest.status === 'unlocked', 'Siya has Reading Forest unlocked (405 >= 100)');
+
+  const siyaCastle = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'story_castle');
+  assert(siyaCastle.allowed && siyaCastle.status === 'unlocked', 'Siya has Story Castle unlocked (405 >= 150)');
+
+  const siyaIsland = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'vocabulary_island');
+  assert(siyaIsland.allowed && siyaIsland.status === 'unlocked', 'Siya has Vocabulary Island unlocked (405 >= 200)');
+
+  // 22.4 Parent Security & Authorization
+  let unauthorizedError = false;
+  try {
+    // Demo parent tries to alter Siya's settings
+    await adventureService.saveChildSettings('parent-demo-1', SIYA_CHILD_ID, {
+      phonics_garden: { enabled: false },
+    });
+  } catch (err: any) {
+    unauthorizedError = true;
+    assert(err.message.includes('Unauthorized'), 'Error message indicates unauthorized parent access');
+  }
+  assert(unauthorizedError, 'Cross-parent configuration attempt was rejected');
+
+  // 22.5 Input Validation (Non-negative integers)
+  let invalidPointsError = false;
+  try {
+    await adventureService.saveChildSettings(SIYA_PARENT_ID, SIYA_CHILD_ID, {
+      word_workshop: { requiredPoints: -25 },
+    });
+  } catch (err: any) {
+    invalidPointsError = true;
+    assert(err.message.includes('non-negative'), 'Error message indicates points must be non-negative whole number');
+  }
+  assert(invalidPointsError, 'Negative Happy Points threshold was rejected');
+
+  // 22.6 Custom Configuration, Immediate Recalculation & Dynamic Relocking
+  // Suresh disables Vocabulary Island and raises Story Castle threshold to 600 pts
+  await adventureService.saveChildSettings(SIYA_PARENT_ID, SIYA_CHILD_ID, {
+    vocabulary_island: { enabled: false, requiredPoints: 200 },
+    story_castle: { enabled: true, requiredPoints: 600 },
+  });
+
+  const updatedIsland = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'vocabulary_island');
+  assert(!updatedIsland.allowed && updatedIsland.status === 'disabled', 'Parent-disabled destination is unavailable regardless of points');
+  assert(updatedIsland.message?.includes('disabled'), 'Disabled message explains destination was rested by parent');
+
+  const updatedCastle = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'story_castle');
+  assert(!updatedCastle.allowed && updatedCastle.status === 'locked', 'Destination dynamically locks when threshold raised above current points (600 > 405)');
+  assert(updatedCastle.pointsRemaining === 195, 'Points remaining calculated correctly (600 - 405 = 195)');
+
+  // Verify Happy Points are untouched (not deducted or erased)
+  const siyaProgAfterLock = ps.getChildProgress(SIYA_CHILD_ID);
+  assert(siyaProgAfterLock.happyPoints === 405, 'Relocking did not deduct or erase child Happy Points');
+
+  // 22.7 Dynamic Unlocking: Lowering threshold unlocks destination immediately
+  await adventureService.saveChildSettings(SIYA_PARENT_ID, SIYA_CHILD_ID, {
+    story_castle: { enabled: true, requiredPoints: 300 }, // Lower from 600 to 300 (405 >= 300)
+    vocabulary_island: { enabled: true, requiredPoints: 200 }, // Re-enable
+  });
+
+  const unlockedCastle = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'story_castle');
+  assert(unlockedCastle.allowed && unlockedCastle.status === 'unlocked', 'Lowering threshold below current points unlocks destination immediately');
+
+  const reenabledIsland = await adventureService.checkDestinationAccess(SIYA_CHILD_ID, 'vocabulary_island');
+  assert(reenabledIsland.allowed && reenabledIsland.status === 'unlocked', 'Re-enabled destination is unlocked immediately for qualified learner');
+
+  // 22.8 Child-Specific Isolation
+  // Check that Aanya's settings were unaffected by Siya or Zoya changes
+  const aanyaSettings = await adventureService.getChildSettings(demoChildren[0].id);
+  assert(aanyaSettings.story_castle.requiredPoints === 150, 'Aanya settings retain default 150 threshold');
+  assert(aanyaSettings.vocabulary_island.enabled === true, 'Aanya settings retain default enabled state');
+
+  // 22.9 Full Adventure State (Badges, Quests, Mascot Reaction)
+  const siyaProfile = (await ps.getChildren(SIYA_PARENT_ID))[0];
+  const adventureState = await adventureService.getAdventureState(siyaProfile);
+  assert(adventureState.childId === SIYA_CHILD_ID, 'State childId matches Siya');
+  assert(adventureState.happyPoints === 405, 'State happyPoints matches 405');
+  assert(adventureState.unlockedCount === 5, 'All 5 destinations currently unlocked');
+  assert(adventureState.totalDestinations === 5, 'Total destinations count is 5');
+
+  // Stickers / Badges verification
+  assert(adventureState.stickers.length === 7, '7 collectible stickers/badges provided');
+  const unlockedBadges = adventureState.stickers.filter(s => s.earned);
+  assert(unlockedBadges.length >= 6, 'Siya with 405 pts has unlocked at least 6 badges');
+
+  // Daily Quests verification
+  assert(adventureState.dailyQuests.length === 3, '3 daily quests generated');
+  adventureState.dailyQuests.forEach(q => {
+    assert(q.targetCount > 0 && q.rewardPoints > 0, 'Daily quests have non-zero targets and rewards');
+  });
+
+  // Mascot Reaction verification
+  assert(adventureState.mascotReaction.mascot.length > 0, 'Mascot icon is present');
+  assert(adventureState.mascotReaction.text.length > 0, 'Mascot cheering message is present');
+  assert(['happy', 'encouraging', 'celebrating', 'curious'].includes(adventureState.mascotReaction.emotion), 'Valid emotion returned');
+
+  // =========================================================================
+  // Test Group 23: Complete 6-Language Multilingual UI Switching & Persistence
+  // =========================================================================
+  console.log('\n--- Test Group 23: Complete 6-Language UI Switching & Child Isolation ---');
+
+  // 23.1 Six Required Languages Present & Accurate
+  const allSixCodes: AppLanguageCode[] = ['en', 'hi', 'pa', 'bn', 'ta', 'or'];
+  const allSixNames: Record<AppLanguageCode, string> = {
+    en: 'English',
+    hi: 'हिन्दी',
+    pa: 'ਪੰਜਾਬੀ',
+    bn: 'বাংলা',
+    ta: 'தமிழ்',
+    or: 'ଓଡ଼ିଆ',
+  };
+
+  assert(SUPPORTED_LANGUAGES.length === 6, 'Exactly 6 supported languages configured in system');
+  allSixCodes.forEach(c => {
+    const meta = SUPPORTED_LANGUAGES.find(m => m.code === c);
+    assert(!!meta, `Language metadata exists for ${c}`);
+    assert(meta?.nativeName === allSixNames[c], `Native script matches for ${c}: ${allSixNames[c]}`);
+    assert(speechService.getLocaleForLanguage(c).length > 0, `Speech synthesis locale configured for ${c}`);
+  });
+
+  // 23.2 Complete Translation Keys Across All 6 Locales
+  const comprehensiveKeys = [
+    'common.close', 'common.save', 'common.cancel', 'common.retry',
+    'nav.myHome', 'nav.practice', 'nav.storyShelf', 'nav.myProgress', 'nav.resourceFinder',
+    'auth.login.title', 'auth.login.submitBtn', 'auth.register.title', 'auth.register.submitBtn',
+    'home.heroGreeting', 'home.startChallengeBtn', 'home.statPracticeTime', 'home.statHappyPoints', 'home.statWordsLearned',
+    'practice.heading', 'practice.subtitle', 'practice.tryItBtn',
+    'stories.heading', 'stories.subtitle', 'stories.readStoryBtn',
+    'adventure.title', 'adventure.subtitle', 'adventure.unlocked', 'adventure.playActivity',
+    'progress.heading', 'progress.subtitle', 'progress.statAccuracy',
+    'resources.title', 'resources.subtitle', 'resources.topicLabel', 'resources.findBtn',
+    'parent.hubTitle', 'parent.hubSubtitle', 'parent.linkedProfiles', 'parent.totalPracticeTime',
+    'childModal.addTitle', 'childModal.editTitle', 'childModal.nameLabel', 'childModal.saveBtn',
+    'profileSelect.title', 'profileSelect.whoLearning', 'profileSelect.addChildBtn', 'profileSelect.startReadingBtn',
+  ];
+
+  for (const c of allSixCodes) {
+    await i18n.setLanguage(c);
+    assert(i18n.getCurrentLanguage() === c, `i18n switches immediately to ${c}`);
+    for (const k of comprehensiveKeys) {
+      const translation = i18n.t(k);
+      assert(!translation.includes('[MISSING:'), `Key "${k}" translated in ${c} (got: "${translation}")`);
+      assert(translation.trim().length > 0, `Key "${k}" has non-empty text in ${c}`);
+    }
+  }
+
+  // 23.3 Child Profile Language Switching & Persistence
+  const testParent = authService.getCurrentUser()!;
+
+  // Create child with Bengali learning language
+  const childBengali = await profileService.createChild(testParent.id, {
+    name: 'Debjit',
+    grade: 'Grade 2',
+    preferredLanguage: 'Bengali',
+    avatar: '👦',
+    languages: ['Bengali', 'English'],
+  });
+  assert(childBengali.preferredLanguage === 'Bengali', 'Child created with Bengali preference');
+
+  // Verify switching to child immediately switches i18n language
+  const bnCode = i18n.supportedLanguageToCode(childBengali.preferredLanguage);
+  await i18n.setLanguage(bnCode);
+  assert(i18n.getCurrentLanguage() === 'bn', 'Selecting Bengali child switches UI to bn');
+  assert(i18n.t('nav.practice') === 'অনুশীলন করুন', 'Nav practice translates to Bengali "অনুশীলন করুন"');
+  assert(i18n.t('nav.storyShelf') === 'গল্পের তাক', 'Nav story shelf translates to Bengali "গল্পের তাক"');
+
+  // Switch to Hindi child
+  const hiCode = i18n.supportedLanguageToCode('Hindi');
+  await i18n.setLanguage(hiCode);
+  assert(i18n.getCurrentLanguage() === 'hi', 'Selecting Hindi child switches UI to hi');
+  assert(i18n.t('nav.practice') === 'अभ्यास करें', 'Nav practice translates to Hindi "अभ्यास करें"');
+
+  // Switch to Punjabi child
+  const paCode = i18n.supportedLanguageToCode('Punjabi');
+  await i18n.setLanguage(paCode);
+  assert(i18n.getCurrentLanguage() === 'pa', 'Selecting Punjabi child switches UI to pa');
+  assert(i18n.t('nav.practice') === 'ਅਭਿਆਸ ਅਤੇ ਖੇਡਾਂ', 'Nav practice translates to Punjabi "ਅਭਿਆਸ ਅਤੇ ਖੇਡਾਂ"');
+
+  // Switch to Tamil child
+  const taCode = i18n.supportedLanguageToCode('Tamil');
+  await i18n.setLanguage(taCode);
+  assert(i18n.getCurrentLanguage() === 'ta', 'Selecting Tamil child switches UI to ta');
+  assert(i18n.t('nav.practice') === 'பயிற்சியும் விளையாட்டும்', 'Nav practice translates to Tamil "பயிற்சியும் விளையாட்டும்"');
+
+  // Switch to Odia child
+  const orCode = i18n.supportedLanguageToCode('Odia');
+  await i18n.setLanguage(orCode);
+  assert(i18n.getCurrentLanguage() === 'or', 'Selecting Odia child switches UI to or');
+  assert(i18n.t('nav.practice') === 'ଅଭ୍ୟାସ ଓ ଖେଳ', 'Nav practice translates to Odia "ଅଭ୍ୟାସ ଓ ଖେଳ"');
+
+  // Switch to English child
+  const enCode = i18n.supportedLanguageToCode('English');
+  await i18n.setLanguage(enCode);
+  assert(i18n.getCurrentLanguage() === 'en', 'Selecting English child switches UI to en');
+  assert(i18n.t('nav.practice') === 'Practice', 'Nav practice translates to English "Practice"');
+
+  // 23.4 Parent Interface Language Independence
+  // Parent sets interface language to Hindi while child is Bengali
+  await i18n.setLanguage('hi');
+  await authService.updateInterfaceLanguage('hi');
+  const debjitAfter = await profileService.getChild(childBengali.id);
+  assert(debjitAfter?.preferredLanguage === 'Bengali', 'Parent language change did NOT overwrite child learning language');
+  assert(authService.getCurrentUser()?.interfaceLanguage === 'hi', 'Parent interface language persists as hi');
+
+  // Reset back to English
+  await i18n.setLanguage('en');
+  await authService.updateInterfaceLanguage('en');
+
+  // -------------------------------------------------------------------------
+  // Test Group 24: Calm Female Multilingual Storytelling Voice System
+  // -------------------------------------------------------------------------
+  console.log('\n--- Test Group 24: Calm Female Multilingual Storytelling Voice System ---');
+
+  // 24.1: 6 Supported Languages & Google Cloud Female Voice Mapping
+  const voiceSupportedLangs: AppLanguageCode[] = ['en', 'hi', 'pa', 'bn', 'ta', 'or'];
+  for (const lang of voiceSupportedLangs) {
+    const vConfig = GOOGLE_CLOUD_FEMALE_VOICES[lang];
+    assert(Boolean(vConfig), `Voice configuration exists for language ${lang}`);
+    assert(vConfig.ssmlGender === 'FEMALE', `Voice config gender for ${lang} is explicitly FEMALE`);
+    assert(vConfig.primaryVoice.length > 5, `Primary voice identifier exists for ${lang}: ${vConfig.primaryVoice}`);
+    assert(vConfig.locale.startsWith(lang) || (lang === 'en' && vConfig.locale === 'en-IN'), `Locale matches ${lang}: ${vConfig.locale}`);
+  }
+
+  // 24.2: Voice Direction Instruction Text Verification
+  assert(CALM_FEMALE_VOICE_DIRECTION.includes('soft, warm and natural female voice'), 'Voice direction specifies soft, warm and natural female voice');
+  assert(CALM_FEMALE_VOICE_DIRECTION.includes('gentle storytelling style'), 'Voice direction specifies gentle storytelling style');
+  assert(CALM_FEMALE_VOICE_DIRECTION.includes('reading a beautiful story to a young child'), 'Voice direction specifies reading to a young child');
+  assert(CALM_FEMALE_VOICE_DIRECTION.includes('comfortable, slightly slower pace'), 'Voice direction specifies comfortable, slightly slower pace');
+  assert(CALM_FEMALE_VOICE_DIRECTION.includes('Pause naturally at commas and full stops'), 'Voice direction specifies natural pauses at punctuation');
+
+  // 24.3: Mode Audio Settings & Distinct Voice Behaviors
+  assert(TTS_MODE_AUDIO_SETTINGS.story.speakingRate === 0.86, 'Story mode uses slightly slower 0.86 rate for calm storytelling');
+  assert(TTS_MODE_AUDIO_SETTINGS.instruction.speakingRate === 0.82, 'Instruction mode uses deliberate 0.82 rate');
+  assert(TTS_MODE_AUDIO_SETTINGS.pronunciation.speakingRate === 0.74, 'Pronunciation mode uses slow 0.74 rate for phonetic accuracy');
+  assert(TTS_MODE_AUDIO_SETTINGS.question.speakingRate === 0.84, 'Question mode uses 0.84 rate');
+  assert(TTS_MODE_AUDIO_SETTINGS.encouragement.speakingRate === 0.88, 'Encouragement mode uses 0.88 rate');
+  assert(TTS_MODE_AUDIO_SETTINGS.explanation.speakingRate === 0.84, 'Explanation mode uses 0.84 rate');
+
+  // 24.4: SSML Paragraph Break & Natural Pausing
+  const singleParagraphSsml = buildSsml('A simple sentence.', 'story');
+  assert(singleParagraphSsml.includes('<speak><p>A simple sentence.</p></speak>'), 'Single paragraph wraps in <speak><p>');
+
+  const multiParagraphText = 'Once upon a time in a deep forest.\n\nThe little rabbit found a shiny golden key.';
+  const multiParagraphSsml = buildSsml(multiParagraphText, 'story');
+  assert(multiParagraphSsml.includes('<break time="400ms"/>'), 'Multi-paragraph story injects 400ms natural break between paragraphs');
+  assert(multiParagraphSsml.includes('<p>Once upon a time in a deep forest.</p>'), 'First paragraph wrapped in <p>');
+  assert(multiParagraphSsml.includes('<p>The little rabbit found a shiny golden key.</p>'), 'Second paragraph wrapped in <p>');
+
+  const questionSsml = buildSsml('Can you find the letter b?', 'question');
+  assert(questionSsml.includes('<break time="350ms"/>'), 'Question SSML includes reflection pause');
+
+  const specialCharsSsml = buildSsml('Tom & Jerry <friends> are happy', 'story');
+  assert(specialCharsSsml.includes('Tom &amp; Jerry &lt;friends&gt; are happy'), 'SSML escapes XML special characters');
+
+  // 24.5: Language Normalization
+  assert(normalizeLanguageToCode('English') === 'en', 'Normalizes English to en');
+  assert(normalizeLanguageToCode('हिन्दी') === 'hi', 'Normalizes हिन्दी to hi');
+  assert(normalizeLanguageToCode('ਪੰਜਾਬੀ') === 'pa', 'Normalizes ਪੰਜਾਬੀ to pa');
+  assert(normalizeLanguageToCode('বাংলা') === 'bn', 'Normalizes বাংলা to bn');
+  assert(normalizeLanguageToCode('தமிழ்') === 'ta', 'Normalizes தமிழ் to ta');
+  assert(normalizeLanguageToCode('ଓଡ଼ିଆ') === 'or', 'Normalizes ଓଡ଼ିଆ to or');
+
+  // 24.6: Google Cloud TTS Synthesis (Mocked Network)
+  const mockMp3Base64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAA=';
+  const mockGoogleTtsFetch: typeof fetch = async (url, init) => {
+    const urlStr = String(url);
+    if (urlStr.includes('texttospeech.googleapis.com')) {
+      return new Response(JSON.stringify({ audioContent: mockMp3Base64 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+  };
+
+  const ttsResult = await handleSynthesizeSpeech(
+    { text: 'Hello little reader!', language: 'English', mode: 'story' },
+    'mock-tts-key',
+    mockGoogleTtsFetch
+  );
+  assert(ttsResult.success === true, 'handleSynthesizeSpeech succeeds with Google Cloud TTS');
+  assert(ttsResult.provider === 'google_cloud_tts', 'Provider is google_cloud_tts');
+  assert(ttsResult.audioContent === mockMp3Base64, 'Audio content is base64 MP3');
+  assert(ttsResult.voiceName === 'en-IN-Neural2-A', 'Uses maternal Indian English primary voice');
+  assert(ttsResult.cached === false, 'First call is not cached');
+
+  // Second call hits audio cache
+  const cachedResult = await handleSynthesizeSpeech(
+    { text: 'Hello little reader!', language: 'English', mode: 'story' },
+    'mock-tts-key',
+    mockGoogleTtsFetch
+  );
+  assert(cachedResult.success === true, 'Cached synthesis succeeds');
+  assert(cachedResult.cached === true, 'Audio retrieved from LRU memory cache');
+
+  // 24.7: Gemini 2.0 Flash Audio Fallback (When Google TTS Fails)
+  const mockGeminiAudioWav = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  const mockGeminiTtsFetch: typeof fetch = async (url, init) => {
+    const urlStr = String(url);
+    if (urlStr.includes('texttospeech.googleapis.com')) {
+      return new Response(JSON.stringify({ error: { code: 500, message: 'Server error' } }), {
+        status: 500,
+      });
+    }
+    if (urlStr.includes('generativelanguage.googleapis.com')) {
+      return new Response(JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{
+              inlineData: {
+                mimeType: 'audio/wav',
+                data: mockGeminiAudioWav,
+              }
+            }]
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+  };
+
+  const geminiTtsResult = await handleSynthesizeSpeech(
+    { text: 'Once upon a time in a peaceful garden', language: 'Hindi', mode: 'story' },
+    'mock-gemini-key',
+    mockGeminiTtsFetch
+  );
+  assert(geminiTtsResult.success === true, 'Gemini fallback generates audio successfully');
+  assert(geminiTtsResult.provider === 'gemini_tts', 'Provider is gemini_tts fallback');
+  assert(geminiTtsResult.voiceName?.includes('Aoede'), 'Gemini audio fallback uses calm female voice Aoede');
+
+  // 24.8: Graceful Web Speech Fallback When No API Key Configured
+  const fallbackResult = await handleSynthesizeSpeech(
+    { text: 'No key test', language: 'Bengali', mode: 'instruction' },
+    ''
+  );
+  assert(fallbackResult.success === false, 'Returns non-fatal false when no key is set');
+  assert(fallbackResult.provider === 'fallback', 'Provider is set to fallback');
+  assert(Boolean(fallbackResult.voiceName), 'Still returns recommended female voice for client engine');
+
+  // 24.9: Vercel Serverless Synthesize Endpoint Handler
+  // Web Request OPTIONS preflight
+  const preflightReq = new Request('http://localhost/api/voice/synthesize', { method: 'OPTIONS' });
+  const preflightRes = await vercelVoiceHandler(preflightReq);
+  assert(preflightRes.status === 204, 'Vercel API OPTIONS returns 204 preflight');
+  assert(preflightRes.headers.get('Access-Control-Allow-Origin') === '*', 'CORS origin allowed');
+
+  // Web Request POST
+  const postReq = new Request('http://localhost/api/voice/synthesize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Vercel test text', language: 'Tamil', mode: 'question' }),
+  });
+  const postRes = await vercelVoiceHandler(postReq);
+  assert(postRes.status === 200, 'Vercel API POST returns status 200');
+  const postJson = await postRes.json();
+  assert(postJson.locale === 'ta-IN', 'API handler correctly maps Tamil to ta-IN');
+
+  // Node.js req/res mock
+  let nodeStatusCode = 0;
+  let nodeJsonData: any = null;
+  const mockNodeReq: any = {
+    method: 'POST',
+    body: { text: 'Node test', language: 'Odia', mode: 'explanation' },
+  };
+  const mockNodeRes: any = {
+    setHeader: () => {},
+    status: (code: number) => {
+      nodeStatusCode = code;
+      return {
+        json: (data: any) => { nodeJsonData = data; return data; },
+        end: () => {},
+      };
+    },
+  };
+  await vercelVoiceHandler(mockNodeReq, mockNodeRes);
+  assert(nodeStatusCode === 200, 'Node serverless handler returns HTTP 200');
+  assert(nodeJsonData.locale === 'or-IN', 'Node handler correctly maps Odia to or-IN');
+
+  // 24.10: Client SpeechService Calm Female Voice Selection & Lifecycle
+  const clientSpeech = SpeechService.getInstance();
+  assert(Boolean(clientSpeech), 'SpeechService instance initialized');
+  assert(clientSpeech.getLocaleForLanguage('bn') === 'bn-IN', 'SpeechService locale map supports Bengali');
+  assert(clientSpeech.getLocaleForLanguage('or') === 'or-IN', 'SpeechService locale map supports Odia');
+  assert(clientSpeech.getLocaleForLanguage('pa') === 'pa-IN', 'SpeechService locale map supports Punjabi');
+
+  // Test calm female voice scoring simulation
+  const mockVoicesList: any[] = [
+    { name: 'Microsoft David Desktop - English (United States)', lang: 'en-US', localService: true },
+    { name: 'Microsoft Zira Desktop - English (United States)', lang: 'en-US', localService: true },
+    { name: 'Google हिन्दी Male Voice', lang: 'hi-IN', localService: false },
+    { name: 'Google हिन्दी Swara Female Natural', lang: 'hi-IN', localService: false },
+  ];
+  (clientSpeech as any).voices = mockVoicesList;
+  (clientSpeech as any).voicesLoaded = true;
+
+  const bestEnVoice = clientSpeech.findBestVoiceForLocale('en-US');
+  assert(bestEnVoice?.name.includes('Zira'), 'Prioritizes female voice Zira over male voice David');
+
+  const bestHiVoice = clientSpeech.findBestVoiceForLocale('hi-IN');
+  assert(bestHiVoice?.name.includes('Swara'), 'Prioritizes female Hindi voice Swara over male voice');
+
+  // SpeechService stops without error
+  clientSpeech.stop();
+  assert(clientSpeech.isSpeaking() === false, 'SpeechService stop() ensures speaking state is false');
+
+  // Pure English text with Indic language guard
+  const indicEnglishGuard = (clientSpeech as any).speakViaWebSpeech('Hello this is purely English text', { langCode: 'hi' });
+  assert(indicEnglishGuard.spoken === false, 'SpeechService guards against speaking pure English text with Indic voice');
+
+  // -------------------------------------------------------------------------
+  // Test Group 25: React Bits Sound Lab & Fluid UI Animations Integration
+  // -------------------------------------------------------------------------
+  console.log('\n--- Test Group 25: React Bits Sound Lab & Fluid UI Animations Integration ---');
+
+  // 25.1: SoundService Singleton & Defaults
+  const sndService = SoundService.getInstance();
+  assert(Boolean(sndService), 'SoundService instance initialized');
+  assert(sndService === soundService, 'SoundService adheres to singleton pattern');
+  assert(typeof sndService.isEnabled() === 'boolean', 'SoundService reports master enabled boolean');
+
+  // 25.2: Master Sound Switch and Toggling
+  const initialSoundState = sndService.isEnabled();
+  sndService.setEnabled(false);
+  assert(sndService.isEnabled() === false, 'Master sound can be muted / disabled');
+  sndService.setEnabled(true);
+  assert(sndService.isEnabled() === true, 'Master sound can be unmuted / enabled');
+  const toggledVal = sndService.toggle();
+  assert(sndService.isEnabled() === toggledVal, 'sndService.toggle() toggles sound state');
+  sndService.setEnabled(initialSoundState); // Restore initial state
+
+  // 25.3: Volume Setting & Boundary Clamping
+  sndService.setVolume(0.42);
+  assert(Math.abs(sndService.getVolume() - 0.42) < 0.001, 'Volume can be set to 42%');
+  sndService.setVolume(1.85);
+  assert(sndService.getVolume() === 1.0, 'Volume is clamped to 1.0 maximum');
+  sndService.setVolume(-0.5);
+  assert(sndService.getVolume() === 0.0, 'Volume is clamped to 0.0 minimum');
+  sndService.setVolume(0.55); // Reset to comfortable default
+
+  // 25.4: All Sound Lab Physical Waveforms Synthesize Correctly
+  // Mock Web Audio Context for Node test runner
+  const mockAudioContext: any = {
+    sampleRate: 44100,
+    createBuffer: (channels: number, length: number, sampleRate: number) => {
+      const channelArray = new Float32Array(length);
+      return {
+        numberOfChannels: channels,
+        length,
+        sampleRate,
+        duration: length / sampleRate,
+        getChannelData: () => channelArray,
+      };
+    },
+  };
+
+  const soundProfiles: SoundEffectName[] = [
+    'pebble',
+    'plush',
+    'pluck',
+    'petal',
+    'unfold',
+    'fold',
+    'glide',
+    'swish',
+    'bloom',
+    'confetti',
+    'treasure',
+    'pulse',
+    'spring',
+  ];
+
+  for (const soundName of soundProfiles) {
+    const buffer = (sndService as any).synthesizeBuffer(soundName, mockAudioContext);
+    assert(Boolean(buffer), `Sound Lab profile [${soundName}] synthesizes valid AudioBuffer`);
+    assert(buffer.length > 500, `Sound Lab profile [${soundName}] buffer contains non-empty audio samples (${buffer.length} samples)`);
+    assert(buffer.duration > 0.04 && buffer.duration < 1.0, `Sound Lab profile [${soundName}] maintains subtle micro-duration (${buffer.duration.toFixed(3)}s)`);
+  }
+
+  // 25.5: Child Profile Sound Preference Isolation
+  // When child preference is false, play() should be a no-op
+  let soundPlayed = false;
+  const mockBufferSource: any = {
+    buffer: null,
+    connect: () => {},
+    start: () => { soundPlayed = true; },
+  };
+  (sndService as any).audioCtx = {
+    state: 'running',
+    currentTime: 0,
+    createBufferSource: () => mockBufferSource,
+  };
+  (sndService as any).masterGain = {};
+  (sndService as any).isUnlocked = true;
+
+  soundPlayed = false;
+  sndService.play('bloom', false); // child preference disabled
+  assert(soundPlayed === false, 'Respects child preferences.soundEffects = false; no audio triggered');
+
+  // When master enabled is false, play() is also a no-op
+  sndService.setEnabled(false);
+  soundPlayed = false;
+  sndService.play('bloom', true);
+  assert(soundPlayed === false, 'Respects master enabled = false; no audio triggered');
+  sndService.setEnabled(true);
+
+  // 25.6: Never Interfere with Active Speech / TTS Narration
+  (clientSpeech as any).isSpeakingActive = true;
+  soundPlayed = false;
+  sndService.play('bloom', true);
+  assert(soundPlayed === false, 'Strict guard: Sound effects never play while SpeechService/TTS narration is active');
+  (clientSpeech as any).isSpeakingActive = false;
+
+  // 25.7: Semantic Interaction Helper Methods
+  assert(typeof sndService.buttonClick === 'function', 'Provides buttonClick() helper (Pebble/Plush)');
+  assert(typeof sndService.cardSelect === 'function', 'Provides cardSelect() helper (Pluck/Petal)');
+  assert(typeof sndService.modalOpen === 'function', 'Provides modalOpen() helper (Unfold)');
+  assert(typeof sndService.modalClose === 'function', 'Provides modalClose() helper (Fold)');
+  assert(typeof sndService.pageTransition === 'function', 'Provides pageTransition() helper (Glide/Swish)');
+  assert(typeof sndService.correctAnswer === 'function', 'Provides correctAnswer() helper (Bloom)');
+  assert(typeof sndService.activityComplete === 'function', 'Provides activityComplete() helper (Confetti)');
+  assert(typeof sndService.achievement === 'function', 'Provides achievement() helper (Treasure)');
+  assert(typeof sndService.progressUpdate === 'function', 'Provides progressUpdate() helper (Pulse)');
+  assert(typeof sndService.toggleSwitch === 'function', 'Provides toggleSwitch() helper (Spring)');
+
+  // 25.8: Fluid UI CSS Keyframes & Animation Verification
+  const stylesCssContent = fs.readFileSync(path.resolve('Front_end/styles.css'), 'utf-8');
+  assert(stylesCssContent.includes('--ease-spring'), 'styles.css defines --ease-spring curve');
+  assert(stylesCssContent.includes('--ease-smooth'), 'styles.css defines --ease-smooth curve');
+  assert(stylesCssContent.includes('@keyframes modalBackdropFadeIn'), 'styles.css includes modalBackdropFadeIn animation');
+  assert(stylesCssContent.includes('@keyframes modalPopIn'), 'styles.css includes modalPopIn fluid entrance');
+  assert(stylesCssContent.includes('@keyframes pageFadeSlide'), 'styles.css includes pageFadeSlide route transition');
+  assert(stylesCssContent.includes('@keyframes progressShimmer'), 'styles.css includes progressShimmer fluid fill');
+  assert(stylesCssContent.includes('@keyframes celebratePop'), 'styles.css includes celebratePop feedback');
+  assert(stylesCssContent.includes('.sound-toggle-btn'), 'styles.css includes .sound-toggle-btn tactile control');
+  assert(stylesCssContent.includes('@media (prefers-reduced-motion: reduce)'), 'styles.css includes prefers-reduced-motion accessibility rules');
 
 
   console.log(`\n==========================================`);
