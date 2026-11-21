@@ -210,12 +210,6 @@ export const ADVENTURE_DESTINATIONS: Record<DestinationId, DestinationDefinition
 };
 
 export const DESTINATION_ORDER: DestinationId[] = [
-  'alphabet_forest',
-  'sound_safari',
-  'word_wonderland',
-  'spelling_castle',
-  'rhyme_river',
-  'storybook_kingdom',
   'phonics_garden',
   'word_workshop',
   'reading_forest',
@@ -223,19 +217,19 @@ export const DESTINATION_ORDER: DestinationId[] = [
   'vocabulary_island',
 ];
 
-export const DEFAULT_DESTINATION_SETTINGS: Record<DestinationId, DestinationSetting> = {
-  alphabet_forest: { enabled: true, requiredPoints: 0 },
-  sound_safari: { enabled: true, requiredPoints: 50 },
-  word_wonderland: { enabled: true, requiredPoints: 100 },
-  spelling_castle: { enabled: true, requiredPoints: 150 },
-  rhyme_river: { enabled: true, requiredPoints: 200 },
-  storybook_kingdom: { enabled: true, requiredPoints: 250 },
-  phonics_garden: { enabled: true, requiredPoints: 0 },
-  word_workshop: { enabled: true, requiredPoints: 50 },
-  reading_forest: { enabled: true, requiredPoints: 100 },
-  story_castle: { enabled: true, requiredPoints: 150 },
-  vocabulary_island: { enabled: true, requiredPoints: 200 },
-};
+export const DEFAULT_DESTINATION_SETTINGS: Record<DestinationId, DestinationSetting> = Object.freeze({
+  alphabet_forest: Object.freeze({ enabled: true, requiredPoints: 0 }),
+  sound_safari: Object.freeze({ enabled: true, requiredPoints: 50 }),
+  word_wonderland: Object.freeze({ enabled: true, requiredPoints: 100 }),
+  spelling_castle: Object.freeze({ enabled: true, requiredPoints: 150 }),
+  rhyme_river: Object.freeze({ enabled: true, requiredPoints: 200 }),
+  storybook_kingdom: Object.freeze({ enabled: true, requiredPoints: 250 }),
+  phonics_garden: Object.freeze({ enabled: true, requiredPoints: 0 }),
+  word_workshop: Object.freeze({ enabled: true, requiredPoints: 50 }),
+  reading_forest: Object.freeze({ enabled: true, requiredPoints: 100 }),
+  story_castle: Object.freeze({ enabled: true, requiredPoints: 150 }),
+  vocabulary_island: Object.freeze({ enabled: true, requiredPoints: 200 }),
+}) as Record<DestinationId, DestinationSetting>;
 
 const STORAGE_KEY_SETTINGS = 'dysleximate_adventure_settings_v1';
 
@@ -260,11 +254,11 @@ export class AdventureService {
    */
   public async getChildSettings(childId: string): Promise<Record<DestinationId, DestinationSetting>> {
     if (!childId) {
-      return { ...DEFAULT_DESTINATION_SETTINGS };
+      return this.getFreshDefaults();
     }
 
-    // 1. Try reading from Supabase child_profiles.learning_preferences if connected
-    if (isSupabaseConfigured() && supabase) {
+    // 1. Try reading from Supabase child_profiles.learning_preferences if connected (exclude local demo profiles)
+    if (isSupabaseConfigured() && supabase && !childId.startsWith('child-demo-') && !childId.startsWith('child-aanya') && !childId.startsWith('child-kabir')) {
       try {
         const { data, error } = await supabase
           .from('child_profiles')
@@ -302,7 +296,11 @@ export class AdventureService {
   }
 
   public getFreshDefaults(): Record<DestinationId, DestinationSetting> {
-    return { ...DEFAULT_DESTINATION_SETTINGS };
+    const copy: Record<DestinationId, DestinationSetting> = {} as any;
+    for (const id of Object.keys(DEFAULT_DESTINATION_SETTINGS) as DestinationId[]) {
+      copy[id] = { ...DEFAULT_DESTINATION_SETTINGS[id] };
+    }
+    return copy;
   }
 
   /**
@@ -332,10 +330,13 @@ export class AdventureService {
     }
 
     const current = await this.getChildSettings(childId);
-    const sanitized: Record<DestinationId, DestinationSetting> = {
-      ...DEFAULT_DESTINATION_SETTINGS,
-      ...current,
-    };
+    const sanitized: Record<DestinationId, DestinationSetting> = {} as any;
+    for (const id of DESTINATION_ORDER) {
+      sanitized[id] = {
+        enabled: current[id]?.enabled ?? DEFAULT_DESTINATION_SETTINGS[id].enabled,
+        requiredPoints: current[id]?.requiredPoints ?? DEFAULT_DESTINATION_SETTINGS[id].requiredPoints,
+      };
+    }
 
     for (const id of DESTINATION_ORDER) {
       const incoming = newSettings[id];

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts src/worker/ttsHandler.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build Front_end",
+    "build": "tsc && esbuild src/worker/tinyfishHandler.ts src/worker/aiHandler.ts src/worker/ttsHandler.ts src/worker/rateLimiter.ts --outdir=src/worker --format=esm --platform=node --target=node20 && vite build Front_end",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "npx -y tsx scripts/verify-flows.ts"
@@ -23,8 +23,13 @@
   },
   "homepage": "https://github.com/Akshatbhati31/Sharanga#readme",
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
+    "eslint": "^10.15.0",
+    "lighthouse": "^13.6.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
   },

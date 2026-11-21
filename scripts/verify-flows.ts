@@ -3940,6 +3940,125 @@ async function runTests() {
   assert(stylesCssContent.includes('@media (prefers-reduced-motion: reduce)'), 'styles.css includes prefers-reduced-motion accessibility rules');
 
 
+  // ----------------------------------------------------
+  // TEST GROUP 26: Child Profile Editing, State Persistence & Navigation Context
+  // ----------------------------------------------------
+  console.log(`\n--- Test Group 26: Child Profile Editing, State Persistence & Navigation Context ---`);
+
+  // Reset demo session for clean testing
+  const authSvc = AuthService.getInstance();
+  const profSvc = ProfileService.getInstance();
+  const storeSvc = StorageService.getInstance();
+
+  const testGroup26Login = await authSvc.login({ email: 'parent@dysleximate.demo', password: 'Password123!' });
+  assert(testGroup26Login.success && testGroup26Login.user !== undefined, 'Parent login for Profile Editing tests');
+  const parentUser = testGroup26Login.user!;
+
+  const childrenBefore = await profSvc.getChildren(parentUser.id);
+  const aanyaBefore = childrenBefore.find(c => c.name.includes('Aanya'))!;
+  const kabirBefore = childrenBefore.find(c => c.name.includes('Kabir'))!;
+  assert(aanyaBefore !== undefined, 'Aanya profile exists before edit');
+  assert(kabirBefore !== undefined, 'Kabir profile exists before edit');
+
+  // 1. Select Aanya and open her dashboard
+  profSvc.setActiveChild(aanyaBefore);
+  assert(profSvc.getActiveChild()?.id === aanyaBefore.id, 'Aanya is the active child on dashboard');
+
+  // 2. Edit Aanya Sharma's profile from dashboard context
+  const updatedAanya = await profSvc.updateChild(aanyaBefore.id, {
+    name: 'Aanya Sharma ⭐',
+    grade: 'Class 4 · Little reader',
+    preferredLanguage: 'Hindi',
+    languages: ['Hindi', 'English'],
+    avatar: '🦊',
+    preferences: {
+      readingSpeed: 'slow',
+      dyslexiaFont: true,
+      highContrast: false,
+      soundEffects: true,
+      autoReadAloud: true,
+      languages: ['Hindi', 'English'],
+    },
+  });
+
+  // 3. Verify saved values
+  assert(updatedAanya.name === 'Aanya Sharma ⭐', 'Aanya name updated successfully');
+  assert(updatedAanya.grade === 'Class 4 · Little reader', 'Aanya grade updated to Class 4');
+  assert(updatedAanya.preferredLanguage === 'Hindi', 'Aanya preferred language updated to Hindi');
+  assert(updatedAanya.avatar === '🦊', 'Aanya avatar updated to fox');
+  assert(updatedAanya.preferences.dyslexiaFont === true, 'Aanya dyslexia font enabled');
+  assert(updatedAanya.preferences.readingSpeed === 'slow', 'Aanya reading speed set to slow');
+
+  // 4. Verify Active Child preserved on dashboard
+  const activeAfterSave = profSvc.getActiveChild();
+  assert(activeAfterSave?.id === aanyaBefore.id, 'Active child preserved as Aanya after save');
+  assert(activeAfterSave?.name === 'Aanya Sharma ⭐', 'Active child reflects updated name immediately');
+
+  // 5. Verify page refresh / storage reload retains saved information
+  const refreshedChild = await profSvc.getChild(aanyaBefore.id);
+  assert(refreshedChild?.name === 'Aanya Sharma ⭐', 'Refreshed child retains updated name from storage');
+  assert(refreshedChild?.preferences.dyslexiaFont === true, 'Refreshed child retains dyslexia font');
+  assert(refreshedChild?.preferences.autoReadAloud === true, 'Refreshed child retains autoReadAloud');
+
+  // 6. Verify Kabir Sharma is untouched when editing Aanya
+  const kabirAfter = await profSvc.getChild(kabirBefore.id);
+  assert(kabirAfter?.name === kabirBefore.name, 'Kabir name remained untouched when editing Aanya');
+  assert(kabirAfter?.grade === kabirBefore.grade, 'Kabir grade remained untouched');
+  assert(kabirAfter?.avatar === kabirBefore.avatar, 'Kabir avatar remained untouched');
+
+  // 7. Verify Kabir can be edited independently without changing Aanya
+  const updatedKabir = await profSvc.updateChild(kabirBefore.id, {
+    name: 'Kabir Sharma 🚀',
+    avatar: '🦁',
+  });
+  assert(updatedKabir.name === 'Kabir Sharma 🚀', 'Kabir updated independently');
+  const aanyaCheck = await profSvc.getChild(aanyaBefore.id);
+  assert(aanyaCheck?.name === 'Aanya Sharma ⭐', 'Aanya remained unchanged when editing Kabir');
+
+  // 8. Security: Unauthorized parent cannot edit another parent's child
+  const unauthorizedParent = await authSvc.register({
+    fullName: 'Stranger Parent',
+    email: 'stranger@example.com',
+    password: 'password123',
+    confirmPassword: 'password123',
+    acceptTerms: true,
+  });
+  if (unauthorizedParent.success && unauthorizedParent.user) {
+    let authErrorCaught = false;
+    try {
+      // Stranger parent trying to update Aanya (who belongs to Sunita Sharma)
+      await profSvc.updateChild(aanyaBefore.id, { name: 'Hacked Name' }, unauthorizedParent.user.id);
+    } catch (err: any) {
+      authErrorCaught = true;
+      assert(err.message.includes('Unauthorized'), 'Update rejected with Unauthorized error for other parent child');
+    }
+    assert(authErrorCaught, 'Unauthorized parent cannot edit another parent child');
+  }
+
+  // Restore demo login session
+  await authSvc.login({ email: 'parent@dysleximate.demo', password: 'Password123!' });
+  profSvc.setActiveChild(aanyaBefore);
+
+  // 9. Verify invalid/missing child ID throws error without data corruption
+  let notFoundCaught = false;
+  try {
+    await profSvc.updateChild('non-existent-child-id-9999', { name: 'Nobody' });
+  } catch (err: any) {
+    notFoundCaught = true;
+    assert(err.message.includes('not found'), 'Non-existent child update rejected with not found error');
+  }
+  assert(notFoundCaught, 'Non-existent child update handled safely');
+
+  // 10. Frontend app.ts validation and context tests
+  const appTsContent = fs.readFileSync(path.resolve('Front_end/app.ts'), 'utf-8');
+  assert(appTsContent.includes('activeProfileEditSource'), 'Front_end/app.ts defines activeProfileEditSource for context tracking');
+  assert(appTsContent.includes('isProfileSubmitting'), 'Front_end/app.ts defines isProfileSubmitting double-click guard');
+  assert(appTsContent.includes("returnContext?.page === 'profiles'"), 'Front_end/app.ts preserves profile selection return route');
+  assert(appTsContent.includes("returnContext?.page === 'parent'"), 'Front_end/app.ts preserves parent portal return route');
+  assert(appTsContent.includes('learner-edit-btn'), 'Front_end/app.ts includes sidebar edit button on child dashboard');
+  assert(appTsContent.includes('btn-save-child-profile'), 'Front_end/app.ts includes dedicated save button ID for child modal');
+  assert(appTsContent.includes('child-message'), 'Front_end/app.ts includes accessible error feedback container in child modal');
+
   console.log(`\n==========================================`);
   console.log(`Final Test Results: ${passed} passed, ${failed} failed`);
   console.log(`==========================================\n`);

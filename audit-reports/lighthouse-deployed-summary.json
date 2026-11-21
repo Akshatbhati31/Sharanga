@@ -1,0 +1,17 @@
+{
+  "url": "https://sharanga.vercel.app/",
+  "fetchTime": "2026-11-20T18:11:34.975Z",
+  "scores": {
+    "performance": 85,
+    "accessibility": 94,
+    "bestPractices": 96,
+    "seo": 91
+  },
+  "metrics": {
+    "firstContentfulPaint": "3.1 s",
+    "largestContentfulPaint": "3.1 s",
+    "totalBlockingTime": "170 ms",
+    "cumulativeLayoutShift": "0",
+    "speedIndex": "4.1 s"
+  }
+}

@@ -1,4 +1,5 @@
 import { handleTinyFishSearch, validateSearchParams } from '../../src/worker/tinyfishHandler.js';
+import { checkRateLimit, getClientIp } from '../../src/worker/rateLimiter.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,26 @@ export default async function handler(req: any, res?: any) {
       const request = req as Request;
       if (request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: CORS_HEADERS });
+      }
+
+      const clientIp = getClientIp(request);
+      const rateCheck = checkRateLimit(`search:${clientIp}`, 60, 60000);
+      if (!rateCheck.allowed) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Rate limit exceeded. Please wait before searching again.',
+            retryAfterSec: rateCheck.retryAfterSec,
+          }),
+          {
+            status: 429,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+              'Retry-After': String(rateCheck.retryAfterSec || 1),
+            },
+          }
+        );
       }
 
       let rawParams: Record<string, unknown> = {};
@@ -60,6 +81,17 @@ export default async function handler(req: any, res?: any) {
 
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
+    }
+
+    const clientIp = getClientIp(req);
+    const rateCheck = checkRateLimit(`search:${clientIp}`, 60, 60000);
+    if (!rateCheck.allowed) {
+      res.setHeader('Retry-After', String(rateCheck.retryAfterSec || 1));
+      return res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded. Please wait before searching again.',
+        retryAfterSec: rateCheck.retryAfterSec,
+      });
     }
 
     let rawParams: Record<string, unknown> = {};

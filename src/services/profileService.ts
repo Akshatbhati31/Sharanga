@@ -14,7 +14,11 @@ export interface IProfileService {
     parentId: string,
     data: Omit<ChildProfile, 'id' | 'parentId' | 'createdAt'>
   ): Promise<ChildProfile>;
-  updateChild(id: string, updates: Partial<ChildProfile>): Promise<ChildProfile>;
+  updateChild(
+    id: string,
+    updates: Partial<ChildProfile>,
+    requestingParentId?: string
+  ): Promise<ChildProfile>;
   deleteChild(id: string): Promise<boolean>;
   getActiveChild(): ChildProfile | null;
   setActiveChild(child: ChildProfile | null): void;
@@ -477,11 +481,21 @@ export class ProfileService implements IProfileService {
     return newChild;
   }
 
-  public async updateChild(id: string, updates: Partial<ChildProfile>): Promise<ChildProfile> {
+  public async updateChild(
+    id: string,
+    updates: Partial<ChildProfile>,
+    requestingParentId?: string
+  ): Promise<ChildProfile> {
     const current = await this.getChild(id);
     if (!current) {
       throw new Error('Child profile not found.');
     }
+
+    if (requestingParentId && current.parentId && current.parentId !== requestingParentId) {
+      throw new Error('Unauthorized: You do not have permission to modify this child profile.');
+    }
+
+    const session = this.storage.getSession();
 
     const sb = supabase;
     const isDemo = id.startsWith('child-demo-') || id.startsWith('child-aanya') || id.startsWith('child-kabir') || !isSupabaseConfigured() || !sb;
@@ -491,7 +505,10 @@ export class ProfileService implements IProfileService {
         const mergedPreferences = {
           grade: updates.grade !== undefined ? updates.grade : current.grade,
           avatar: updates.avatar !== undefined ? updates.avatar : current.avatar,
-          preferences: updates.preferences !== undefined ? updates.preferences : current.preferences,
+          preferences: {
+            ...(current.preferences || {}),
+            ...(updates.preferences || {}),
+          },
           languages: updates.languages !== undefined ? updates.languages : (updates.preferences?.languages || current.languages),
         };
 
@@ -507,6 +524,7 @@ export class ProfileService implements IProfileService {
           .from('child_profiles')
           .update(dbPayload)
           .eq('id', id)
+          .eq('parent_id', current.parentId)
           .select()
           .single();
 
@@ -537,6 +555,7 @@ export class ProfileService implements IProfileService {
 
         if (this.activeChild && this.activeChild.id === id) {
           this.activeChild = updated;
+          this.storage.saveSession(session.userId, updated.id);
         }
 
         await this.notifyListeners(updated.parentId);
@@ -557,9 +576,21 @@ export class ProfileService implements IProfileService {
       ? (i18n.codeToSupportedLanguage(updates.preferredLanguage) || updates.preferredLanguage)
       : current.preferredLanguage;
 
+    const updatedPreferences = {
+      ...(current.preferences || {
+        readingSpeed: 'normal' as const,
+        dyslexiaFont: false,
+        highContrast: false,
+        soundEffects: true,
+        autoReadAloud: false,
+      }),
+      ...(updates.preferences || {}),
+    };
+
     const updated: ChildProfile = {
       ...current,
       ...updates,
+      preferences: updatedPreferences,
       preferredLanguage: updatedLang,
       id: current.id,
       parentId: current.parentId,
@@ -570,6 +601,7 @@ export class ProfileService implements IProfileService {
 
     if (this.activeChild && this.activeChild.id === id) {
       this.activeChild = updated;
+      this.storage.saveSession(session.userId, updated.id);
     }
 
     await this.notifyListeners(updated.parentId);
