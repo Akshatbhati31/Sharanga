@@ -114,6 +114,7 @@ export class SoundService {
   }
 
   public unlockAudio(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
     if (this.isUnlocked && this.audioCtx && this.audioCtx.state === 'running') return;
 
     try {

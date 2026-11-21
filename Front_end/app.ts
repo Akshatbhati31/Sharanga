@@ -26,6 +26,7 @@ import { ActivityRunnerModal } from '../src/ui/activityRunnerModal';
 import { LetterMirrorBDModal } from '../src/ui/letterMirrorBDModal';
 import { getSkillDefinition } from '../src/services/skillModel';
 import { i18n, t, SUPPORTED_LANGUAGES } from '../src/i18n';
+import type { AppLanguageCode } from '../src/i18n/types';
 import type { ActivityDifficulty, InteractiveActivityContent, LearningAttempt } from '../src/types/adaptive';
 import type { ChildProfile, SupportedLanguage, ParentUser } from '../src/types/auth';
 import type { EducationalResource, ResourceType } from '../src/types/tinyfish';
@@ -142,6 +143,11 @@ let pinRecoveryToken = '';
 // Mandatory Parent Portal PIN Gate State (in-memory; prevents bypass on page refresh)
 let isParentPortalUnlocked = false;
 let gatePinVisible = false;
+
+// Profile Edit Navigation Context & Submitting Guard
+let activeProfileEditSource: 'dashboard' | 'profiles' | 'parent' | null = null;
+let isProfileSubmitting = false;
+let returnContext: { page: 'dashboard' | 'profiles' | 'parent' } | null = null;
 
 const languageFlags: Record<SupportedLanguage, string> = {
   English: '🇬🇧',
@@ -356,9 +362,9 @@ function brandMarkup(isLight = false): string {
 function rightsFooter(): string {
   return `
     <div class="rights-footer">
-      <strong>Rights &amp; attribution</strong>
-      <p>© ${new Date().getFullYear()} Team PINAKA. All rights reserved. The DyslexiMate name, logo, and original app materials may not be copied or redistributed without permission. Educational support tool — not a clinical diagnostic instrument.</p>
-      <a href="mailto:team.nexus.dtu.26.30@gmail.com">Contact Team PINAKA</a>
+      <strong>${t('landing.rightsAttribution')}</strong>
+      <p>${t('landing.rightsNotice')}</p>
+      <a href="mailto:team.nexus.dtu.26.30@gmail.com">${t('landing.contactTeam')}</a>
     </div>`;
 }
 
@@ -377,14 +383,50 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
         </a>
 
         <nav class="site-nav-links" aria-label="Main Navigation">
-          <a class="site-nav-link" data-action="nav-scroll" data-target="#why-dysleximate">Why DyslexiMate</a>
-          <a class="site-nav-link" data-action="nav-scroll" data-target="#activities">Activities</a>
-          <a class="site-nav-link" data-action="nav-scroll" data-target="#interactive-reader">Interactive Reader</a>
-          <a class="site-nav-link" data-action="nav-scroll" data-target="#adaptive-engine">Adaptive AI</a>
-          <a class="site-nav-link" data-action="nav-scroll" data-target="#team-pinaka">Team PINAKA</a>
+          <a class="site-nav-link" data-action="nav-scroll" data-target="#why-dysleximate">${t('landing.navWhy')}</a>
+          <a class="site-nav-link" data-action="nav-scroll" data-target="#activities">${t('landing.navActivities')}</a>
+          <a class="site-nav-link" data-action="nav-scroll" data-target="#interactive-reader">${t('landing.navReader')}</a>
+          <a class="site-nav-link" data-action="nav-scroll" data-target="#adaptive-engine">${t('landing.navAdaptive')}</a>
+          <a class="site-nav-link" data-action="nav-scroll" data-target="#team-pinaka">${t('landing.navTeam')}</a>
         </nav>
 
         <div class="site-nav-actions">
+          <!-- Landing Page Multilingual Selector -->
+          <div class="custom-lang-selector ${customLangMenuOpen ? 'open' : ''}" id="customLangDropdown">
+            <button
+              type="button"
+              class="custom-lang-trigger"
+              data-action="toggle-custom-lang"
+              aria-haspopup="listbox"
+              aria-expanded="${customLangMenuOpen ? 'true' : 'false'}"
+              aria-label="Select website language"
+              title="Select website language"
+            >
+              <span class="custom-lang-globe" aria-hidden="true">🌐</span>
+              <span class="custom-lang-current-label">${escapeHtml(i18n.getLanguageMeta(i18n.getCurrentLanguage()).nativeName)}</span>
+              <span class="custom-lang-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="custom-lang-menu" role="listbox" aria-label="Languages">
+              <div class="custom-lang-menu-header">Select Language (6)</div>
+              ${SUPPORTED_LANGUAGES.map(meta => {
+    const isSelected = meta.code === i18n.getCurrentLanguage();
+    return `
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="${isSelected ? 'true' : 'false'}"
+                    class="custom-lang-option ${isSelected ? 'selected' : ''}"
+                    data-action="select-custom-lang"
+                    data-lang="${meta.code}"
+                  >
+                    <span class="custom-lang-option-text">${meta.nativeName} (${meta.englishName})</span>
+                    ${isSelected ? '<span class="custom-lang-check">✓</span>' : ''}
+                  </button>
+                `;
+  }).join('')}
+            </div>
+          </div>
+
           <button type="button" class="theme-toggle-btn" data-action="toggle-theme" title="Toggle Light / Dark Mode" aria-label="Toggle Theme">
             <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
           </button>
@@ -406,10 +448,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
             </a>
           ` : `
             <button type="button" class="btn btn-ghost btn-sm" data-action="open-auth" data-mode="login">
-              Parent Sign In
+              ${t('landing.navParentSignIn')}
             </button>
             <button type="button" class="btn btn-primary btn-sm" data-action="launch-demo">
-              🚀 Launch Demo
+              ${t('landing.navInstantDemo')}
             </button>
           `}
 
@@ -421,13 +463,49 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
 
       <!-- Mobile Navigation Drawer -->
       <div id="mobile-nav-drawer" class="mobile-nav-drawer ${mobileMenuOpen ? 'open' : ''}">
-        <a class="site-nav-link" data-action="nav-scroll" data-target="#why-dysleximate">Why DyslexiMate</a>
-        <a class="site-nav-link" data-action="nav-scroll" data-target="#activities">Curated Activities</a>
-        <a class="site-nav-link" data-action="nav-scroll" data-target="#interactive-reader">Interactive Reader Playground</a>
-        <a class="site-nav-link" data-action="nav-scroll" data-target="#adaptive-engine">Adaptive AI Architecture</a>
-        <a class="site-nav-link" data-action="nav-scroll" data-target="#team-pinaka">Meet Team PINAKA</a>
+        <a class="site-nav-link" data-action="nav-scroll" data-target="#why-dysleximate">${t('landing.navWhy')}</a>
+        <a class="site-nav-link" data-action="nav-scroll" data-target="#activities">${t('landing.navActivities')}</a>
+        <a class="site-nav-link" data-action="nav-scroll" data-target="#interactive-reader">${t('landing.navReader')}</a>
+        <a class="site-nav-link" data-action="nav-scroll" data-target="#adaptive-engine">${t('landing.navAdaptive')}</a>
+        <a class="site-nav-link" data-action="nav-scroll" data-target="#team-pinaka">${t('landing.navTeam')}</a>
         
         <div class="site-nav-actions">
+          <!-- Landing Page Multilingual Selector -->
+          <div class="custom-lang-selector ${customLangMenuOpen ? 'open' : ''}" id="customLangDropdown">
+            <button
+              type="button"
+              class="custom-lang-trigger"
+              data-action="toggle-custom-lang"
+              aria-haspopup="listbox"
+              aria-expanded="${customLangMenuOpen ? 'true' : 'false'}"
+              aria-label="Select website language"
+              title="Select website language"
+            >
+              <span class="custom-lang-globe" aria-hidden="true">🌐</span>
+              <span class="custom-lang-current-label">${escapeHtml(i18n.getLanguageMeta(i18n.getCurrentLanguage()).nativeName)}</span>
+              <span class="custom-lang-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="custom-lang-menu" role="listbox" aria-label="Languages">
+              <div class="custom-lang-menu-header">Select Language (6)</div>
+              ${SUPPORTED_LANGUAGES.map(meta => {
+    const isSelected = meta.code === i18n.getCurrentLanguage();
+    return `
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="${isSelected ? 'true' : 'false'}"
+                    class="custom-lang-option ${isSelected ? 'selected' : ''}"
+                    data-action="select-custom-lang"
+                    data-lang="${meta.code}"
+                  >
+                    <span class="custom-lang-option-text">${meta.nativeName} (${meta.englishName})</span>
+                    ${isSelected ? '<span class="custom-lang-check">✓</span>' : ''}
+                  </button>
+                `;
+  }).join('')}
+            </div>
+          </div>
+
           <button type="button" class="theme-toggle-btn" data-action="toggle-theme" title="Toggle Light / Dark Mode" aria-label="Toggle Theme">
             <span class="theme-icon">${currentTheme === 'dark' ? '🌙' : '☀️'}</span>
           </button>
@@ -461,20 +539,20 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
         <div class="hero-container">
           <div class="hero-copy">
             <div class="hero-badge">
-              <span>✦</span> AI-POWERED MULTISENSORY LEARNING · AGES 5-12
+              <span>✦</span> ${t('landing.badge')}
             </div>
             <h1 class="hero-title">
-              Little steps. Big reading wins for <span class="highlight-teal">every curious mind.</span>
+              ${t('landing.heroTitle')}
             </h1>
             <p class="hero-subtitle">
-              A gentle, science-backed learning companion designed for children navigating dyslexia and reading hurdles. Combining multisensory phonics, adaptive AI pacing, speech synthesis, and parent-governed confidence.
+              ${t('landing.heroSubtitle')}
             </p>
             <div class="hero-cta-group">
               <button type="button" class="btn btn-primary btn-lg" data-action="launch-demo">
-                🚀 Launch Interactive Demo <span>→</span>
+                ${t('landing.btnTryDemo')}
               </button>
               <button type="button" class="btn btn-outline btn-lg" data-action="open-auth" data-mode="login">
-                👨‍👩‍👧 Parent &amp; Guardian Space
+                ${t('landing.btnParentAccess')}
               </button>
             </div>
             
@@ -560,36 +638,36 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
       <section class="section section-alt" id="why-dysleximate">
         <div class="section-container">
           <div class="section-header">
-            <span class="section-badge">PEDAGOGICAL FOUNDATION</span>
-            <h2 class="section-title">Designed for how neurodivergent minds actually learn.</h2>
+            <span class="section-badge">${t('landing.adaptiveBadge')}</span>
+            <h2 class="section-title">${t('landing.adaptiveTitle')}</h2>
             <p class="section-desc">
-              Traditional drills often induce anxiety. DyslexiMate integrates Orton-Gillingham multisensory principles into low-stress, engaging digital experiences.
+              ${t('landing.adaptiveSubtitle')}
             </p>
           </div>
 
           <div class="pillars-grid">
             <article class="pillar-card">
               <div class="pillar-icon-box pillar-icon-teal">🧠</div>
-              <h3>Multisensory Structured Phonics</h3>
-              <p>Simultaneously connects visual graphemes, auditory phonemes, and verbal pronunciation. Helps anchor memory paths naturally.</p>
+              <h3>${t('landing.card1Title')}</h3>
+              <p>${t('landing.card1Desc')}</p>
             </article>
 
             <article class="pillar-card">
               <div class="pillar-icon-box pillar-icon-warm">🎯</div>
-              <h3>Zero-Frustration Adaptive Pacing</h3>
-              <p>The system recalibrates in real time. If a child hesitates, it offers supportive step-by-step hints instead of red crosses or negative penalization.</p>
+              <h3>${t('landing.card2Title')}</h3>
+              <p>${t('landing.card2Desc')}</p>
             </article>
 
             <article class="pillar-card">
               <div class="pillar-icon-box pillar-icon-coral">🗣️</div>
-              <h3>Voice-First &amp; Native Mother Tongue</h3>
-              <p>Built with native speech synthesis across English, Hindi, Bengali, Punjabi, Tamil, and Odia. Children listen, repeat, and build genuine fluency.</p>
+              <h3>${t('landing.card3Title')}</h3>
+              <p>${t('landing.card3Desc')}</p>
             </article>
 
             <article class="pillar-card">
               <div class="pillar-icon-box pillar-icon-purple">🛡️</div>
-              <h3>Parent-Governed Transparency</h3>
-              <p>100% child-safe and privacy-first. Parents monitor true learning metrics calculated from real recorded attempts — never fabricated gamification.</p>
+              <h3>${t('landing.card4Title')}</h3>
+              <p>${t('landing.card4Desc')}</p>
             </article>
           </div>
         </div>
@@ -631,10 +709,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
       <section class="section section-alt" id="interactive-reader">
         <div class="section-container">
           <div class="section-header">
-            <span class="section-badge">TEST IT YOURSELF</span>
-            <h2 class="section-title">Experience assistive reading tools in real-time.</h2>
+            <span class="section-badge">${t('landing.interactiveBadge')}</span>
+            <h2 class="section-title">${t('landing.interactiveTitle')}</h2>
             <p class="section-desc">
-              Test how typography, syllable chunking, line rulers, and text-to-speech alleviate ocular strain and boost comprehension.
+              ${t('landing.interactiveSubtitle')}
             </p>
           </div>
 
@@ -741,10 +819,10 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
       <section class="section section-alt" id="team-pinaka">
         <div class="section-container">
           <div class="section-header">
-            <span class="section-badge">MEET TEAM PINAKA</span>
-            <h2 class="section-title">Built with empathy by Team PINAKA.</h2>
+            <span class="section-badge">${t('landing.teamBadge')}</span>
+            <h2 class="section-title">${t('landing.teamTitle')}</h2>
             <p class="section-desc">
-              We are a passionate team dedicated to leveraging technology for educational accessibility, equity, and neurodivergent empowerment.
+              ${t('landing.teamSubtitle')}
             </p>
           </div>
 
@@ -949,13 +1027,13 @@ function renderProfiles(children: ChildProfile[], editing?: ChildProfile): void 
         </a>
         <div style="display: flex; gap: 10px;">
           <a href="#/landing" class="btn btn-outline btn-sm" data-action="open-website" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
-            🌐 View Website
+            🌐 ${t('nav.backToWebsite')}
           </a>
           <a href="#/parent" class="btn btn-outline btn-sm" data-action="navigate-parent" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
-            🛡️ Parent Dashboard
+            🛡️ ${t('profileSelect.parentDash')}
           </a>
           <button type="button" class="btn btn-ghost btn-sm" data-action="logout">
-            Sign out
+            ${t('common.logOut')}
           </button>
         </div>
       </header>
@@ -1059,10 +1137,10 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
         <div class="auth-card" style="max-width: 440px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <a href="#/profiles" class="btn btn-ghost btn-sm" data-action="profiles" style="text-decoration: none; display: flex; align-items: center; gap: 4px;">
-              ← Learner Profiles
+              ← ${t('parent.returnProfilesBtn') || 'Learner Profiles'}
             </a>
             <span class="badge ${hasPin ? 'badge-primary' : 'badge-warm'}">
-              ${hasPin ? '🔒 PIN Protected' : '⚙️ Setup Required'}
+              ${hasPin ? '🔒 ' + t('parent.pinStatusActive') : '⚙️ ' + (t('parent.createPinTitle') || 'Setup Required')}
             </span>
           </div>
 
@@ -1071,12 +1149,12 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
               🔒
             </div>
             <h2 style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; margin: 0 0 6px;">
-              ${hasPin ? 'Parent Security PIN' : 'Create Parent PIN'}
+              ${hasPin ? t('parent.securityPinTitle') : t('parent.createPinTitle')}
             </h2>
             <p style="font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5;">
               ${hasPin
-      ? `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Enter your 4-digit PIN to access the Parent Dashboard.`
-      : `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. Please create a 4-digit PIN to protect parent settings.`
+      ? `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. ${t('parent.enterPinSub')}`
+      : `Welcome, <strong>${escapeHtml(user.fullName)}</strong>. ${t('parent.createPinSub')}`
     }
             </p>
           </div>
@@ -1085,7 +1163,7 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
             ${hasPin ? `
               <div style="position: relative;">
                 <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-                  Enter 4-Digit PIN
+                  ${t('parent.enterPin')}
                   <div style="position: relative; display: flex; align-items: center;">
                     <input
                       name="gatePin"
@@ -1115,20 +1193,20 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
               </div>
 
               <button type="submit" class="btn btn-primary" style="margin-top: 14px; width: 100%; padding: 12px; font-size: 15px; font-weight: 700;">
-                Unlock Parent Dashboard 🛡️
+                ${t('parent.verifyPin')} 🛡️
               </button>
 
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-color);">
                 <button type="button" class="btn btn-ghost btn-sm" data-action="forgot-parent-pin" style="color: var(--text-muted); text-decoration: underline; font-size: 12px; padding: 0;">
-                  Forgot Parent PIN?
+                  ${t('auth.forgot.rememberedPassword') ? 'Forgot Parent PIN?' : 'Forgot Parent PIN?'}
                 </button>
                 <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color: #dc2626; font-size: 12px; padding: 0;">
-                  Sign Out
+                  ${t('parent.logoutBtn')}
                 </button>
               </div>
             ` : `
               <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-                Choose 4-Digit PIN
+                ${t('parent.enterPin')}
                 <input
                   name="gateNewPin"
                   type="password"
@@ -1144,7 +1222,7 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
               </label>
 
               <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700;">
-                Confirm 4-Digit PIN
+                ${t('parent.confirmPin')}
                 <input
                   name="gateConfirmPin"
                   type="password"
@@ -1159,7 +1237,7 @@ function renderParentPinGate(user: ParentUser, hasPin: boolean): void {
               </label>
 
               <button type="submit" class="btn btn-primary" style="margin-top: 14px; width: 100%; padding: 12px; font-size: 15px; font-weight: 700;">
-                Set PIN &amp; Unlock Dashboard 🛡️
+                ${t('parent.pinSave')} 🛡️
               </button>
             `}
 
@@ -2263,16 +2341,21 @@ function renderShell(userName: string): string {
           <span>${currentTheme === 'dark' ? 'Night Sky Mode' : 'Sunny Day Mode'}</span>
         </button>
 
-        <a href="#/profiles" class="learner-switch" data-action="profiles" style="text-decoration: none;">
-          <span class="profile-avatar" style="width: 36px; height: 36px; font-size: 20px; border-radius: 10px; margin: 0;">
-            ${escapeHtml(child.avatar)}
-          </span>
-          <div style="flex: 1; text-align: left; min-width: 0;">
-            <strong>${escapeHtml(child.name)}</strong>
-            <small style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(child.grade)}</small>
-          </div>
-          <span style="color: var(--text-subtle);">⌄</span>
-        </a>
+        <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px;">
+          <a href="#/profiles" class="learner-switch" data-action="profiles" style="text-decoration: none; flex: 1;">
+            <span class="profile-avatar" style="width: 36px; height: 36px; font-size: 20px; border-radius: 10px; margin: 0;">
+              ${escapeHtml(child.avatar)}
+            </span>
+            <div style="flex: 1; text-align: left; min-width: 0;">
+              <strong>${escapeHtml(child.name)}</strong>
+              <small style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(child.grade)}</small>
+            </div>
+            <span style="color: var(--text-subtle);">⌄</span>
+          </a>
+          <button type="button" class="btn btn-ghost btn-sm learner-edit-btn" data-action="edit-child" data-id="${escapeHtml(child.id)}" title="${t('common.edit') || 'Edit profile'}" style="padding: 6px 8px; font-size: 14px;">
+            ✏️
+          </button>
+        </div>
       </aside>
 
       <main class="main-content">
@@ -2310,7 +2393,8 @@ function renderShell(userName: string): string {
                       aria-selected="${isSelected ? 'true' : 'false'}"
                       class="custom-lang-option ${isSelected ? 'selected' : ''}"
                       data-action="select-custom-lang"
-                      data-lang="${escapeHtml(lang)}"
+                      data-lang="${langMeta ? langMeta.code : escapeHtml(lang)}"
+                      data-language-name="${escapeHtml(lang)}"
                     >
                       <span class="custom-lang-option-text">
                         <span>${languageFlags[lang] || '🌐'}</span>
@@ -2590,6 +2674,9 @@ async function homePage(): Promise<string> {
           </button>
           <button class="btn btn-outline btn-lg" type="button" data-action="navigate" data-page="adventure" style="background: var(--bg-surface-alt);">
             🧭 Explore World Map
+          </button>
+          <button class="btn btn-ghost btn-sm learner-edit-btn" type="button" data-action="edit-child" data-id="${escapeHtml(child.id)}" style="background: var(--bg-surface-alt); border-radius: var(--radius-pill);">
+            ✏️ ${t('common.edit') || 'Edit Profile'}
           </button>
         </div>
       </div>
@@ -3077,9 +3164,9 @@ export async function adventurePage(): Promise<string> {
 
         <!-- Destination Scenery Headers -->
         ${(Object.keys(ADVENTURE_DESTINATIONS_META) as DestinationKey[]).map(destKey => {
-          const dest = ADVENTURE_DESTINATIONS_META[destKey];
-          const topY = destHeaderY[destKey];
-          return `
+    const dest = ADVENTURE_DESTINATIONS_META[destKey];
+    const topY = destHeaderY[destKey];
+    return `
             <div class="destination-scenery-header dest-${destKey}" style="position: absolute; top: ${topY}px; left: 24px; right: 24px;">
               <div class="dest-title-wrap">
                 <span class="dest-icon-bubble">${dest.icon}</span>
@@ -3093,15 +3180,15 @@ export async function adventurePage(): Promise<string> {
               </span>
             </div>
           `;
-        }).join('')}
+  }).join('')}
 
         <!-- 15 Tactile Level Nodes -->
         ${mapState.levels.map(lvl => {
-          const y = yCoords[lvl.levelNumber];
-          const isCurrent = lvl.status === 'current';
-          const isCompleted = lvl.status === 'completed';
+    const y = yCoords[lvl.levelNumber];
+    const isCurrent = lvl.status === 'current';
+    const isCompleted = lvl.status === 'completed';
 
-          return `
+    return `
             <div class="candy-node-anchor" style="left: ${lvl.xPercent}%; top: ${y}px;">
               ${isCurrent ? `
                 <div class="node-avatar-pin">
@@ -3133,9 +3220,9 @@ export async function adventurePage(): Promise<string> {
                 title="Level ${lvl.levelNumber}: ${escapeHtml(lvl.title)}"
               >
                 ${lvl.status === 'locked'
-                  ? '<span class="node-lock-icon">🔒</span>'
-                  : `<span class="node-number-text">${lvl.levelNumber}</span>`
-                }
+        ? '<span class="node-lock-icon">🔒</span>'
+        : `<span class="node-number-text">${lvl.levelNumber}</span>`
+      }
               </button>
 
               ${isCompleted ? `
@@ -3153,15 +3240,15 @@ export async function adventurePage(): Promise<string> {
               `}
             </div>
           `;
-        }).join('')}
+  }).join('')}
 
         <!-- Milestone Treasure Chests Between Destinations -->
         ${mapState.levels.filter(l => l.milestone).map(lvl => {
-          const chest = lvl.milestone!;
-          const y = chestYCoords[lvl.levelNumber];
-          const isClaimed = lvl.status === 'completed';
+    const chest = lvl.milestone!;
+    const y = chestYCoords[lvl.levelNumber];
+    const isClaimed = lvl.status === 'completed';
 
-          return `
+    return `
             <div class="milestone-chest-wrap" style="left: 50%; top: ${y}px;">
               <button
                 type="button"
@@ -3178,7 +3265,7 @@ export async function adventurePage(): Promise<string> {
               </span>
             </div>
           `;
-        }).join('')}
+  }).join('')}
       </div>
     </div>
   `;
@@ -3324,8 +3411,8 @@ function storiesPage(): string {
           <div class="storybook-wooden-shelf-wrap">
             <div class="storybook-books-row">
               ${shelf.stories.map((s, idx) => {
-                const themeClass = themeClasses[(shelfIdx * 2 + idx) % themeClasses.length];
-                return `
+    const themeClass = themeClasses[(shelfIdx * 2 + idx) % themeClasses.length];
+    return `
                   <article
                     class="storybook-standing-book ${themeClass}"
                     data-action="open-story"
@@ -3358,7 +3445,7 @@ function storiesPage(): string {
                     </div>
                   </article>
                 `;
-              }).join('')}
+  }).join('')}
             </div>
             <!-- Illustrated Wooden Shelf Beam -->
             <div class="storybook-shelf-beam"></div>
@@ -3473,8 +3560,8 @@ function renderStoryReaderModal(): void {
 
             <div style="display: flex; flex-direction: column; gap: 16px;">
               ${story.comprehensionQuestions.map((q, qIdx) => {
-                const isAnswered = storyAnsweredQids.has(q.id);
-                return `
+    const isAnswered = storyAnsweredQids.has(q.id);
+    return `
                   <article class="surface" style="background: var(--bg-surface-alt); border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 18px;" data-qid="${escapeHtml(q.id)}">
                     <p style="font-weight: 800; font-size: 15px; margin: 0 0 12px; color: var(--text-main);">
                       ${qIdx + 1}. ${escapeHtml(q.question)}
@@ -3497,7 +3584,7 @@ function renderStoryReaderModal(): void {
                     <div id="feedback_${escapeHtml(q.id)}" class="comp-feedback-msg" style="margin-top: 10px; font-size: 13px; font-weight: 800; display: none;"></div>
                   </article>
                 `;
-              }).join('')}
+  }).join('')}
             </div>
           </section>
         ` : ''}
@@ -3604,9 +3691,9 @@ function practicePage(): string {
           <!-- Tactile Borderless Activity Tiles -->
           <div class="challenge-pods-cluster borderless-pods-grid">
             ${zone.items.map(item => {
-              const rec = recs.get(item.skillId);
-              const difficulty = rec?.difficulty || item.difficulty;
-              return `
+    const rec = recs.get(item.skillId);
+    const difficulty = rec?.difficulty || item.difficulty;
+    return `
                 <article class="challenge-pod borderless-pod">
                   <div class="pod-mascot-row">
                     <span class="pod-icon">${escapeHtml(item.icon)}</span>
@@ -3637,7 +3724,7 @@ function practicePage(): string {
                   </button>
                 </article>
               `;
-            }).join('')}
+  }).join('')}
           </div>
         </section>
       `).join('')}
@@ -3677,10 +3764,10 @@ async function progressPage(): Promise<string> {
   const achievements = [
     {
       id: 'word_explorer',
-      title: 'Word Explorer',
+      title: t('progress.wordExplorerTitle') || 'Word Explorer',
       icon: '🧭',
       category: 'Vocabulary Power',
-      description: 'Collect decodable words and master new sounds across realms.',
+      description: t('progress.wordExplorerDesc') || 'Collect decodable words and master new sounds across realms.',
       current: wordsLearned,
       target: 20,
       tier: wordsLearned >= 20 ? 'Gold 🥇' : wordsLearned >= 10 ? 'Silver 🥈' : wordsLearned >= 4 ? 'Bronze 🥉' : 'In Progress 🌱',
@@ -3690,10 +3777,10 @@ async function progressPage(): Promise<string> {
     },
     {
       id: 'reading_champion',
-      title: 'Reading Champion',
+      title: t('progress.readingChampionTitle') || 'Reading Champion',
       icon: '🏆',
       category: 'Practice Momentum',
-      description: 'Build daily reading habits with active challenge quests.',
+      description: t('progress.readingChampionDesc') || 'Build daily reading habits with active challenge quests.',
       current: streakSessions,
       target: 10,
       tier: streakSessions >= 10 ? 'Gold 🥇' : streakSessions >= 5 ? 'Silver 🥈' : streakSessions >= 2 ? 'Bronze 🥉' : 'Starting Out 🌱',
@@ -3703,10 +3790,10 @@ async function progressPage(): Promise<string> {
     },
     {
       id: 'spelling_star',
-      title: 'Spelling Star',
+      title: t('progress.spellingStarTitle') || 'Spelling Star',
       icon: '⭐',
       category: 'Phonetic Accuracy',
-      description: 'Reach awesome reading accuracy on challenges and words.',
+      description: t('progress.spellingStarDesc') || 'Reach awesome reading accuracy on challenges and words.',
       current: accuracy,
       target: 90,
       unit: '%',
@@ -3717,10 +3804,10 @@ async function progressPage(): Promise<string> {
     },
     {
       id: 'sound_detective',
-      title: 'Sound Detective',
+      title: t('progress.soundDetectiveTitle') || 'Sound Detective',
       icon: '🔍',
       category: 'Acoustic Mastery',
-      description: 'Solve tricky sound clues in Alphabet Forest & Sound Safari.',
+      description: t('progress.soundDetectiveDesc') || 'Solve tricky sound clues in Alphabet Forest & Sound Safari.',
       current: soundLevelsCompleted,
       target: 6,
       tier: soundLevelsCompleted >= 6 ? 'Gold 🥇' : soundLevelsCompleted >= 3 ? 'Silver 🥈' : soundLevelsCompleted >= 1 ? 'Bronze 🥉' : 'Exploring 🌱',
@@ -3730,10 +3817,10 @@ async function progressPage(): Promise<string> {
     },
     {
       id: 'vocabulary_wizard',
-      title: 'Word Wizard',
+      title: t('progress.wordWizardTitle') || 'Word Wizard',
       icon: '🧙‍♂️',
       category: 'Digraph & Blend Sorcery',
-      description: 'Defeat tricky letter traps in Word Wonderland & Spelling Castle.',
+      description: t('progress.wordWizardDesc') || 'Defeat tricky letter traps in Word Wonderland & Spelling Castle.',
       current: vocabLevelsCompleted,
       target: 6,
       tier: vocabLevelsCompleted >= 6 ? 'Gold 🥇' : vocabLevelsCompleted >= 3 ? 'Silver 🥈' : vocabLevelsCompleted >= 1 ? 'Bronze 🥉' : 'Apprentice 🌱',
@@ -3743,10 +3830,10 @@ async function progressPage(): Promise<string> {
     },
     {
       id: 'story_master',
-      title: 'Story Royalty',
+      title: t('progress.storyRoyaltyTitle') || 'Story Royalty',
       icon: '👑',
       category: 'Royal Comprehension',
-      description: 'Conquer Rhyme River and claim the Storybook Kingdom crown.',
+      description: t('progress.storyRoyaltyDesc') || 'Conquer Rhyme River and claim the Storybook Kingdom crown.',
       current: storyLevelsCompleted,
       target: 3,
       tier: storyLevelsCompleted >= 3 ? 'Royal Crown 👑' : storyLevelsCompleted >= 1 ? 'Silver 🥈' : 'Aspiring 🌱',
@@ -3769,13 +3856,13 @@ async function progressPage(): Promise<string> {
           <div class="realm-hero-copy">
             <div class="open-pill-tag tag-gold">
               <span>✨</span>
-              <span>HALL OF ACHIEVEMENTS · ${escapeHtml(child.name)}'s Trophy Room</span>
+              <span>${t('progress.hallOfAchievements', { name: escapeHtml(child.name) })}</span>
             </div>
             <h2 class="realm-title">
-              Superpowers & Milestone Trophies!
+              ${t('progress.trophyRoomTitle')}
             </h2>
             <p class="realm-desc">
-              🦉 Hootie cheers: "Look how far you've come! Every quest you play makes your reading superpowers shine brighter!"
+              ${t('progress.hootieCheer')}
             </p>
           </div>
         </div>
@@ -3783,15 +3870,15 @@ async function progressPage(): Promise<string> {
         <div class="realm-chips-row">
           <div class="open-stat-chip chip-stars">
             <span>⭐</span>
-            <span>${mapState.totalStars} Stars Earned</span>
+            <span>${t('progress.starsEarned', { count: String(mapState.totalStars) })}</span>
           </div>
           <div class="open-stat-chip chip-points">
             <span>✧</span>
-            <span>${progress.happyPoints || 0} Happy Points</span>
+            <span>${t('progress.happyPoints', { count: String(progress.happyPoints || 0) })}</span>
           </div>
           <div class="open-stat-chip chip-levels">
             <span>🗺️</span>
-            <span>${totalLevelsMastered} / 15 Levels Won</span>
+            <span>${t('progress.levelsWon', { count: String(totalLevelsMastered) })}</span>
           </div>
         </div>
       </section>
@@ -3801,36 +3888,36 @@ async function progressPage(): Promise<string> {
         <div class="metric-pedestal pedestal-time">
           <div class="pedestal-icon-bubble">⏱️</div>
           <div class="pedestal-content">
-            <span class="pedestal-label">Practice Time</span>
-            <strong class="pedestal-val">${progress.practiceMinutes} <small>min</small></strong>
-            <small class="pedestal-sub sub-blue">Growing steady 🌱</small>
+            <span class="pedestal-label">${t('progress.practiceTimeCard')}</span>
+            <strong class="pedestal-val">${progress.practiceMinutes} <small>${t('progress.minutesUnit')}</small></strong>
+            <small class="pedestal-sub sub-blue">${t('progress.weekComparison')}</small>
           </div>
         </div>
 
         <div class="metric-pedestal pedestal-accuracy">
           <div class="pedestal-icon-bubble">🎯</div>
           <div class="pedestal-content">
-            <span class="pedestal-label">Reading Accuracy</span>
+            <span class="pedestal-label">${t('progress.fluencyRateTitle')}</span>
             <strong class="pedestal-val">${accuracy}%</strong>
-            <small class="pedestal-sub sub-emerald">Sharp reading eyes 👀</small>
+            <small class="pedestal-sub sub-emerald">${t('progress.rateSubtitle')}</small>
           </div>
         </div>
 
         <div class="metric-pedestal pedestal-words">
           <div class="pedestal-icon-bubble">📖</div>
           <div class="pedestal-content">
-            <span class="pedestal-label">Words Mastered</span>
+            <span class="pedestal-label">${t('progress.wordsMasteredCard')}</span>
             <strong class="pedestal-val">${wordsLearned}</strong>
-            <small class="pedestal-sub sub-gold">Vocabulary hero 🚀</small>
+            <small class="pedestal-sub sub-gold">${t('progress.newThisWeek')}</small>
           </div>
         </div>
 
         <div class="metric-pedestal pedestal-momentum">
           <div class="pedestal-icon-bubble">🔥</div>
           <div class="pedestal-content">
-            <span class="pedestal-label">Practice Momentum</span>
-            <strong class="pedestal-val">${streakSessions} <small>sessions</small></strong>
-            <small class="pedestal-sub sub-purple">Awesome streak ⭐</small>
+            <span class="pedestal-label">${t('progress.recentBadgesTitle')}</span>
+            <strong class="pedestal-val">${streakSessions} <small>${t('home.statHappyPoints')}</small></strong>
+            <small class="pedestal-sub sub-purple">${t('progress.daysStreak', { days: String(streakSessions) })}</small>
           </div>
         </div>
       </section>
@@ -3840,18 +3927,18 @@ async function progressPage(): Promise<string> {
         <div class="milestones-header-row">
           <div>
             <h3 class="milestones-title">
-              Superpower Milestone Badges
+              ${t('progress.superpowerTrophies')}
             </h3>
             <p class="milestones-desc">
-              Conquer challenges to unlock Bronze 🥉, Silver 🥈, and Gold 🥇 trophies!
+              ${t('progress.superpowerTrophiesDesc')}
             </p>
           </div>
         </div>
 
         <div class="medallions-flow-grid">
           ${achievements.map(ach => {
-            const pct = Math.min(100, Math.round((ach.current / ach.target) * 100));
-            return `
+    const pct = Math.min(100, Math.round((ach.current / ach.target) * 100));
+    return `
               <article class="milestone-medallion ${ach.unlocked ? 'unlocked' : 'locked'}">
                 <div class="medallion-top-row">
                   <div class="medallion-badge-bubble" style="background: ${ach.bgGlow};">
@@ -3879,7 +3966,7 @@ async function progressPage(): Promise<string> {
                 </div>
               </article>
             `;
-          }).join('')}
+  }).join('')}
         </div>
       </section>
 
@@ -3887,19 +3974,19 @@ async function progressPage(): Promise<string> {
       <section class="quest-journey-section">
         <div class="journey-header-row">
           <span class="journey-sparkle">📜</span>
-          <h3 class="journey-title">Recent Completed Quests</h3>
+          <h3 class="journey-title">${t('progress.recentActivity')}</h3>
         </div>
 
         ${recentAttempts.length === 0 ? `
           <p class="journey-empty-text">
-            Play your first quest in Practice or Adventure to see your completed triumphs here! 🌟
+            ${t('progress.recentActivityDesc')}
           </p>
         ` : `
           <div class="journey-timeline-stream">
             ${recentAttempts.map(att => {
-              const questTitle = att.activityType === 'story_reading' ? 'Story Adventure' : (att.activityId || 'Practice Quest');
-              const durationMin = Math.max(1, Math.round(att.durationSeconds / 60));
-              return `
+    const questTitle = att.activityType === 'story_reading' ? 'Story Adventure' : (att.activityId || 'Practice Quest');
+    const durationMin = Math.max(1, Math.round(att.durationSeconds / 60));
+    return `
                 <div class="journey-stream-item">
                   <div class="journey-bullet-node">⭐</div>
                   <div class="journey-stream-body">
@@ -3908,7 +3995,7 @@ async function progressPage(): Promise<string> {
                   </div>
                 </div>
               `;
-            }).join('')}
+  }).join('')}
           </div>
         `}
       </section>
@@ -4077,12 +4164,12 @@ function renderResources(resources: EducationalResource[]): string {
       
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;">
         ${resources.map(resource => {
-          let safeUrl = '';
-          try {
-            const parsed = new URL(resource.url);
-            if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
-          } catch { safeUrl = ''; }
-          return `
+    let safeUrl = '';
+    try {
+      const parsed = new URL(resource.url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') safeUrl = parsed.href;
+    } catch { safeUrl = ''; }
+    return `
             <article class="surface" style="display: flex; flex-direction: column; justify-content: space-between; border-radius: var(--radius-lg); border: 1.5px solid var(--border); padding: 20px; box-shadow: var(--shadow-card);">
               <div>
                 <span class="badge badge-primary" style="margin-bottom: 10px; font-weight: 800;">${escapeHtml(resource.resourceType.replace(/_/g, ' '))}</span>
@@ -4094,7 +4181,7 @@ function renderResources(resources: EducationalResource[]): string {
                 ${safeUrl ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" style="border-radius: var(--radius-pill); font-weight: 800;">Open resource ↗</a>` : ''}
               </div>
             </article>`;
-        }).join('')}
+  }).join('')}
       </div>
       ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 16px;">${escapeHtml(resourceDisclaimer)}</p>` : ''}
     </section>`;
@@ -4308,74 +4395,234 @@ function renderForgotPinModal(errorMsg = '', infoMsg = ''): void {
   `;
 }
 
-function showProfileForm(child?: ChildProfile): void {
+function showProfileForm(child?: ChildProfile, fromContext?: { page: 'dashboard' | 'profiles' | 'parent' }): void {
+  if (fromContext) {
+    returnContext = fromContext;
+    activeProfileEditSource = fromContext.page;
+  }
   const modal = root!.querySelector<HTMLElement>('#modal-root');
   if (!modal) return;
   document.body.style.overflow = 'hidden';
+
   const currentConfiguredLangs = child ? getLearnerLanguages(child) : ['English', 'Hindi'];
   const allSupportedLangs: SupportedLanguage[] = ['English', 'Hindi', 'Punjabi', 'Bengali', 'Tamil', 'Odia'];
+  const allAvatars = ['👧🏽', '👦🏻', '🧒🏽', '🦊', '🦁', '🐼', '🦄', '🚀', '🦉', '🐯', '🐬', '🌸', '⭐', '🦖', '🎨', '📚'];
+  const selectedAvatar = child?.avatar || '👧🏽';
 
   modal.innerHTML = `
     <div class="modal-backdrop" data-action="dismiss-modal">
-      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
-        <div class="modal-heading">
-          <div>
-            <span class="badge badge-primary">${t('profileSelect.title') || 'LEARNER PROFILE'}</span>
-            <h2 id="profile-modal-title">${child ? t('childModal.editTitle') : t('childModal.addTitle')}</h2>
+      <section class="modal-card profile-modal-modern" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+        <!-- Modern Header -->
+        <div class="profile-modal-header">
+          <div class="profile-modal-header-left">
+            <span class="profile-modal-badge">
+              <span>👤</span> ${child ? (t('profileSelect.title') || 'LEARNER PROFILE') : 'NEW LEARNER'}
+            </span>
+            <h2 id="profile-modal-title" class="profile-modal-title">
+              ${child ? (t('childModal.editTitle', { name: child.name }) || `Edit ${escapeHtml(child.name)}'s Profile`) : (t('childModal.addTitle') || 'Create Learner Profile')}
+            </h2>
+            <p class="profile-modal-desc">
+              ${child ? 'Personalize learning pace, dyslexia tools and reading preferences.' : 'Set up a new learner journey with custom accessibility tools.'}
+            </p>
           </div>
-          <button class="icon-button" type="button" data-action="close-modal" aria-label="${t('common.close')}">×</button>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            ${child ? `
+              <div class="modal-child-chip" id="modal-child-chip-preview">
+                <span class="modal-child-chip-avatar" id="modal-child-preview-avatar">${escapeHtml(child.avatar || '👧🏽')}</span>
+                <div class="modal-child-chip-info">
+                  <span class="modal-child-chip-name" id="modal-child-preview-name">${escapeHtml(child.name)}</span>
+                  <span class="modal-child-chip-grade" id="modal-child-preview-grade">${escapeHtml(child.grade || 'Class 2')}</span>
+                </div>
+              </div>
+            ` : ''}
+            <button class="profile-modal-close" type="button" data-action="close-modal" aria-label="${t('common.close')}">✕</button>
+          </div>
         </div>
-        <form id="child-form" class="form-stack">
+
+        <form id="child-form" class="form-stack" style="display: flex; flex-direction: column; overflow: hidden; margin: 0;">
           <input type="hidden" name="childId" value="${escapeHtml(child?.id || '')}" />
-          <label>${t('childModal.nameLabel')}<input name="name" required maxlength="60" value="${escapeHtml(child?.name || '')}" placeholder="${t('childModal.namePlaceholder')}" /></label>
-          <label>${t('resources.gradeLabel')}
-            <select name="grade">
-              <option ${child?.grade.includes('2') ? 'selected' : ''}>Class 2 · Early reader</option>
-              <option ${child?.grade.includes('3') ? 'selected' : ''}>Class 3 · Growing reader</option>
-              <option ${child?.grade.includes('4') ? 'selected' : ''}>Class 4 · Little reader</option>
-              <option ${child?.grade.includes('5') ? 'selected' : ''}>Class 5 · Confident reader</option>
-            </select>
-          </label>
-          <div>
-            <span style="display: block; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">
-              ${t('childModal.optionsTitle') || 'Configured learning languages'}
-            </span>
-            <span style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
-              Select all languages for this learner. The dashboard dropdown will display exactly these languages.
-            </span>
-            <div class="lang-checkbox-grid">
-              ${allSupportedLangs.map(lang => {
+          <input type="hidden" name="avatar" id="modal-child-avatar-input" value="${escapeHtml(selectedAvatar)}" />
+
+          <div class="profile-modal-body">
+            <!-- 2-column Name & Grade Grid -->
+            <div class="profile-form-grid">
+              <div class="profile-field-group">
+                <label class="profile-field-label" for="child-profile-name">
+                  <span>✏️</span> ${t('childModal.nameLabel') || 'Learner Name'}
+                </label>
+                <input id="child-profile-name" class="profile-input-modern" name="name" required maxlength="60" value="${escapeHtml(child?.name || '')}" placeholder="${t('childModal.namePlaceholder') || 'e.g. Aanya'}" />
+              </div>
+
+              <div class="profile-field-group">
+                <label class="profile-field-label" for="child-profile-grade">
+                  <span>🎓</span> ${t('resources.gradeLabel') || 'Class / Grade Level'}
+                </label>
+                <select id="child-profile-grade" class="profile-select-modern" name="grade">
+                  <option ${child?.grade.includes('1') ? 'selected' : ''}>Class 1 · Early reader</option>
+                  <option ${child?.grade.includes('2') || (!child && true) ? 'selected' : ''}>Class 2 · Early reader</option>
+                  <option ${child?.grade.includes('3') ? 'selected' : ''}>Class 3 · Growing reader</option>
+                  <option ${child?.grade.includes('4') ? 'selected' : ''}>Class 4 · Little reader</option>
+                  <option ${child?.grade.includes('5') ? 'selected' : ''}>Class 5 · Confident reader</option>
+                  <option ${child?.grade.includes('6') ? 'selected' : ''}>Class 6 · Confident reader</option>
+                  <option ${child?.grade.includes('7') ? 'selected' : ''}>Class 7 · Confident reader</option>
+                  <option ${child?.grade.includes('8') ? 'selected' : ''}>Class 8 · Advanced reader</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Avatar Selection Grid -->
+            <div class="avatar-section-modern">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <label class="profile-field-label">
+                  <span>🌟</span> ${t('childModal.avatarLabel') || 'Choose Avatar'}
+                </label>
+                <span style="font-size: 11.5px; color: var(--text-muted);">Pick a friendly avatar for learning</span>
+              </div>
+              <div class="avatar-grid-modern">
+                ${allAvatars.map(av => `
+                  <button type="button" class="avatar-opt-btn ${av === selectedAvatar ? 'selected' : ''}" data-action="select-modal-avatar" data-avatar="${escapeHtml(av)}" aria-label="Select avatar ${escapeHtml(av)}">
+                    ${av}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Languages Configuration -->
+            <div class="profile-field-group">
+              <label class="profile-field-label">
+                <span>🌐</span> ${t('childModal.optionsTitle') || 'Configured Learning Languages'}
+              </label>
+              <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+                Select all languages this learner speaks or practices.
+              </span>
+              <div class="lang-checkbox-grid">
+                ${allSupportedLangs.map(lang => {
     const isChecked = currentConfiguredLangs.includes(lang);
     return `
-                  <label class="lang-checkbox-pill ${isChecked ? 'checked' : ''}">
-                    <input
-                      type="checkbox"
-                      name="configuredLanguages"
-                      value="${escapeHtml(lang)}"
-                      ${isChecked ? 'checked' : ''}
-                    />
-                    <span>${languageFlags[lang] || '🌐'} ${escapeHtml(lang)}</span>
-                  </label>
-                `;
+                    <label class="lang-checkbox-pill ${isChecked ? 'checked' : ''}">
+                      <input
+                        type="checkbox"
+                        name="configuredLanguages"
+                        value="${escapeHtml(lang)}"
+                        ${isChecked ? 'checked' : ''}
+                      />
+                      <span>${languageFlags[lang] || '🌐'} ${escapeHtml(lang)}</span>
+                    </label>
+                  `;
   }).join('')}
+              </div>
             </div>
+
+            <div class="profile-field-group">
+              <label class="profile-field-label" for="profilePrimaryLanguage">
+                <span>🗣️</span> ${t('childModal.langLabel') || 'Primary Learning Language'}
+              </label>
+              <select name="language" id="profilePrimaryLanguage" class="profile-select-modern">
+                ${allSupportedLangs.map(lang => `
+                  <option value="${lang}" ${lang === (child?.preferredLanguage || 'English') ? 'selected' : ''}>${lang}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <!-- Reading Accessibility Preferences Panel -->
+            <div class="accessibility-panel-modern">
+              <div class="accessibility-panel-header">
+                <div class="accessibility-header-title">
+                  <span>🛡️</span> ${t('childModal.optionsTitle') || 'Reading Accessibility Preferences'}
+                </div>
+                <span class="accessibility-header-badge">Inclusive Tools</span>
+              </div>
+
+              <div class="pref-cards-grid">
+                <!-- Dyslexia Font Toggle -->
+                <label class="pref-toggle-card ${child?.preferences?.dyslexiaFont ? 'active' : ''}">
+                  <div class="pref-card-left">
+                    <div class="pref-card-icon">🔤</div>
+                    <div class="pref-card-info">
+                      <span class="pref-card-title">${t('childModal.dyslexiaFont') || 'Dyslexia-Friendly Font'}</span>
+                      <span class="pref-card-desc">Weighted bottom letters to prevent flipping and distortion.</span>
+                    </div>
+                  </div>
+                  <div class="toggle-switch-ui">
+                    <input type="checkbox" name="dyslexiaFont" data-toggle-card="true" ${child?.preferences?.dyslexiaFont ? 'checked' : ''} />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+
+                <!-- Audio Sound Effects Toggle -->
+                <label class="pref-toggle-card ${child?.preferences?.soundEffects !== false ? 'active' : ''}">
+                  <div class="pref-card-left">
+                    <div class="pref-card-icon">🔔</div>
+                    <div class="pref-card-info">
+                      <span class="pref-card-title">${t('childModal.soundEffects') || 'Audio Sound Effects'}</span>
+                      <span class="pref-card-desc">Celebration chimes, gentle clicks, and auditory praise.</span>
+                    </div>
+                  </div>
+                  <div class="toggle-switch-ui">
+                    <input type="checkbox" name="soundEffects" data-toggle-card="true" ${child?.preferences?.soundEffects !== false ? 'checked' : ''} />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+
+                <!-- Auto-Read Passages Aloud Toggle -->
+                <label class="pref-toggle-card ${child?.preferences?.autoReadAloud ? 'active' : ''}">
+                  <div class="pref-card-left">
+                    <div class="pref-card-icon">🎙️</div>
+                    <div class="pref-card-info">
+                      <span class="pref-card-title">${t('childModal.autoRead') || 'Auto-Read Stories Aloud'}</span>
+                      <span class="pref-card-desc">Automatically reads passages using the warm storytelling voice.</span>
+                    </div>
+                  </div>
+                  <div class="toggle-switch-ui">
+                    <input type="checkbox" name="autoReadAloud" data-toggle-card="true" ${child?.preferences?.autoReadAloud ? 'checked' : ''} />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+
+                <!-- High Contrast Focus Toggle -->
+                <label class="pref-toggle-card ${child?.preferences?.highContrast ? 'active' : ''}">
+                  <div class="pref-card-left">
+                    <div class="pref-card-icon">👁️</div>
+                    <div class="pref-card-info">
+                      <span class="pref-card-title">High Contrast Focus</span>
+                      <span class="pref-card-desc">Sharper contours and enhanced visual word separation.</span>
+                    </div>
+                  </div>
+                  <div class="toggle-switch-ui">
+                    <input type="checkbox" name="highContrast" data-toggle-card="true" ${child?.preferences?.highContrast ? 'checked' : ''} />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Reading Pace / Speed -->
+              <div class="reading-pace-box">
+                <div class="reading-pace-header">
+                  <label class="reading-pace-label" for="child-profile-reading-speed">
+                    <span>⏱️</span> Reading Pace &amp; Narration Speed
+                  </label>
+                  <span style="font-size: 11.5px; color: var(--text-muted);">Adjusts TTS voice speed</span>
+                </div>
+                <select id="child-profile-reading-speed" name="readingSpeed" class="profile-select-modern">
+                  <option value="slow" ${child?.preferences?.readingSpeed === 'slow' ? 'selected' : ''}>Gentle &amp; Slow (for beginning readers)</option>
+                  <option value="normal" ${child?.preferences?.readingSpeed !== 'slow' && child?.preferences?.readingSpeed !== 'fast' ? 'selected' : ''}>Balanced &amp; Natural (recommended)</option>
+                  <option value="fast" ${child?.preferences?.readingSpeed === 'fast' ? 'selected' : ''}>Brisk &amp; Confident</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-message" id="child-message" aria-live="polite" style="display: none; color: #b91c1c; font-weight: 700; font-size: 13px; margin: 4px 0;"></div>
           </div>
-          <label>${t('childModal.langLabel')}
-            <select name="language" id="profilePrimaryLanguage">
-              ${allSupportedLangs.map(lang => `
-                <option value="${lang}" ${lang === (child?.preferredLanguage || 'English') ? 'selected' : ''}>${lang}</option>
-              `).join('')}
-            </select>
-          </label>
-          <label>${t('childModal.avatarLabel')}
-            <select name="avatar">
-              ${['👧🏽', '👦🏻', '🧒🏽', '🦊', '🐼', '🦉'].map(avatar => `
-                <option ${avatar === (child?.avatar || '👧🏽') ? 'selected' : ''}>${avatar}</option>
-              `).join('')}
-            </select>
-          </label>
-          <p class="form-message" id="child-message" aria-live="polite"></p>
-          <button class="btn btn-primary btn-lg" style="width: 100%;" type="submit">${child ? t('childModal.saveChangesBtn') : t('childModal.saveBtn')}</button>
+
+          <!-- Footer Actions Bar -->
+          <div class="profile-modal-footer">
+            <button type="button" class="btn btn-outline" data-action="close-modal" style="min-width: 110px;">
+              ${t('common.cancel') || 'Cancel'}
+            </button>
+            <button id="btn-save-child-profile" data-action="save-child-profile" class="btn btn-primary" style="min-width: 160px; font-weight: 800;" type="submit" ${isProfileSubmitting ? 'disabled' : ''}>
+              ${child ? (t('childModal.saveChangesBtn') || 'Save Changes') : (t('childModal.saveBtn') || 'Save Profile')}
+            </button>
+          </div>
         </form>
       </section>
     </div>`;
@@ -4835,6 +5082,17 @@ root!.addEventListener('click', async event => {
         btn.classList.toggle('active', dyslexiaMode);
       });
       toast(dyslexiaMode ? 'Dyslexia-friendly reading mode enabled' : 'Standard typography restored');
+    } else if (action === 'select-modal-avatar') {
+      const selectedAv = control.dataset.avatar || '';
+      const form = control.closest('form');
+      if (form && selectedAv) {
+        const hiddenInput = form.querySelector<HTMLInputElement>('#modal-child-avatar-input') || form.querySelector<HTMLInputElement>('input[name="avatar"]');
+        if (hiddenInput) hiddenInput.value = selectedAv;
+        form.querySelectorAll('.avatar-opt-btn').forEach(btn => btn.classList.toggle('selected', btn === control));
+        const previewAvatar = document.querySelector<HTMLElement>('#modal-child-preview-avatar');
+        if (previewAvatar) previewAvatar.textContent = selectedAv;
+      }
+      return;
     } else if (action === 'toggle-custom-lang') {
       customLangMenuOpen = !customLangMenuOpen;
       const dropdown = root!.querySelector<HTMLElement>('#customLangDropdown');
@@ -4844,7 +5102,7 @@ root!.addEventListener('click', async event => {
         if (trigger) trigger.setAttribute('aria-expanded', String(customLangMenuOpen));
       }
     } else if (action === 'select-custom-lang') {
-      const newLang = control.dataset.lang as SupportedLanguage;
+      const rawLang = control.dataset.lang || 'en';
       customLangMenuOpen = false;
       const dropdown = root!.querySelector<HTMLElement>('#customLangDropdown');
       if (dropdown) {
@@ -4853,14 +5111,30 @@ root!.addEventListener('click', async event => {
         if (trigger) trigger.setAttribute('aria-expanded', 'false');
       }
 
-      if (activeChild && activeChild.preferredLanguage !== newLang) {
+      const langCode: AppLanguageCode = (['en', 'hi', 'pa', 'bn', 'ta', 'or'].includes(rawLang))
+        ? (rawLang as AppLanguageCode)
+        : i18n.supportedLanguageToCode(rawLang as SupportedLanguage);
+      const supportedLang: SupportedLanguage = i18n.codeToSupportedLanguage(langCode);
+
+      if (activePage === 'landing' || !activeChild) {
+        await i18n.setLanguage(langCode);
+        const currentUser = auth.getCurrentUser();
+        if (currentUser) {
+          await auth.updateInterfaceLanguage(langCode);
+        }
+        toast(`Language set to ${i18n.getLanguageMeta(langCode).nativeName} 🌐`);
+        await renderAppPage();
+        return;
+      }
+
+      if (activeChild && activeChild.preferredLanguage !== supportedLang) {
         try {
-          activeChild.preferredLanguage = newLang;
+          activeChild.preferredLanguage = supportedLang;
           profiles.setActiveChild(activeChild);
 
           // 1. Persist updated language in backend / storage
           await profiles.updateChild(activeChild.id, {
-            preferredLanguage: newLang,
+            preferredLanguage: supportedLang,
           });
 
           // 2. Clear learning path cache and regenerate for the newly selected language
@@ -4868,10 +5142,9 @@ root!.addEventListener('click', async event => {
           learningPath = await learning.getOrGeneratePath(activeChild);
 
           // 3. Update i18n language model
-          const langCode = i18n.supportedLanguageToCode(newLang);
           await i18n.setLanguage(langCode);
 
-          toast(`Learning language set to ${newLang} 🌐`);
+          toast(`Learning language set to ${supportedLang} 🌐`);
 
           // 4. Re-render the dashboard with fresh content in the chosen language
           await renderAppPage();
@@ -4879,6 +5152,9 @@ root!.addEventListener('click', async event => {
           console.error('Failed to update learning language:', err);
           toast('Unable to update language. Please try again.', true);
         }
+      } else {
+        await i18n.setLanguage(langCode);
+        await renderAppPage();
       }
     } else if (action === 'toggle-mobile-menu') {
       mobileMenuOpen = !mobileMenuOpen;
@@ -4993,7 +5269,7 @@ root!.addEventListener('click', async event => {
     } else if (action === 'launch-demo') {
       await quickDemoLogin('parent@dysleximate.demo');
       toast('Welcome to the DyslexiMate Sandbox! ✨');
-      navigateTo('parent');
+      navigateTo('home');
     } else if (action === 'launch-siya-demo' || action === 'launch-suresh-demo') {
       await quickDemoLogin('suresh_44@gmail.com');
       isParentPortalUnlocked = true;
@@ -5117,20 +5393,28 @@ root!.addEventListener('click', async event => {
     } else if (action === 'add-child') {
       showProfileForm();
     } else if (action === 'edit-child' || action === 'delete-child') {
-      const childId = control.dataset.id || '';
-      const child = (await profiles.getChildren(auth.getCurrentUser()!.id)).find(item => item.id === childId);
+      const currentUser = auth.getCurrentUser();
+      if (!currentUser) throw new Error('Please sign in to manage learner profiles.');
+      const childId = control.dataset.id || activeChild?.id || '';
+      const userChildren = await profiles.getChildren(currentUser.id);
+      const child = userChildren.find(item => item.id === childId) || (activeChild?.id === childId ? activeChild : null);
       if (!child) throw new Error('Learner profile not found.');
       if (action === 'edit-child') {
-        showProfileForm(child);
-      } else if (window.confirm(`Remove ${child.name}’s learner profile? This cannot be undone.`)) {
-        const deleted = await profiles.deleteChild(child.id);
-        if (!deleted) throw new Error('The learner profile could not be removed.');
-        if (activeChild?.id === child.id) {
-          activeChild = null;
-          profiles.setActiveChild(null);
+        const fromPage = activePage === 'profiles' ? 'profiles' : activePage === 'parent' ? 'parent' : 'dashboard';
+        activeProfileEditSource = fromPage;
+        returnContext = { page: fromPage };
+        showProfileForm(child, returnContext);
+      } else if (action === 'delete-child') {
+        if (window.confirm(`Remove ${child.name}’s learner profile? This cannot be undone.`)) {
+          const deleted = await profiles.deleteChild(child.id);
+          if (!deleted) throw new Error('The learner profile could not be removed.');
+          if (activeChild?.id === child.id) {
+            activeChild = null;
+            profiles.setActiveChild(null);
+          }
+          toast('Learner profile removed.');
+          await renderAppPage();
         }
-        toast('Learner profile removed.');
-        await renderAppPage();
       }
     } else if (action === 'close-modal' || action === 'dismiss-modal') {
       if (action === 'dismiss-modal' && target !== control) return;
@@ -5420,66 +5704,98 @@ root!.addEventListener('submit', async event => {
       toast(result.message || 'You’re signed in.');
       navigateTo('parent');
     } else if (form.id === 'child-form') {
-      const data = new FormData(form);
-      const currentUser = auth.getCurrentUser();
-      if (!currentUser) throw new Error('Please sign in again to manage learner profiles.');
+      if (isProfileSubmitting) return;
+      isProfileSubmitting = true;
+      try {
+        const data = new FormData(form);
+        const currentUser = auth.getCurrentUser();
+        if (!currentUser) throw new Error('Please sign in again to manage learner profiles.');
 
-      const childId = String(data.get('childId') || '');
-      const primaryLang = String(data.get('language') || 'English') as SupportedLanguage;
-      const configuredLanguages = data.getAll('configuredLanguages').map(String) as SupportedLanguage[];
+        const childId = String(data.get('childId') || '');
+        const primaryLang = String(data.get('language') || 'English') as SupportedLanguage;
+        const configuredLanguages = data.getAll('configuredLanguages').map(String) as SupportedLanguage[];
 
-      // Ensure primaryLang is always part of configuredLanguages
-      if (configuredLanguages.length === 0) {
-        configuredLanguages.push(primaryLang);
-      } else if (!configuredLanguages.includes(primaryLang)) {
-        configuredLanguages.unshift(primaryLang);
-      }
-
-      const profileFields = {
-        name: String(data.get('name') || '').trim(),
-        grade: String(data.get('grade') || 'Class 3 · Growing reader'),
-        preferredLanguage: primaryLang,
-        languages: configuredLanguages,
-        avatar: String(data.get('avatar') || '👧🏽'),
-      };
-
-      if (childId) {
-        const existingChild = await profiles.getChild(childId);
-        if (!existingChild) throw new Error('That learner profile is no longer available.');
-        const updatedChild = await profiles.updateChild(childId, {
-          ...profileFields,
-          preferences: {
-            ...(existingChild.preferences || {}),
-            languages: configuredLanguages,
-          },
-        });
-        if (activeChild?.id === childId) {
-          activeChild = updatedChild;
-          learningPath = null;
-          const langCode = i18n.supportedLanguageToCode(activeChild.preferredLanguage);
-          await i18n.setLanguage(langCode);
+        // Ensure primaryLang is always part of configuredLanguages
+        if (configuredLanguages.length === 0) {
+          configuredLanguages.push(primaryLang);
+        } else if (!configuredLanguages.includes(primaryLang)) {
+          configuredLanguages.unshift(primaryLang);
         }
-        toast('Learner profile updated.');
-      } else {
-        const newChild = await profiles.createChild(currentUser.id, {
-          ...profileFields,
-          preferences: {
-            readingSpeed: 'normal',
-            dyslexiaFont: false,
-            highContrast: false,
-            soundEffects: true,
-            autoReadAloud: false,
-            languages: configuredLanguages,
-          },
-        });
-        if (!activeChild) {
-          activeChild = newChild;
-          profiles.setActiveChild(newChild);
+
+        const profileFields = {
+          name: String(data.get('name') || '').trim(),
+          grade: String(data.get('grade') || 'Class 3 · Growing reader'),
+          preferredLanguage: primaryLang,
+          languages: configuredLanguages,
+          avatar: String(data.get('avatar') || '👧🏽'),
+        };
+
+        const dyslexiaFont = form.querySelector<HTMLInputElement>('input[name="dyslexiaFont"]')?.checked ?? false;
+        const soundEffects = form.querySelector<HTMLInputElement>('input[name="soundEffects"]')?.checked ?? true;
+        const autoReadAloud = form.querySelector<HTMLInputElement>('input[name="autoReadAloud"]')?.checked ?? false;
+        const highContrast = form.querySelector<HTMLInputElement>('input[name="highContrast"]')?.checked ?? false;
+        const readingSpeed = (form.querySelector<HTMLSelectElement>('select[name="readingSpeed"]')?.value || 'normal') as 'slow' | 'normal' | 'fast';
+
+        if (childId) {
+          const existingChild = await profiles.getChild(childId);
+          if (!existingChild) throw new Error('That learner profile is no longer available.');
+          const updatedChild = await profiles.updateChild(childId, {
+            ...profileFields,
+            preferences: {
+              ...(existingChild.preferences || {}),
+              dyslexiaFont,
+              soundEffects,
+              autoReadAloud,
+              highContrast,
+              readingSpeed,
+              languages: configuredLanguages,
+            },
+          }, currentUser.id);
+          if (activeChild?.id === childId) {
+            activeChild = updatedChild;
+            learningPath = null;
+            const langCode = i18n.supportedLanguageToCode(activeChild.preferredLanguage);
+            await i18n.setLanguage(langCode);
+          }
+          toast('Learner profile updated.');
+        } else {
+          const newChild = await profiles.createChild(currentUser.id, {
+            ...profileFields,
+            preferences: {
+              readingSpeed,
+              dyslexiaFont,
+              highContrast,
+              soundEffects,
+              autoReadAloud,
+              languages: configuredLanguages,
+            },
+          });
+          if (!activeChild) {
+            activeChild = newChild;
+            profiles.setActiveChild(newChild);
+          }
+          toast('Learner profile created.');
         }
-        toast('Learner profile created.');
+
+        closeModal();
+        if (returnContext?.page === 'profiles' || activeProfileEditSource === 'profiles') {
+          navigateTo('profiles');
+        } else if (returnContext?.page === 'parent' || activeProfileEditSource === 'parent') {
+          navigateTo('parent');
+        } else {
+          navigateTo('home');
+        }
+      } catch (err: any) {
+        const msgEl = root!.querySelector<HTMLElement>('#child-message');
+        if (msgEl) {
+          msgEl.style.color = '#b91c1c';
+          msgEl.textContent = err.message || 'Failed to save profile';
+        } else {
+          toast(err.message || 'Failed to save profile', true);
+        }
+      } finally {
+        isProfileSubmitting = false;
       }
-      closeModal();
-      navigateTo('home');
     } else if (form.id === 'pin-form') {
       const data = new FormData(form);
       const newPin = String(data.get('newPin') || '');
@@ -5846,12 +6162,13 @@ document.addEventListener('click', event => {
   const isCloseBtn = Boolean(
     target.closest('[data-action="close-activity"]') ||
     target.closest('[data-action="close-modal"]') ||
-    target.closest('[data-action="dismiss-modal"]') ||
+    (target.classList.contains('modal-backdrop') && target.getAttribute('data-action') === 'dismiss-modal') ||
     target.closest('#btnCloseBDModal') ||
     target.closest('#btnCloseActModal') ||
     target.closest('#btnCloseActivityGeneric') ||
     target.closest('#btnCloseStoryModal') ||
     target.closest('.modal-close') ||
+    target.closest('.profile-modal-close') ||
     target.closest('button[aria-label*="close" i]') ||
     target.closest('button[aria-label*="Close" i]') ||
     target.closest('[data-action="close-preview"]') ||
@@ -5862,8 +6179,8 @@ document.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     closeModal();
-    try { LetterMirrorBDModal.getInstance().close(); } catch {}
-    try { ActivityRunnerModal.getInstance().close(); } catch {}
+    try { LetterMirrorBDModal.getInstance().close(); } catch { }
+    try { ActivityRunnerModal.getInstance().close(); } catch { }
     const bd = document.getElementById('bdRunnerModalContainer');
     if (bd) { bd.style.display = 'none'; bd.remove(); }
     const act = document.getElementById('actRunnerModalContainer');
@@ -5874,10 +6191,26 @@ document.addEventListener('click', event => {
   }
 }, true);
 
+document.addEventListener('change', event => {
+  const target = event.target as HTMLInputElement | null;
+  if (target?.matches('input[data-toggle-card="true"]')) {
+    const card = target.closest('.pref-toggle-card');
+    if (card) card.classList.toggle('active', target.checked);
+  }
+});
+
+document.addEventListener('input', event => {
+  const target = event.target as HTMLInputElement | null;
+  if (target?.id === 'child-profile-name') {
+    const previewName = document.querySelector<HTMLElement>('#modal-child-preview-name');
+    if (previewName) previewName.textContent = target.value || 'Learner';
+  }
+});
+
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     closeModal();
-    try { LetterMirrorBDModal.getInstance().close(); } catch {}
+    try { LetterMirrorBDModal.getInstance().close(); } catch { }
     const bd = document.getElementById('bdRunnerModalContainer');
     if (bd) { bd.style.display = 'none'; bd.remove(); }
     const act = document.getElementById('actRunnerModalContainer');

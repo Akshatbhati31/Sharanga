@@ -511,7 +511,11 @@ export class ActivityRunnerModal {
     if (modalEl) {
       modalEl.classList.add('hidden');
       modalEl.style.display = 'none';
-      modalEl.remove();
+      if (typeof modalEl.remove === 'function') {
+        modalEl.remove();
+      } else if (modalEl.parentNode) {
+        modalEl.parentNode.removeChild(modalEl);
+      }
     }
     document.body.style.overflow = '';
   }

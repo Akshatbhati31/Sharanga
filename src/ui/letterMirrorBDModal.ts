@@ -557,65 +557,65 @@ export class LetterMirrorBDModal {
     const randomizedOptions = [...round.options].sort(() => Math.random() - 0.5);
 
     modalEl.innerHTML = `
-      <div class="modal activity-runner-modal" style="max-width: 620px;" role="dialog" aria-modal="true" aria-labelledby="bdModalTitle">
+      <div class="modal-card activity-modal" style="max-width: 640px; width: 100%; max-height: 90vh; overflow-y: auto; background: var(--bg-surface); border: 1.5px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 24px; position: relative; z-index: 10000;" role="dialog" aria-modal="true" aria-labelledby="bdModalTitle">
         <!-- Head -->
-        <div class="modal-head" style="align-items: center; border-bottom: 1.5px solid var(--line); padding-bottom: 14px;">
+        <div class="modal-head" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid var(--border-color); padding-bottom: 14px;">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="width: 42px; height: 42px; border-radius: 12px; background: #fff1d2; font-size: 22px; display: grid; place-items: center;">
+            <div style="width: 42px; height: 42px; border-radius: 12px; background: rgba(245, 158, 11, 0.15); font-size: 22px; display: grid; place-items: center; border: 1px solid rgba(245, 158, 11, 0.3);">
               🔤
             </div>
             <div>
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                <h2 id="bdModalTitle" style="font: 900 18px Nunito; margin: 0; color: var(--ink);">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <h2 id="bdModalTitle" style="font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin: 0; color: var(--text-main);">
                   ${currentMeta.title}
                 </h2>
-                <span class="tag" style="background:#eef8f4; color:var(--teal); font-size:11px;">
+                <span class="tag" style="background: var(--bg-surface-alt); color: var(--teal); border: 1px solid var(--border-color); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px;">
                   ${this.currentRoundIndex + 1} / ${this.totalRounds}
                 </span>
               </div>
-              <p style="font-size: 12px; color: var(--muted); margin: 2px 0 0;">
+              <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">
                 ${currentMeta.desc}
               </p>
             </div>
           </div>
-          <button type="button" class="modal-close" id="btnCloseBDModal" aria-label="Close activity">×</button>
+          <button type="button" class="modal-close" id="btnCloseBDModal" aria-label="Close activity" style="background: transparent; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; line-height: 1; padding: 4px;">×</button>
         </div>
 
         <!-- Body -->
-        <div class="modal-body" style="padding-top: 14px;">
+        <div class="modal-body" style="padding-top: 16px;">
           <!-- Visual Helper Mnemonic Cards -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
-            <div style="background: #eef6fc; border: 2px solid #bce0fd; border-radius: 16px; padding: 12px; text-align: center;">
+            <div style="background: var(--bg-surface-alt); border: 1.5px solid rgba(59, 130, 246, 0.35); border-radius: 16px; padding: 12px; text-align: center;">
               <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <span style="font: 900 36px 'Comic Sans MS', Nunito, sans-serif; color: #1971c2; line-height: 1;">${currentMeta.card1.letter}</span>
+                <span style="font-family: var(--font-heading); font-size: 36px; font-weight: 900; color: #3b82f6; line-height: 1;">${currentMeta.card1.letter}</span>
                 <span style="font-size: 24px;">${currentMeta.card1.icon}</span>
               </div>
-              <strong style="font: 800 13px Nunito; color: #1971c2; display: block; margin-top: 4px;">${currentMeta.card1.title}</strong>
-              <small style="font-size: 11px; color: #495057;">${currentMeta.card1.desc}</small>
+              <strong style="font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #3b82f6; display: block; margin-top: 4px;">${currentMeta.card1.title}</strong>
+              <small style="font-size: 11px; color: var(--text-muted);">${currentMeta.card1.desc}</small>
             </div>
 
-            <div style="background: #fbf2ea; border: 2px solid #ffd8a8; border-radius: 16px; padding: 12px; text-align: center;">
+            <div style="background: var(--bg-surface-alt); border: 1.5px solid rgba(249, 115, 22, 0.35); border-radius: 16px; padding: 12px; text-align: center;">
               <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <span style="font: 900 36px 'Comic Sans MS', Nunito, sans-serif; color: #d9480f; line-height: 1;">${currentMeta.card2.letter}</span>
+                <span style="font-family: var(--font-heading); font-size: 36px; font-weight: 900; color: #f97316; line-height: 1;">${currentMeta.card2.letter}</span>
                 <span style="font-size: 24px;">${currentMeta.card2.icon}</span>
               </div>
-              <strong style="font: 800 13px Nunito; color: #d9480f; display: block; margin-top: 4px;">${currentMeta.card2.title}</strong>
-              <small style="font-size: 11px; color: #495057;">${currentMeta.card2.desc}</small>
+              <strong style="font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #f97316; display: block; margin-top: 4px;">${currentMeta.card2.title}</strong>
+              <small style="font-size: 11px; color: var(--text-muted);">${currentMeta.card2.desc}</small>
             </div>
           </div>
 
           <!-- Prompt Box -->
-          <div style="background: #fff; border: 2px dashed #b7ebc9; border-radius: 18px; padding: 18px; text-align: center; margin-bottom: 18px;">
+          <div style="background: var(--bg-surface-alt); border: 2px dashed var(--teal); border-radius: 18px; padding: 18px; text-align: center; margin-bottom: 18px;">
             <div style="font-size: 32px; margin-bottom: 6px;">${round.visualIcon}</div>
-            <h3 style="font: 900 20px Nunito; margin: 0 0 6px; color: var(--ink);">
+            <h3 style="font-family: var(--font-heading); font-size: 20px; font-weight: 800; margin: 0 0 6px; color: var(--text-main);">
               ${round.prompt}
             </h3>
             ${
               round.contextHint
-                ? `<p style="font-size: 13px; color: #5c7078; margin: 0;">💡 ${round.contextHint}</p>`
+                ? `<p style="font-size: 13px; color: var(--text-muted); margin: 0;">💡 ${round.contextHint}</p>`
                 : ''
             }
-            <button type="button" id="btnHearBDLetter" class="btn-action-pill" style="margin-top: 10px; font-size: 12px; padding: 6px 14px; background: #f3f6f8;">
+            <button type="button" id="btnHearBDLetter" class="btn btn-outline btn-sm" style="margin-top: 10px; font-size: 12px; padding: 6px 14px; font-weight: 700;">
               🔊 ${i18n.t('activity.listenQuestionBtn')}
             </button>
           </div>
@@ -632,19 +632,21 @@ export class LetterMirrorBDModal {
                 data-is-correct="${opt.isCorrect}"
                 data-explanation="${opt.explanation.replace(/"/g, '&quot;')}"
                 style="
-                  min-height: 90px;
+                  min-height: 95px;
                   border-radius: 20px;
-                  border: 2.5px solid var(--line);
-                  background: #fff;
+                  border: 2.5px solid var(--border-color);
+                  background: var(--bg-surface-alt);
                   display: flex;
                   flex-direction: column;
                   align-items: center;
                   justify-content: center;
                   cursor: pointer;
                   transition: all 0.16s ease;
-                  font: 900 48px 'Comic Sans MS', Nunito, sans-serif;
-                  color: var(--ink);
-                  box-shadow: var(--shadow);
+                  font-family: var(--font-heading), 'Lexend', sans-serif;
+                  font-size: 52px;
+                  font-weight: 900;
+                  color: var(--text-main);
+                  box-shadow: var(--shadow-sm);
                 "
               >
                 <span>${opt.display}</span>
@@ -658,14 +660,14 @@ export class LetterMirrorBDModal {
           <div id="bdFeedbackBox" class="hidden" style="margin-bottom: 16px; border-radius: 14px; padding: 12px 16px;"></div>
 
           <!-- The Mnemonic Reminder -->
-          <div style="background: #fbfcfb; border: 1px solid #e1e9e4; border-radius: 12px; padding: 8px 14px; font-size: 11px; color: #5a6e65; display: flex; align-items: center; gap: 8px;">
+          <div style="background: var(--bg-surface-alt); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 14px; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
             <span>✨</span>
             <span>${currentMeta.trick}</span>
           </div>
 
           <!-- Controls -->
           <div class="modal-controls" style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px;">
-            <button type="button" id="btnNextBDRound" class="primary hidden" style="min-height: 44px; padding: 10px 24px; font-size: 14px;">
+            <button type="button" id="btnNextBDRound" class="btn btn-primary hidden" style="min-height: 44px; padding: 10px 24px; font-size: 14px; font-weight: 700;">
               ${this.currentRoundIndex < this.totalRounds - 1 ? `${i18n.t('activity.nextAdventureBtn')}` : `${i18n.t('activity.finishBtn')}`}
             </button>
           </div>
@@ -836,31 +838,31 @@ export class LetterMirrorBDModal {
     soundService.activityComplete(this.activeChild.preferences?.soundEffects !== false);
 
     modalEl.innerHTML = `
-      <div class="modal activity-runner-modal" style="max-width: 520px; text-align: center; padding: 36px 24px;" role="dialog" aria-modal="true">
+      <div class="modal-card activity-modal" style="max-width: 520px; width: 100%; text-align: center; padding: 36px 24px; background: var(--bg-surface); border: 1.5px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); position: relative; z-index: 10000;" role="dialog" aria-modal="true">
         <div style="font-size: 56px; margin-bottom: 10px;">🌟</div>
-        <h2 style="font: 900 24px Nunito; margin: 0 0 8px; color: var(--ink);">
+        <h2 style="font-family: var(--font-heading); font-size: 24px; font-weight: 900; margin: 0 0 8px; color: var(--text-main);">
           ${winTitle}
         </h2>
-        <p style="font-size: 14px; color: #516269; margin: 0 0 20px;">
+        <p style="font-size: 14px; color: var(--text-muted); margin: 0 0 20px;">
           ${winDesc}
         </p>
 
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px;">
-          <div style="background: #f4fbf8; border: 1.5px solid #c8ecd9; border-radius: 14px; padding: 12px 6px;">
-            <strong style="font: 900 22px Nunito; color: var(--teal); display: block;">${this.correctCount}/${this.totalRounds}</strong>
-            <small style="font-size: 11px; color: var(--muted);">${i18n.t('progress.statAccuracy')}</small>
+          <div style="background: var(--bg-surface-alt); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 12px 6px;">
+            <strong style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; color: var(--teal); display: block;">${this.correctCount}/${this.totalRounds}</strong>
+            <small style="font-size: 11px; color: var(--text-muted);">${i18n.t('progress.statAccuracy')}</small>
           </div>
-          <div style="background: #fff8e8; border: 1.5px solid #f6e69d; border-radius: 14px; padding: 12px 6px;">
-            <strong style="font: 900 22px Nunito; color: #9c6c06; display: block;">${score}%</strong>
-            <small style="font-size: 11px; color: var(--muted);">${correctLabel}</small>
+          <div style="background: var(--bg-surface-alt); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 12px 6px;">
+            <strong style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; color: #f59e0b; display: block;">${score}%</strong>
+            <small style="font-size: 11px; color: var(--text-muted);">${correctLabel}</small>
           </div>
-          <div style="background: #f3edff; border: 1.5px solid #ded5fa; border-radius: 14px; padding: 12px 6px;">
-            <strong style="font: 900 22px Nunito; color: #6c5ce7; display: block;">+${pointsAwarded} ⭐</strong>
-            <small style="font-size: 11px; color: var(--muted);">${pointsLabel}</small>
+          <div style="background: var(--bg-surface-alt); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 12px 6px;">
+            <strong style="font-family: var(--font-heading); font-size: 22px; font-weight: 900; color: #8b5cf6; display: block;">+${pointsAwarded} ⭐</strong>
+            <small style="font-size: 11px; color: var(--text-muted);">${pointsLabel}</small>
           </div>
         </div>
 
-        <button type="button" id="btnFinishBDModal" class="primary hero-cta" style="font-size: 14px; padding: 12px 30px; width: 100%;">
+        <button type="button" id="btnFinishBDModal" class="btn btn-primary" style="font-size: 14px; padding: 12px 30px; width: 100%; font-weight: 700;">
           ${returnBtn}
         </button>
       </div>
@@ -881,7 +883,11 @@ export class LetterMirrorBDModal {
     if (modalEl) {
       modalEl.classList.add('hidden');
       modalEl.style.display = 'none';
-      modalEl.remove();
+      if (typeof modalEl.remove === 'function') {
+        modalEl.remove();
+      } else if (modalEl.parentElement) {
+        modalEl.parentElement.removeChild(modalEl);
+      }
     }
     document.body.style.overflow = '';
   }
@@ -908,6 +914,18 @@ export class LetterMirrorBDModal {
       el = document.createElement('div');
       el.id = 'bdRunnerModalContainer';
       el.className = 'modal-backdrop hidden';
+      el.style.position = 'fixed';
+      el.style.top = '0';
+      el.style.left = '0';
+      el.style.right = '0';
+      el.style.bottom = '0';
+      el.style.zIndex = '9999';
+      el.style.background = 'rgba(15, 23, 42, 0.75)';
+      el.style.backdropFilter = 'blur(4px)';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.padding = '16px';
       document.body.appendChild(el);
     }
     return el;

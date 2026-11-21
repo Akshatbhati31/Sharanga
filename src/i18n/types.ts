@@ -1,4 +1,5 @@
 import type { AppLanguageCode, SupportedLanguage } from '../types/auth';
+export type { AppLanguageCode, SupportedLanguage };
 
 export interface LanguageMeta {
   code: AppLanguageCode;
@@ -278,6 +279,28 @@ export interface TranslationSchema {
     weeklyGoalSubtitle?: string;
     minutesLeft?: string;
     daysStreak?: string;
+    hallOfAchievements?: string;
+    trophyRoomTitle?: string;
+    hootieCheer?: string;
+    starsEarned?: string;
+    happyPoints?: string;
+    levelsWon?: string;
+    superpowerTrophies?: string;
+    superpowerTrophiesDesc?: string;
+    recentActivity?: string;
+    recentActivityDesc?: string;
+    wordExplorerTitle?: string;
+    wordExplorerDesc?: string;
+    readingChampionTitle?: string;
+    readingChampionDesc?: string;
+    spellingStarTitle?: string;
+    spellingStarDesc?: string;
+    soundDetectiveTitle?: string;
+    soundDetectiveDesc?: string;
+    wordWizardTitle?: string;
+    wordWizardDesc?: string;
+    storyRoyaltyTitle?: string;
+    storyRoyaltyDesc?: string;
   };
   stories: {
     heading: string;
@@ -592,5 +615,49 @@ export interface TranslationSchema {
     badgesDesc: string;
     earnedTag: string;
     needsPoints: string;
+  };
+  landing?: {
+    navWhy?: string;
+    navActivities?: string;
+    navReader?: string;
+    navAdaptive?: string;
+    navTeam?: string;
+    navParentSignIn?: string;
+    navInstantDemo?: string;
+    badge?: string;
+    heroTitle?: string;
+    heroSubtitle?: string;
+    btnTryDemo?: string;
+    btnParentAccess?: string;
+    statChildren?: string;
+    statLanguages?: string;
+    statReadingWin?: string;
+    statEvidence?: string;
+    interactiveBadge?: string;
+    interactiveTitle?: string;
+    interactiveSubtitle?: string;
+    fontToggle?: string;
+    contrastToggle?: string;
+    soundToggle?: string;
+    adaptiveBadge?: string;
+    adaptiveTitle?: string;
+    adaptiveSubtitle?: string;
+    card1Title?: string;
+    card1Desc?: string;
+    card2Title?: string;
+    card2Desc?: string;
+    card3Title?: string;
+    card3Desc?: string;
+    card4Title?: string;
+    card4Desc?: string;
+    teamBadge?: string;
+    teamTitle?: string;
+    teamSubtitle?: string;
+    faqBadge?: string;
+    faqTitle?: string;
+    faqSubtitle?: string;
+    rightsAttribution?: string;
+    rightsNotice?: string;
+    contactTeam?: string;
   };
 }
