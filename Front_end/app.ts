@@ -950,6 +950,28 @@ function renderLandingPage(currentUser = auth.getCurrentUser()): void {
       ruler.style.top = `${Math.max(10, Math.min(rect.height - 50, relativeY - 24))}px`;
     });
   }
+
+  const revealTargets = root!.querySelectorAll<HTMLElement>(
+    '.site-hero .hero-copy, .site-hero .hero-card-preview, .section-header, .pillar-card, .curriculum-card, .playground-box, .timeline-step-card, .metrics-strip, .team-card, .cta-banner-inner, .footer-top-grid'
+  );
+  revealTargets.forEach((element, index) => {
+    element.classList.add('scroll-reveal');
+    element.style.setProperty('--reveal-delay', `${Math.min(index % 4, 3) * 90}ms`);
+  });
+
+  if ('IntersectionObserver' in window) {
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('revealed');
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+
+    revealTargets.forEach(element => revealObserver.observe(element));
+  } else {
+    revealTargets.forEach(element => element.classList.add('revealed'));
+  }
 }
 
 // ----------------------------------------------------
@@ -2362,7 +2384,10 @@ function renderShell(userName: string): string {
         <header class="topbar">
           <div>
             <span class="breadcrumb">${t('nav.learningSpace') || 'Learning space'} <span>›</span> <strong>${escapeHtml(activePage === 'home' ? t('nav.myHome') : activePage[0]!.toUpperCase() + activePage.slice(1))}</strong></span>
-            <h1 class="page-title">${escapeHtml(pageTitle())}</h1>
+            <h1 class="page-title">${escapeHtml(pageTitle()).replace(
+      '🎈',
+      '<span class="flying-balloon" aria-hidden="true">🎈</span>'
+    )}</h1>
           </div>
           <div class="topbar-controls">
             <!-- Custom Dynamic Language Selector -->
@@ -3661,7 +3686,10 @@ function practicePage(): string {
             <span>LEARNING PLAYGROUND</span>
           </div>
           <h2 class="open-hero-title">
-            ${t('practice.heading') || 'Adventure Practice Playground'} 🚀
+            ${(t('practice.heading') || 'Adventure Practice Playground').replace(
+      '🎈',
+      '<span class="flying-balloon" aria-hidden="true">🎈</span>'
+    )} <span class="rocket-flight" aria-hidden="true"><span class="rocket-icon">🚀</span></span>
           </h2>
           <p class="open-hero-desc">
             ${(t('practice.subtitle', { name: childDisplayName }) || `Every try helps your brain grow, ${childDisplayName}. You're doing wonderfully.`).replace(/\{name\}/g, childDisplayName)}
@@ -3682,7 +3710,9 @@ function practicePage(): string {
           <!-- Organic Habitat Header (Icon, Title & Description in the middle) -->
           <div class="habitat-open-header">
             <div class="habitat-title-row">
-              <span class="habitat-mascot-icon">${zone.icon}</span>
+              ${zone.id === 'river'
+      ? '<span class="habitat-mascot-icon river-scene" aria-hidden="true"><span class="river-boat">⛵</span><span class="river-wave river-wave-back"></span><span class="river-wave river-wave-front"></span></span>'
+      : `<span class="habitat-mascot-icon">${zone.icon}</span>`}
               <h3 class="habitat-title">${zone.title}</h3>
             </div>
             <p class="habitat-desc">${zone.desc}</p>
@@ -4183,9 +4213,10 @@ function renderResources(resources: EducationalResource[]): string {
             </article>`;
   }).join('')}
       </div>
-      ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 16px;">${escapeHtml(resourceDisclaimer)}</p>` : ''}
+      ${resourceDisclaimer ? `<p style="font-size: 11px; color: var(--text-subtle); margin-top: 16px;">${escapeHtml(resourceDisclaimer)}</p>` : '' }
     </section>`;
 }
+
 async function renderAppPage(): Promise<void> {
   const renderRevision = ++appRenderRevision;
   const user = auth.getCurrentUser();

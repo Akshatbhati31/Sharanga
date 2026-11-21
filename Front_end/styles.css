@@ -345,8 +345,7 @@ img {
 }
 
 /* Logo container for dark or colored backgrounds (e.g. Parent Portal on teal) */
-.site-brand.brand-light,
-.auth-story .site-brand {
+.site-brand.brand-light {
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -361,25 +360,21 @@ img {
   -webkit-backdrop-filter: blur(8px);
 }
 
-.site-brand.brand-light .brand-icon-box,
-.auth-story .site-brand .brand-icon-box {
+.site-brand.brand-light .brand-icon-box {
   background: #f8f7f2;
   border: 1px solid rgba(8, 127, 120, 0.12);
   box-shadow: 0 2px 6px rgba(19, 36, 46, 0.06);
 }
 
-.site-brand.brand-light .brand-title,
-.auth-story .site-brand .brand-title {
+.site-brand.brand-light .brand-title {
   color: var(--text-main);
 }
 
-.site-brand.brand-light .brand-title span,
-.auth-story .site-brand .brand-title span {
+.site-brand.brand-light .brand-title span {
   color: var(--primary);
 }
 
-.site-brand.brand-light .brand-team-tag,
-.auth-story .site-brand .brand-team-tag {
+.site-brand.brand-light .brand-team-tag {
   color: var(--text-muted);
 }
 
@@ -393,8 +388,7 @@ a.brand.brand-light {
 
 a.brand-light:hover .site-brand.brand-light,
 a:hover .site-brand.brand-light,
-.site-brand.brand-light:hover,
-.auth-story a:hover .site-brand {
+.site-brand.brand-light:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 28px -4px rgba(4, 40, 38, 0.28), 0 4px 10px rgba(0, 0, 0, 0.08);
   border-color: #ffffff;
@@ -6406,68 +6400,210 @@ a:hover .site-brand.brand-light,
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. DYSLEXIMATE LOGO CONTRAST PILLS
+   1. DYSLEXIMATE LOGO (NATURAL DARK-MODE INTEGRATION & CONTRAST)
    -------------------------------------------------------------------------- */
-.auth-logo-brand-pill {
+/* Auth Pill - No large white background, natural teal header flow */
+.auth-logo-brand-pill,
+.auth-story .auth-logo-brand-pill {
   display: inline-flex !important;
   align-items: center !important;
-  background: #ffffff !important;
-  padding: 8px 18px !important;
-  border-radius: 9999px !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
   margin-bottom: 24px !important;
-  border: 1px solid rgba(255, 255, 255, 0.9) !important;
-}
-
-.auth-logo-brand-pill .brand-title {
-  color: #0f172a !important;
-}
-
-.auth-logo-brand-pill .brand-team-tag {
-  color: #64748b !important;
-}
-
-.auth-logo-card,
-[data-theme="dark"] .auth-logo-card,
-:root.dark-theme .auth-logo-card {
-  background-color: #ffffff !important;
-  padding: 18px 24px !important;
-  border-radius: 24px !important;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18) !important;
-  border: 1.5px solid rgba(255, 255, 255, 0.95) !important;
-  margin-top: 24px !important;
-  max-width: 250px !important;
-  height: auto !important;
-  object-fit: contain !important;
-  display: block !important;
 }
 
 .parent-nav-logo-pill {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Auth story hero card */
+.auth-logo-card {
+  background-color: #ffffff;
+  padding: 18px 24px;
+  border-radius: 24px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  margin-top: 24px;
+  max-width: 250px;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+/* ==========================================================================
+   DARK MODE LOGO FIX:
+   - Completely removes large white pill background and small white card
+   - Logo sits naturally against the dark-themed header
+   - Soft warm white / light cream logo text
+   - Clearly visible muted light "BY TEAM PINAKA"
+   - Original logo icon design, size, and proportions intact
+   ========================================================================== */
+[data-theme="dark"] .parent-nav-logo-pill,
+:root.dark-theme .parent-nav-logo-pill,
+[data-theme="dark"] .auth-logo-brand-pill,
+:root.dark-theme .auth-logo-brand-pill,
+[data-theme="dark"] .site-brand.brand-light,
+:root.dark-theme .site-brand.brand-light,
+[data-theme="dark"] .auth-story .site-brand,
+:root.dark-theme .auth-story .site-brand {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+[data-theme="dark"] .brand-icon-box,
+:root.dark-theme .brand-icon-box,
+[data-theme="dark"] .site-brand .brand-icon-box,
+:root.dark-theme .site-brand .brand-icon-box,
+[data-theme="dark"] .parent-nav-logo-pill .brand-icon-box,
+:root.dark-theme .parent-nav-logo-pill .brand-icon-box,
+[data-theme="dark"] .auth-logo-brand-pill .brand-icon-box,
+:root.dark-theme .auth-logo-brand-pill .brand-icon-box {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Soft warm white / light cream logo text in dark mode */
+[data-theme="dark"] .brand-title,
+:root.dark-theme .brand-title,
+[data-theme="dark"] .site-brand .brand-title,
+:root.dark-theme .site-brand .brand-title,
+[data-theme="dark"] .parent-nav-logo-pill .brand-title,
+:root.dark-theme .parent-nav-logo-pill .brand-title,
+[data-theme="dark"] .auth-logo-brand-pill .brand-title,
+:root.dark-theme .auth-logo-brand-pill .brand-title {
+  color: #fdfbf7 !important; /* Soft warm white / light cream */
+}
+
+/* Luminous turquoise accent for Mate in dark mode */
+[data-theme="dark"] .brand-title span,
+:root.dark-theme .brand-title span,
+[data-theme="dark"] .site-brand .brand-title span,
+:root.dark-theme .site-brand .brand-title span,
+[data-theme="dark"] .parent-nav-logo-pill .brand-title span,
+:root.dark-theme .parent-nav-logo-pill .brand-title span,
+[data-theme="dark"] .auth-logo-brand-pill .brand-title span,
+:root.dark-theme .auth-logo-brand-pill .brand-title span {
+  color: #22d3ee !important;
+}
+
+/* Suitable muted light color for BY TEAM PINAKA in dark mode */
+[data-theme="dark"] .brand-team-tag,
+:root.dark-theme .brand-team-tag,
+[data-theme="dark"] .site-brand .brand-team-tag,
+:root.dark-theme .site-brand .brand-team-tag,
+[data-theme="dark"] .parent-nav-logo-pill .brand-team-tag,
+:root.dark-theme .parent-nav-logo-pill .brand-team-tag,
+[data-theme="dark"] .auth-logo-brand-pill .brand-team-tag,
+:root.dark-theme .auth-logo-brand-pill .brand-team-tag {
+  color: #94a3b8 !important; /* Readable muted light slate */
+  opacity: 0.9 !important;
+}
+
+
+/* ==========================================================================
+   LOGIN PAGE LOGO SECTION:
+   - Large white pill-shaped background removed completely
+   - Existing teal background extends naturally across entire header
+   - Smaller white rounded card (.brand-icon-box) kept exactly intact
+   - Text colors, size, font, proportions, and positioning strictly preserved
+   ========================================================================== */
+.auth-story .site-brand,
+.auth-story .auth-logo-brand-pill {
   display: inline-flex !important;
   align-items: center !important;
+  gap: 12px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin-bottom: 24px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* KEEP the smaller white rounded card containing the DyslexiMate logo */
+.auth-story .brand-icon-box,
+.auth-story .site-brand .brand-icon-box {
   background: #ffffff !important;
-  padding: 6px 16px !important;
-  border-radius: 9999px !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08) !important;
-  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  background-color: #ffffff !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 2px 8px rgba(19, 36, 46, 0.08) !important;
+  width: 42px !important;
+  height: 42px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
 }
 
-.parent-nav-logo-pill .brand-title {
-  color: #0f172a !important;
+.auth-story .brand-title,
+.auth-story .site-brand .brand-title,
+.auth-story .auth-logo-brand-pill .brand-title {
+  color: #ffffff !important;
 }
 
-.parent-nav-logo-pill .brand-team-tag {
-  color: #64748b !important;
+.auth-story .brand-title span,
+.auth-story .site-brand .brand-title span,
+.auth-story .auth-logo-brand-pill .brand-title span {
+  color: #22d3ee !important;
 }
 
-.brand-icon-box,
-[data-theme="dark"] .brand-icon-box,
-:root.dark-theme .brand-icon-box {
-  background: #ffffff !important;
-  border: 1px solid rgba(0, 0, 0, 0.08) !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+.auth-story .brand-team-tag,
+.auth-story .site-brand .brand-team-tag,
+.auth-story .auth-logo-brand-pill .brand-team-tag {
+  color: #c7ede5 !important;
+  opacity: 0.95 !important;
 }
 
+/* Scroll-reveal experience */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  filter: blur(4px);
+  transition:
+    opacity 760ms var(--reveal-delay, 0ms) cubic-bezier(0.16, 1, 0.3, 1),
+    transform 760ms var(--reveal-delay, 0ms) cubic-bezier(0.16, 1, 0.3, 1),
+    filter 760ms var(--reveal-delay, 0ms) ease;
+  will-change: opacity, transform, filter;
+}
+
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.section,
+.site-hero {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal.revealed {
+    animation: none;
+    transition: none;
+  }
+
+  .scroll-reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
 
 /* --------------------------------------------------------------------------
    2. ANIMATED FOREST BACKGROUND FOR ADVENTURE MAP
@@ -6806,6 +6942,74 @@ a:hover .site-brand.brand-light,
   letter-spacing: -0.4px;
 }
 
+.flying-balloon {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: balloon-flight 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes balloon-flight {
+  0%, 100% {
+    transform: translate(0, 0) rotate(-8deg);
+  }
+  35% {
+    transform: translate(5px, -14px) rotate(5deg);
+  }
+  70% {
+    transform: translate(-4px, -8px) rotate(-3deg);
+  }
+}
+
+.rocket-flight {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+  vertical-align: baseline;
+  animation: rocket-takeoff 1.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.rocket-icon {
+  display: inline-block;
+  transform: rotate(-45deg);
+}
+
+.rocket-flight::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 0.05em);
+  width: 0.28em;
+  height: 0.55em;
+  border-radius: 45% 45% 50% 50%;
+  background: linear-gradient(180deg, #fff4a3 0%, #ffb02e 48%, #ff5a36 100%);
+  box-shadow: 0 2px 8px rgba(255, 115, 44, 0.45);
+  transform: translateX(-50%) scale(0.85, 0.7);
+  transform-origin: 50% 0;
+  animation: rocket-flame-flicker 220ms ease-in-out infinite alternate;
+}
+
+@keyframes rocket-takeoff {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes rocket-flame-flicker {
+  from {
+    opacity: 0.78;
+    transform: translateX(-50%) scale(0.78, 0.72) rotate(-3deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1, 1.12) rotate(3deg);
+  }
+}
+
 .open-hero-desc {
   font-size: 15px;
   color: var(--text-muted);
@@ -6889,6 +7093,49 @@ a:hover .site-brand.brand-light,
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.12));
 }
 
+.river-scene {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 8px;
+}
+
+.river-boat {
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.river-wave {
+  position: absolute;
+  height: 7px;
+  border-top: 2px solid rgba(2, 132, 199, 0.7);
+  border-radius: 50%;
+  animation: river-wave-drift 1.8s ease-in-out infinite;
+}
+
+.river-wave-back {
+  width: 25px;
+  left: 1px;
+  bottom: 1px;
+  opacity: 0.55;
+}
+
+.river-wave-front {
+  width: 32px;
+  right: -2px;
+  bottom: 0;
+  animation-delay: -0.9s;
+}
+
+@keyframes river-wave-drift {
+  0%, 100% {
+    transform: translateX(-3px) scaleX(0.9);
+  }
+  50% {
+    transform: translateX(3px) scaleX(1.08);
+  }
+}
+
 .habitat-title {
   font-family: var(--font-heading);
   font-size: 26px;
@@ -6919,9 +7166,9 @@ a:hover .site-brand.brand-light,
   border: none !important;
   border-radius: 28px !important;
   padding: 26px 24px !important;
-  background: rgba(255, 255, 255, 0.85) !important;
-  backdrop-filter: blur(14px) !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+  background: rgba(244, 251, 247, 0.54) !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 0 6px 20px rgba(26, 72, 54, 0.035), 0 1px 4px rgba(26, 72, 54, 0.02) !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: space-between !important;
@@ -6929,15 +7176,51 @@ a:hover .site-brand.brand-light,
   transition: all 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 
+.playground-habitat-zone.zone-treehouse .challenge-pod.borderless-pod {
+  background: rgba(213, 244, 228, 0.54) !important;
+}
+
+.playground-habitat-zone.zone-safari .challenge-pod.borderless-pod {
+  background: rgba(255, 240, 199, 0.56) !important;
+}
+
+.playground-habitat-zone.zone-castle .challenge-pod.borderless-pod {
+  background: rgba(234, 224, 255, 0.56) !important;
+}
+
+.playground-habitat-zone.zone-river .challenge-pod.borderless-pod {
+  background: rgba(215, 239, 255, 0.56) !important;
+}
+
 [data-theme="dark"] .challenge-pod.borderless-pod,
 :root.dark-theme .challenge-pod.borderless-pod {
-  background: rgba(17, 26, 49, 0.85) !important;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45) !important;
+  background: rgba(17, 26, 49, 0.58) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24) !important;
+}
+
+[data-theme="dark"] .playground-habitat-zone.zone-treehouse .challenge-pod.borderless-pod,
+:root.dark-theme .playground-habitat-zone.zone-treehouse .challenge-pod.borderless-pod {
+  background: rgba(17, 57, 48, 0.66) !important;
+}
+
+[data-theme="dark"] .playground-habitat-zone.zone-safari .challenge-pod.borderless-pod,
+:root.dark-theme .playground-habitat-zone.zone-safari .challenge-pod.borderless-pod {
+  background: rgba(71, 48, 28, 0.66) !important;
+}
+
+[data-theme="dark"] .playground-habitat-zone.zone-castle .challenge-pod.borderless-pod,
+:root.dark-theme .playground-habitat-zone.zone-castle .challenge-pod.borderless-pod {
+  background: rgba(45, 37, 75, 0.68) !important;
+}
+
+[data-theme="dark"] .playground-habitat-zone.zone-river .challenge-pod.borderless-pod,
+:root.dark-theme .playground-habitat-zone.zone-river .challenge-pod.borderless-pod {
+  background: rgba(22, 52, 75, 0.68) !important;
 }
 
 .challenge-pod.borderless-pod:hover {
-  transform: translateY(-8px) scale(1.02) !important;
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: 0 12px 28px rgba(26, 72, 54, 0.075) !important;
 }
 
 [data-theme="dark"] .challenge-pod.borderless-pod:hover,
